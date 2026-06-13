@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Brand tokens ────────────────────────────────────── */
+:root {
+  --brand-bg:      #FAF8F5;
+  --brand-primary: #633806;
+  --brand-accent:  #1D9E75;
+  --brand-heading: #2C2C2A;
+  --brand-body:    #5F5E5A;
+}
+
+/* ── Base resets ─────────────────────────────────────── */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--brand-bg);
+    color: var(--brand-body);
+    font-family: theme('fontFamily.sans');
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--brand-heading);
+    font-family: theme('fontFamily.lora');
+  }
+
+  ::selection {
+    background-color: #63380633;
+    color: var(--brand-heading);
+  }
+}
+
+/* ── Shared utility ──────────────────────────────────── */
+.section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--brand-accent);
+}
