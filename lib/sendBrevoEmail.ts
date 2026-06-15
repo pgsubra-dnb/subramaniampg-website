@@ -12,9 +12,12 @@ export async function sendBrevoEmail({
   textContent: string
 }) {
   const apiKey = process.env.BREVO_API_KEY
-  if (!apiKey) return
+  if (!apiKey) {
+    console.error('BREVO_API_KEY is not set')
+    return
+  }
 
-  await fetch('https://api.brevo.com/v3/smtp/email', {
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {
       'api-key': apiKey,
@@ -29,4 +32,12 @@ export async function sendBrevoEmail({
       textContent,
     }),
   })
+
+  const responseText = await res.text()
+  console.log('Brevo status:', res.status)
+  console.log('Brevo response:', responseText)
+
+  if (!res.ok) {
+    console.error('Brevo failed:', res.status, responseText)
+  }
 }

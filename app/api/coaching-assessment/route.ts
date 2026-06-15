@@ -101,6 +101,8 @@ pgs@embiggen.co.in`,
 }
 
 export async function POST(req: NextRequest) {
+  console.log('API key present:', !!process.env.BREVO_API_KEY)
+  console.log('API key first 6 chars:', process.env.BREVO_API_KEY?.slice(0, 6))
   try {
     const data = await req.json()
     const template = resultEmails[data.outcome]
