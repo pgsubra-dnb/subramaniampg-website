@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
+import { submitCoachingAssessment } from '@/app/actions/coachingAssessment'
 
 const questions = [
   {
@@ -160,8 +161,6 @@ const results = {
 type Bucket = 'C' | 'M' | 'T' | 'N'
 type Stage = 'gate' | 'questions' | 'result'
 
-const SHEET_URL = process.env.NEXT_PUBLIC_COACHING_ASSESSMENT_SHEET_URL || ''
-
 export default function AssessmentPage() {
   const [stage, setStage] = useState<Stage>('gate')
   const [gate, setGate] = useState({ name: '', email: '', org: '' })
@@ -207,24 +206,15 @@ export default function AssessmentPage() {
     setResult(outcome)
     setStage('result')
     try {
-      const payload = {
-        timestamp: new Date().toISOString(),
+      await submitCoachingAssessment({
         name: gate.name,
         email: gate.email,
         organisation: gate.org,
         outcome,
-        ...Object.fromEntries(
+        answers: Object.fromEntries(
           questions.map((q, i) => [`q${i + 1}`, answers[i] !== undefined ? q.opts[answers[i]][0] : ''])
         ),
-      }
-      if (SHEET_URL) {
-        await fetch(SHEET_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-      }
+      })
     } catch {
       // silent fail
     } finally {
