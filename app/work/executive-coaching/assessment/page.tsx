@@ -4,7 +4,6 @@ import { useState } from 'react'
 import Link from 'next/link'
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
-import { submitCoachingAssessment } from '@/app/actions/coachingAssessment'
 
 const questions = [
   {
@@ -206,14 +205,18 @@ export default function AssessmentPage() {
     setResult(outcome)
     setStage('result')
     try {
-      await submitCoachingAssessment({
-        name: gate.name,
-        email: gate.email,
-        organisation: gate.org,
-        outcome,
-        answers: Object.fromEntries(
-          questions.map((q, i) => [`q${i + 1}`, answers[i] !== undefined ? q.opts[answers[i]][0] : ''])
-        ),
+      await fetch('/api/coaching-assessment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: gate.name,
+          email: gate.email,
+          organisation: gate.org,
+          outcome,
+          answers: Object.fromEntries(
+            questions.map((q, i) => [`q${i + 1}`, answers[i] !== undefined ? q.opts[answers[i]][0] : ''])
+          ),
+        }),
       })
     } catch {
       // silent fail

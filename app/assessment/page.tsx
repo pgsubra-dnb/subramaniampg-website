@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
-import { submitOkrAssessment } from '@/app/actions/okrAssessment'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -836,7 +835,11 @@ export default function AssessmentPage() {
     setLevel(lvl)
     const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
     saveToBrevo(userData, lvl, today)
-    submitOkrAssessment({ name: userData.name, email: userData.email, level: lvl })
+    fetch('/api/okr-assessment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: userData.name, email: userData.email, level: lvl }),
+    })
     setStage('report')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
