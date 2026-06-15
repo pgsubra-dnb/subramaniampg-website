@@ -544,10 +544,11 @@ export default async function HomePage() {
       <section className="py-20 lg:py-28" style={{ backgroundColor: '#FAF8F5' }}>
         <div className="max-w-7xl mx-auto px-6 lg:px-10">
           <div className="text-center mb-14">
-            <p className="section-label mb-4">In Their Words</p>
+            <p className="section-label mb-4">What Leaders Say</p>
             <h2 className="font-lora text-3xl lg:text-4xl font-bold text-[#2C2C2A]">
-              What leaders say
+              In their own words.
             </h2>
+            <p className="text-[#5F5E5A] mt-3 text-base">From written reflections to recorded conversations.</p>
           </div>
 
           {/* Large quote card */}
@@ -597,6 +598,48 @@ export default async function HomePage() {
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* Video testimonials */}
+          <div style={{ marginTop: '3rem' }}>
+            <p style={{
+              fontSize: '0.8rem', fontWeight: 600, letterSpacing: '0.12em',
+              textTransform: 'uppercase', color: '#633806', marginBottom: '1rem'
+            }}>
+              People Speak
+            </p>
+            <p style={{
+              fontSize: '1rem', lineHeight: 1.65, color: '#5F5E5A', marginBottom: '1.5rem', maxWidth: '560px'
+            }}>
+              Eleven professionals share their experience of working with PGS — in their own words, on camera.
+            </p>
+            <div style={{
+              position: 'relative',
+              paddingBottom: '56.25%',
+              height: 0,
+              overflow: 'hidden',
+              borderRadius: '10px',
+              background: '#000',
+            }}>
+              <iframe
+                src="https://www.youtube.com/embed/videoseries?list=PLukusAUWJt76_nWXxmrQKA8nZsvLz7_PW&rel=0&modestbranding=1"
+                title="People Speak — professionals on working with Subramaniam P G"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  border: 'none',
+                  borderRadius: '10px',
+                }}
+              />
+            </div>
+            <p style={{ fontSize: '0.8rem', color: '#5F5E5A', marginTop: '0.75rem' }}>
+              New videos are added regularly. The playlist updates automatically.
+            </p>
           </div>
         </div>
       </section>
