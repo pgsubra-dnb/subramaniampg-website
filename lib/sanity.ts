@@ -70,6 +70,21 @@ export async function getAllSlugs(): Promise<string[]> {
   return results.map((r) => r.slug).filter(Boolean)
 }
 
+export type SanityTestimonial = {
+  _id: string
+  quote: string
+  name: string
+  designation?: string
+}
+
+export async function getTestimonials(): Promise<SanityTestimonial[]> {
+  return client.fetch(
+    `*[_type == "testimonial"] | order(_createdAt asc) { _id, quote, name, designation }`,
+    {},
+    { next: { revalidate: 3600 } }
+  )
+}
+
 export function formatPostDate(publishedAt: string | null): string {
   if (!publishedAt) return ''
   const d = new Date(publishedAt)

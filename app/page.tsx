@@ -3,7 +3,7 @@ import Image from 'next/image'
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
 import WhatLeadersSay from '@/components/WhatLeadersSay'
-import { getLatestPosts, formatPostDate } from '@/lib/sanity'
+import { getLatestPosts, getTestimonials, formatPostDate } from '@/lib/sanity'
 import { getPlaylistVideos } from '@/lib/getPlaylistVideos'
 import { BOOKS } from '@/lib/books-data'
 
@@ -112,17 +112,11 @@ const RESOURCES = [
   },
 ]
 
-const TESTIMONIALS = [
-  {
-    quote: 'Subramaniam P G brought extraordinary clarity to our leadership team. His ability to weave ancient wisdom with the hard realities of modern business strategy is unmatched. The frameworks he introduced have changed how we think about goals, accountability, and growth — not just as a company, but as individuals.',
-    author: 'Sanjay Mariwala — Chairman & Managing Director, OAL Group',
-  },
-]
-
 export default async function HomePage() {
-  const [latestPosts, videos] = await Promise.all([
+  const [latestPosts, videos, sanityTestimonials] = await Promise.all([
     getLatestPosts(3),
     getPlaylistVideos(),
+    getTestimonials(),
   ])
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--brand-bg)' }}>
@@ -553,7 +547,22 @@ export default async function HomePage() {
       </section>
 
       {/* ── What Leaders Say ─────────────────────────────── */}
-      <WhatLeadersSay testimonials={TESTIMONIALS} videos={videos} />
+      <WhatLeadersSay
+        testimonials={
+          sanityTestimonials.length > 0
+            ? sanityTestimonials.map((t) => ({
+                quote: t.quote,
+                author: t.name,
+                role: t.designation ?? '',
+              }))
+            : [{
+                quote: 'Subramaniam P G brought extraordinary clarity to our leadership team. His ability to weave ancient wisdom with the hard realities of modern business strategy is unmatched. The frameworks he introduced have changed how we think about goals, accountability, and growth — not just as a company, but as individuals.',
+                author: 'Sanjay Mariwala',
+                role: 'Executive Chairman and Managing Director, OmniActive Health Technologies',
+              }]
+        }
+        videos={videos}
+      />
 
       <Footer />
     </div>

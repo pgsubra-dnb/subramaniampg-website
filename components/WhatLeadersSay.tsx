@@ -6,6 +6,7 @@ import type { PlaylistVideo } from '@/lib/getPlaylistVideos'
 type Testimonial = {
   quote: string
   author: string
+  role?: string
 }
 
 type Props = {
@@ -87,6 +88,11 @@ export default function WhatLeadersSay({ testimonials, videos }: Props) {
                 <p style={{ fontSize: '0.85rem', color: '#633806', fontWeight: 600 }}>
                   {testimonials[quoteIndex].author}
                 </p>
+                {testimonials[quoteIndex].role && (
+                  <p style={{ fontSize: '0.78rem', color: '#5F5E5A', marginTop: '0.2rem' }}>
+                    {testimonials[quoteIndex].role}
+                  </p>
+                )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '1rem' }}>
                 <button style={navBtn} onClick={prevQuote} aria-label="Previous testimonial">&#8592;</button>
