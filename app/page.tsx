@@ -2,7 +2,9 @@ import Link from 'next/link'
 import Image from 'next/image'
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
+import WhatLeadersSay from '@/components/WhatLeadersSay'
 import { getLatestPosts, formatPostDate } from '@/lib/sanity'
+import { getPlaylistVideos } from '@/lib/getPlaylistVideos'
 import { BOOKS } from '@/lib/books-data'
 
 export const revalidate = 3600
@@ -110,8 +112,18 @@ const RESOURCES = [
   },
 ]
 
+const TESTIMONIALS = [
+  {
+    quote: 'Subramaniam P G brought extraordinary clarity to our leadership team. His ability to weave ancient wisdom with the hard realities of modern business strategy is unmatched. The frameworks he introduced have changed how we think about goals, accountability, and growth — not just as a company, but as individuals.',
+    author: 'Sanjay Mariwala — Chairman & Managing Director, OAL Group',
+  },
+]
+
 export default async function HomePage() {
-  const latestPosts = await getLatestPosts(3)
+  const [latestPosts, videos] = await Promise.all([
+    getLatestPosts(3),
+    getPlaylistVideos(),
+  ])
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--brand-bg)' }}>
       <NavBar />
@@ -540,109 +552,8 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Testimonials ─────────────────────────────────── */}
-      <section className="py-20 lg:py-28" style={{ backgroundColor: '#FAF8F5' }}>
-        <div className="max-w-7xl mx-auto px-6 lg:px-10">
-          <div className="text-center mb-14">
-            <p className="section-label mb-4">What Leaders Say</p>
-            <h2 className="font-lora text-3xl lg:text-4xl font-bold text-[#2C2C2A]">
-              In their own words.
-            </h2>
-            <p className="text-[#5F5E5A] mt-3 text-base">From written reflections to recorded conversations.</p>
-          </div>
-
-          {/* Large quote card */}
-          <div
-            className="max-w-3xl mx-auto rounded-3xl p-10 lg:p-14 border"
-            style={{ backgroundColor: '#ffffff', borderColor: '#2C2C2A0f', boxShadow: '0 8px 40px 0 #63380610' }}
-          >
-            {/* Opening quote mark */}
-            <div
-              className="font-lora text-8xl leading-none mb-6 select-none"
-              style={{ color: '#63380620' }}
-              aria-hidden="true"
-            >
-              &ldquo;
-            </div>
-
-            <blockquote className="font-lora text-xl lg:text-2xl text-[#2C2C2A] leading-relaxed mb-10 -mt-6">
-              Subramaniam P G brought extraordinary clarity to our leadership team.
-              His ability to weave ancient wisdom with the hard realities of modern
-              business strategy is unmatched. The frameworks he introduced have
-              changed how we think about goals, accountability, and growth — not just
-              as a company, but as individuals.
-            </blockquote>
-
-            <div className="flex items-center gap-4">
-              {/* Avatar placeholder */}
-              <div
-                className="w-14 h-14 rounded-full border-2 flex items-center justify-center shrink-0"
-                style={{ backgroundColor: '#63380610', borderColor: '#63380630' }}
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                  className="w-7 h-7"
-                  style={{ color: '#63380650' }}
-                >
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                  <circle cx="12" cy="7" r="4" />
-                </svg>
-              </div>
-              <div>
-                <p className="font-semibold text-[#2C2C2A]">Sanjay Mariwala</p>
-                <p className="text-sm text-[#5F5E5A]">
-                  Chairman &amp; Managing Director, OAL Group
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Video testimonials */}
-          <div style={{ marginTop: '3rem' }}>
-            <p style={{
-              fontSize: '0.8rem', fontWeight: 600, letterSpacing: '0.12em',
-              textTransform: 'uppercase', color: '#633806', marginBottom: '1rem'
-            }}>
-              People Speak
-            </p>
-            <p style={{
-              fontSize: '1rem', lineHeight: 1.65, color: '#5F5E5A', marginBottom: '1.5rem', maxWidth: '560px'
-            }}>
-              Eleven professionals share their experience of working with PGS — in their own words, on camera.
-            </p>
-            <div style={{
-              position: 'relative',
-              paddingBottom: '56.25%',
-              height: 0,
-              overflow: 'hidden',
-              borderRadius: '10px',
-              background: '#000',
-            }}>
-              <iframe
-                src="https://www.youtube.com/embed/videoseries?list=PLukusAUWJt76_nWXxmrQKA8nZsvLz7_PW&rel=0&modestbranding=1"
-                title="People Speak — professionals on working with Subramaniam P G"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: '100%',
-                  border: 'none',
-                  borderRadius: '10px',
-                }}
-              />
-            </div>
-            <p style={{ fontSize: '0.8rem', color: '#5F5E5A', marginTop: '0.75rem' }}>
-              New videos are added regularly. The playlist updates automatically.
-            </p>
-          </div>
-        </div>
-      </section>
+      {/* ── What Leaders Say ─────────────────────────────── */}
+      <WhatLeadersSay testimonials={TESTIMONIALS} videos={videos} />
 
       <Footer />
     </div>
