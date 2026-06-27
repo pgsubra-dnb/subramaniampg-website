@@ -1,6 +1,7 @@
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
 import EmailGatedResources from '@/components/EmailGatedResources'
+import { client } from '@/lib/sanity'
 
 const Divider = () => (
   <div className="w-full h-px" style={{ backgroundColor: '#E8E4DC' }} />
@@ -18,19 +19,71 @@ const ArrowIcon = () => (
   </svg>
 )
 
-const FREE_RESOURCES = [
-  { title: 'Awaken Your Potential Sample',    filename: 'Awaken Your Potential Sample.pdf' },
-  { title: 'Elevate your Leadership Sample',  filename: 'Elevate your Leadership Sample.pdf' },
-  { title: 'OKR Maturity Model',              filename: 'OKR Maturity Model.pdf' },
-  { title: 'RACI guideline',                  filename: 'RACI guideline.pdf' },
+const FALLBACK_FREE = [
+  { _id: 'f1', title: 'Awaken Your Potential Sample', accessType: 'free', filename: 'Awaken Your Potential Sample.pdf' },
+  { _id: 'f2', title: 'Elevate Your Leadership Sample', accessType: 'free', filename: 'Elevate your Leadership Sample.pdf' },
+  { _id: 'f3', title: 'OKR Maturity Model', accessType: 'free', filename: 'OKR Maturity Model.pdf' },
+  { _id: 'f4', title: 'RACI Guideline', accessType: 'free', filename: 'RACI guideline.pdf' },
 ]
 
-const GATED_RESOURCES = [
-  { title: 'Language of OKR',    filename: 'Language of OKR.pdf' },
-  { title: 'Master Execution Gap', filename: 'Master Execution Gap.pdf' },
+const FALLBACK_GATED = [
+  { _id: 'g1', title: 'Language of OKR', filename: 'Language of OKR.pdf' },
+  { _id: 'g2', title: 'Master Execution Gap', filename: 'Master Execution Gap.pdf' },
 ]
 
-export default function ResourcesPage() {
+type SanityResource = {
+  _id: string
+  title: string
+  description?: string
+  accessType: 'free' | 'gated'
+  externalUrl?: string
+  file?: { asset?: { url?: string } }
+}
+
+function getResourceFilename(title: string): string {
+  const map: Record<string, string> = {
+    'Awaken Your Potential Sample': 'Awaken Your Potential Sample.pdf',
+    'Elevate Your Leadership Sample': 'Elevate your Leadership Sample.pdf',
+    'OKR Maturity Model': 'OKR Maturity Model.pdf',
+    'RACI Guideline': 'RACI guideline.pdf',
+    'Language of OKR': 'Language of OKR.pdf',
+    'Master Execution Gap': 'Master Execution Gap.pdf',
+  }
+  return map[title] ?? `${title}.pdf`
+}
+
+export default async function ResourcesPage() {
+  let freeResources: SanityResource[] = []
+  let gatedResources: SanityResource[] = []
+
+  try {
+    const resources: SanityResource[] = await client.fetch(
+      `*[_type == "resource"] | order(accessType asc, title asc) {
+        _id,
+        title,
+        description,
+        accessType,
+        externalUrl,
+        file { asset->{ url } }
+      }`,
+      {},
+      { next: { revalidate: 3600 } }
+    )
+
+    freeResources = resources.filter(r => r.accessType === 'free')
+    gatedResources = resources.filter(r => r.accessType === 'gated')
+  } catch {
+    // Sanity unavailable — fall through to fallbacks below
+  }
+
+  const displayFree = freeResources.length > 0
+    ? freeResources
+    : FALLBACK_FREE.map(f => ({ ...f, accessType: 'free' as const }))
+
+  const displayGated = gatedResources.length > 0
+    ? gatedResources.map(r => ({ title: r.title, filename: getResourceFilename(r.title) }))
+    : FALLBACK_GATED
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#FAF8F5' }}>
       <NavBar />
@@ -63,45 +116,50 @@ export default function ResourcesPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {FREE_RESOURCES.map((res) => (
-              <div
-                key={res.title}
-                className="flex flex-col p-7 rounded-2xl border bg-white shadow-sm"
-                style={{ borderColor: '#E8E4DC' }}
-              >
-                {/* Icon */}
+            {displayFree.map((res) => {
+              const fileUrl = (res as SanityResource).file?.asset?.url
+                ?? (res as SanityResource).externalUrl
+                ?? `/resources/free/${encodeURIComponent(getResourceFilename(res.title))}`
+              return (
                 <div
-                  className="w-11 h-11 rounded-xl flex items-center justify-center mb-5 shrink-0"
-                  style={{ backgroundColor: '#E1F5EE', color: '#0D6E4E' }}
+                  key={res._id}
+                  className="flex flex-col p-7 rounded-2xl border bg-white shadow-sm"
+                  style={{ borderColor: '#E8E4DC' }}
                 >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-5 h-5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                  </svg>
+                  {/* Icon */}
+                  <div
+                    className="w-11 h-11 rounded-xl flex items-center justify-center mb-5 shrink-0"
+                    style={{ backgroundColor: '#E1F5EE', color: '#0D6E4E' }}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-5 h-5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                    </svg>
+                  </div>
+
+                  {/* Badge */}
+                  <span
+                    className="text-xs font-semibold px-3 py-1 rounded-full w-fit mb-4"
+                    style={{ backgroundColor: '#E1F5EE', color: '#0D6E4E' }}
+                  >
+                    Free Download
+                  </span>
+
+                  <h3 className="font-lora text-lg font-bold text-[#2C2C2A] mb-6 leading-snug flex-1">
+                    {res.title}
+                  </h3>
+
+                  <a
+                    href={fileUrl}
+                    download={getResourceFilename(res.title)}
+                    className="inline-flex items-center justify-center gap-2 px-6 py-3 text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
+                    style={{ backgroundColor: '#633806' }}
+                  >
+                    Download
+                    <DownloadIcon />
+                  </a>
                 </div>
-
-                {/* Badge */}
-                <span
-                  className="text-xs font-semibold px-3 py-1 rounded-full w-fit mb-4"
-                  style={{ backgroundColor: '#E1F5EE', color: '#0D6E4E' }}
-                >
-                  Free Download
-                </span>
-
-                <h3 className="font-lora text-lg font-bold text-[#2C2C2A] mb-6 leading-snug flex-1">
-                  {res.title}
-                </h3>
-
-                <a
-                  href={`/resources/free/${encodeURIComponent(res.filename)}`}
-                  download={res.filename}
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3 text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
-                  style={{ backgroundColor: '#633806' }}
-                >
-                  Download
-                  <DownloadIcon />
-                </a>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       </section>
@@ -121,7 +179,7 @@ export default function ResourcesPage() {
             </p>
           </div>
 
-          <EmailGatedResources resources={GATED_RESOURCES} />
+          <EmailGatedResources resources={displayGated} />
         </div>
       </section>
 

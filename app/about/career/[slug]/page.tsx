@@ -2,19 +2,58 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
-import { CAREER_DATA, getCareerBySlug } from '@/lib/careerData'
+import { client } from '@/lib/sanity'
 
-export function generateStaticParams() {
-  return CAREER_DATA.map((entry) => ({ slug: entry.slug }))
+type CareerEntry = {
+  _id: string
+  slug: string
+  role: string
+  organisation: string
+  city: string
+  startDate: string
+  endDate?: string
+  isCurrent: boolean
+  description: string
+  order: number
 }
 
-export default function CareerDetailPage({ params }: { params: { slug: string } }) {
-  const entry = getCareerBySlug(params.slug)
-  if (!entry) notFound()
+function formatPeriod(entry: CareerEntry): string {
+  return `${entry.startDate} – ${entry.isCurrent ? 'Present' : (entry.endDate ?? '')}`
+}
 
-  const currentIdx = CAREER_DATA.findIndex((e) => e.slug === params.slug)
-  const prev = CAREER_DATA[currentIdx + 1] ?? null
-  const next = CAREER_DATA[currentIdx - 1] ?? null
+async function getAllEntries(): Promise<CareerEntry[]> {
+  return client.fetch(
+    `*[_type == "careerEntry"] | order(order asc) {
+      _id,
+      "slug": slug.current,
+      role,
+      organisation,
+      city,
+      startDate,
+      endDate,
+      isCurrent,
+      description,
+      order
+    }`,
+    {},
+    { next: { revalidate: 3600 } }
+  )
+}
+
+export async function generateStaticParams() {
+  const entries = await getAllEntries()
+  return entries.map((e) => ({ slug: e.slug }))
+}
+
+export default async function CareerDetailPage({ params }: { params: { slug: string } }) {
+  const entries = await getAllEntries()
+  const currentIdx = entries.findIndex((e) => e.slug === params.slug)
+
+  if (currentIdx === -1) notFound()
+
+  const entry = entries[currentIdx]
+  const prev = entries[currentIdx + 1] ?? null
+  const next = entries[currentIdx - 1] ?? null
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#FAF8F5' }}>
@@ -37,12 +76,12 @@ export default function CareerDetailPage({ params }: { params: { slug: string } 
 
         <div className="max-w-3xl mx-auto px-6 lg:px-10 pt-10 pb-14 lg:pb-16">
           <p className="text-xs font-semibold tracking-widest uppercase text-[#1D9E75] mb-3">
-            {entry.period}
+            {formatPeriod(entry)}
           </p>
           <h1 className="font-lora text-3xl sm:text-4xl lg:text-[2.6rem] font-bold text-[#2C2C2A] leading-[1.15] tracking-tight mb-3">
             {entry.role}
           </h1>
-          <p className="text-lg font-medium" style={{ color: '#633806' }}>{entry.company}</p>
+          <p className="text-lg font-medium" style={{ color: '#633806' }}>{entry.organisation}</p>
           {entry.city && (
             <p className="text-sm mt-1" style={{ color: '#888780' }}>{entry.city}</p>
           )}
@@ -75,7 +114,7 @@ export default function CareerDetailPage({ params }: { params: { slug: string } 
               <span className="font-lora text-base font-semibold text-[#2C2C2A] group-hover:text-[#633806] transition-colors line-clamp-2">
                 {prev.role}
               </span>
-              <span className="text-xs text-[#888780]">{prev.company}</span>
+              <span className="text-xs text-[#888780]">{prev.organisation}</span>
             </Link>
           ) : (
             <div />
@@ -92,7 +131,7 @@ export default function CareerDetailPage({ params }: { params: { slug: string } 
               <span className="font-lora text-base font-semibold text-[#2C2C2A] group-hover:text-[#633806] transition-colors line-clamp-2">
                 {next.role}
               </span>
-              <span className="text-xs text-[#888780]">{next.company}</span>
+              <span className="text-xs text-[#888780]">{next.organisation}</span>
             </Link>
           ) : (
             <div />

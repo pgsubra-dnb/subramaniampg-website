@@ -1,0 +1,49 @@
+<svg viewBox="0 0 800 560" xmlns="http://www.w3.org/2000/svg" font-family="Arial, sans-serif">
+  <rect width="800" height="560" fill="#FAF8F5"/>
+  <rect x="20" y="20" width="760" height="520" fill="none" stroke="#633806" stroke-width="2"/>
+  <rect x="24" y="24" width="752" height="512" fill="none" stroke="#1D9E75" stroke-width="0.5"/>
+  <rect x="0" y="0" width="800" height="72" fill="#633806"/>
+  <text x="400" y="36" text-anchor="middle" fill="#FAEEDA" font-size="11" letter-spacing="3">MODULE 3 REFERENCE CARD</text>
+  <text x="400" y="58" text-anchor="middle" fill="#FAEEDA" font-size="22" font-weight="bold">OKR Practitioner</text>
+  <text x="400" y="110" text-anchor="middle" fill="#2C2C2A" font-size="14" font-weight="bold">Writing Great OKRs — The Checklist</text>
+  <rect x="60" y="125" width="680" height="1" fill="#1D9E75"/>
+  <!-- Objective checklist -->
+  <text x="80" y="155" fill="#633806" font-size="11" font-weight="bold" letter-spacing="1">OBJECTIVE</text>
+  <circle cx="90" cy="175" r="6" fill="#E1F5EE" stroke="#1D9E75" stroke-width="1.5"/>
+  <text x="106" y="180" fill="#5F5E5A" font-size="11">Inspires the team — not a task or project name</text>
+  <circle cx="90" cy="200" r="6" fill="#E1F5EE" stroke="#1D9E75" stroke-width="1.5"/>
+  <text x="106" y="205" fill="#5F5E5A" font-size="11">Achievable in one quarter</text>
+  <circle cx="90" cy="225" r="6" fill="#E1F5EE" stroke="#1D9E75" stroke-width="1.5"/>
+  <text x="106" y="230" fill="#5F5E5A" font-size="11">No numbers (those belong in Key Results)</text>
+  <circle cx="90" cy="250" r="6" fill="#E1F5EE" stroke="#1D9E75" stroke-width="1.5"/>
+  <text x="106" y="255" fill="#5F5E5A" font-size="11">Passes the "so what?" test</text>
+  <!-- Key Results checklist -->
+  <text x="440" y="155" fill="#633806" font-size="11" font-weight="bold" letter-spacing="1">KEY RESULTS</text>
+  <circle cx="450" cy="175" r="6" fill="#FAEEDA" stroke="#633806" stroke-width="1.5"/>
+  <text x="466" y="180" fill="#5F5E5A" font-size="11">Specific and measurable — a number</text>
+  <circle cx="450" cy="200" r="6" fill="#FAEEDA" stroke="#633806" stroke-width="1.5"/>
+  <text x="466" y="205" fill="#5F5E5A" font-size="11">Outcome, not output or activity</text>
+  <circle cx="450" cy="225" r="6" fill="#FAEEDA" stroke="#633806" stroke-width="1.5"/>
+  <text x="466" y="230" fill="#5F5E5A" font-size="11">Between 3 and 5 per Objective</text>
+  <circle cx="450" cy="250" r="6" fill="#FAEEDA" stroke="#633806" stroke-width="1.5"/>
+  <text x="466" y="255" fill="#5F5E5A" font-size="11">Ambitious but achievable (0.7 target)</text>
+  <rect x="60" y="278" width="680" height="1" fill="#D3D1C7"/>
+  <text x="400" y="306" text-anchor="middle" fill="#2C2C2A" font-size="14" font-weight="bold">Common Mistakes to Avoid</text>
+  <rect x="60" y="320" width="200" height="76" rx="6" fill="#FCEBEB"/>
+  <text x="160" y="342" text-anchor="middle" fill="#A32D2D" font-size="10" font-weight="bold">SANDBAGGING</text>
+  <text x="160" y="362" text-anchor="middle" fill="#5F5E5A" font-size="10">Setting targets so low</text>
+  <text x="160" y="378" text-anchor="middle" fill="#5F5E5A" font-size="10">that 1.0 is guaranteed</text>
+  <text x="160" y="394" text-anchor="middle" fill="#A32D2D" font-size="10" font-style="italic">→ Raise the bar</text>
+  <rect x="300" y="320" width="200" height="76" rx="6" fill="#FCEBEB"/>
+  <text x="400" y="342" text-anchor="middle" fill="#A32D2D" font-size="10" font-weight="bold">TASK LISTS</text>
+  <text x="400" y="362" text-anchor="middle" fill="#5F5E5A" font-size="10">Key Results that describe</text>
+  <text x="400" y="378" text-anchor="middle" fill="#5F5E5A" font-size="10">activities, not outcomes</text>
+  <text x="400" y="394" text-anchor="middle" fill="#A32D2D" font-size="10" font-style="italic">→ Add a metric</text>
+  <rect x="540" y="320" width="200" height="76" rx="6" fill="#FCEBEB"/>
+  <text x="640" y="342" text-anchor="middle" fill="#A32D2D" font-size="10" font-weight="bold">TOO MANY OKRs</text>
+  <text x="640" y="362" text-anchor="middle" fill="#5F5E5A" font-size="10">More than 3 Objectives or</text>
+  <text x="640" y="378" text-anchor="middle" fill="#5F5E5A" font-size="10">5 Key Results each</text>
+  <text x="640" y="394" text-anchor="middle" fill="#A32D2D" font-size="10" font-style="italic">→ Focus ruthlessly</text>
+  <text x="400" y="445" text-anchor="middle" fill="#5F5E5A" font-size="11" font-style="italic">"OKRs are not a to-do list. They are a compass."</text>
+  <text x="400" y="490" text-anchor="middle" fill="#888780" font-size="9">OKR Foundations · subramaniampg.guru/academy · Embiggen Consulting LLP</text>
+</svg>

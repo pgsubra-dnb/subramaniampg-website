@@ -1,414 +1,344 @@
-import NavBar from '@/components/NavBar'
-import Footer from '@/components/Footer'
+import Link from 'next/link'
 
-const ArrowIcon = () => (
-  <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 shrink-0">
-    <path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06z" />
-  </svg>
-)
+export const metadata = {
+  title: 'Strategy Consulting | Growth Architecture Framework — PACE | Subramaniam P G',
+  description:
+    'The Growth Architecture Framework — PACE. Strategy consulting for founder-led and family businesses. Planning, Alignment, Cadence, and Execution.',
+}
 
-const CheckIcon = () => (
-  <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 shrink-0 mt-0.5" style={{ color: '#1D9E75' }}>
-    <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clipRule="evenodd" />
-  </svg>
-)
+const painQuotes = [
+  { text: 'I ask my leadership team what our top three priorities are and I get five different answers.' },
+  { text: 'We spend two days on a strategy offsite and by month two nothing has changed.' },
+  { text: 'Everything still comes back to me. I cannot step back without things falling apart.' },
+  { text: 'The consultant gave us a beautiful deck. It is sitting in a folder.' },
+]
 
-const Divider = () => (
-  <div className="w-full h-px" style={{ backgroundColor: '#E8E4DC' }} />
-)
-
-const DIMENSIONS = [
+const problems = [
   {
-    num: 1,
-    name: 'Direction',
-    color: '#FAEEDA',
-    textColor: '#633806',
-    subs: [
-      {
-        code: '1a',
-        name: 'Leadership and Purpose',
-        desc: 'Direction, behaviours, governance',
-        ref: 'Baldrige: Leadership / EFQM: Direction',
-      },
-      {
-        code: '1b',
-        name: 'Strategic Direction',
-        desc: 'Plan, positioning, priorities',
-        ref: 'Baldrige: Strategy / EFQM: Strategy',
-      },
-      {
-        code: '1c',
-        name: 'Customer and Stakeholder Focus',
-        desc: 'Insight, value, engagement',
-        ref: 'Baldrige: Customers / EFQM: Stakeholders',
-      },
-    ],
+    number: '01',
+    title: 'The plan that never moves',
+    body: 'Strategy lives in a document. The leadership team references it in January and forgets it by March. There is no rhythm connecting the plan to what people do on Monday morning.',
   },
   {
-    num: 2,
-    name: 'Execution',
-    color: '#E1F5EE',
-    textColor: '#0D6E4E',
-    subs: [
-      {
-        code: '2a',
-        name: 'People and Culture',
-        desc: 'Talent, roles, capability, culture',
-        ref: 'Baldrige: Workforce / EFQM: Culture',
-      },
-      {
-        code: '2b',
-        name: 'Operating Rhythm and Processes',
-        desc: 'Annual, quarterly, monthly, weekly cadence',
-        ref: 'Baldrige: Operations / EFQM: Performance',
-      },
-      {
-        code: '2c',
-        name: 'Measurement and Learning',
-        desc: 'KPIs, dashboards, organisational learning',
-        ref: 'Baldrige: Measurement / EFQM: Measurement',
-      },
-    ],
+    number: '02',
+    title: 'Alignment that is only skin deep',
+    body: 'Everyone agreed in the room. But agreement is not alignment. When each leader goes back to their function, they prioritise differently. The gaps compound quietly until they show up as missed targets and lost people.',
   },
   {
-    num: 3,
-    name: 'Results',
-    color: '#EEEDFE',
-    textColor: '#4F46E5',
-    subs: [
-      {
-        code: '3a',
-        name: 'Business Results',
-        desc: 'Financial performance, growth, sustainability',
-        ref: '',
-      },
-      {
-        code: '3b',
-        name: 'People Results',
-        desc: 'Workforce engagement, capability, retention',
-        ref: '',
-      },
-      {
-        code: '3c',
-        name: 'Customer Results',
-        desc: 'Customer satisfaction, loyalty, stakeholder confidence',
-        ref: '',
-      },
-      {
-        code: '3d',
-        name: 'Operational Results',
-        desc: 'Process efficiency, quality, innovation',
-        ref: '',
-      },
-    ],
+    number: '03',
+    title: 'The founder who cannot step back',
+    body: 'The organisation runs on one person\'s judgment and energy. This is not a leadership failure — it is a structural one. Until the strategy, the rhythm, and the accountability are built into the system, stepping back is not possible.',
   },
 ]
 
-const RHYTHM = [
+const pillars = [
   {
-    name: 'Annual alignment',
-    desc: 'One to two day offsite with the full leadership team. Sets direction, priorities, strategic moves, and accountability structure for the year.',
+    letter: 'P',
+    title: 'Planning',
+    body: 'A living direction — where the business is going, what winning looks like in 12 to 36 months, and the three to five things that must be true for that to happen. Not a deck. A working document the founder and leadership team own.',
   },
   {
-    name: 'Quarterly review',
-    desc: 'Half day working session. Reviews what was achieved, adjusts priorities, and resets the next 90 day plan.',
+    letter: 'A',
+    title: 'Alignment',
+    body: 'The leadership team pointed in the same direction — not just in the meeting but in what each leader prioritises when no one is watching. Surfaces the gaps between what was decided and what is actually happening, and closes them.',
   },
   {
-    name: 'Monthly pulse',
-    desc: 'Shorter working session. Tracks execution, removes blockers, and adjusts where needed.',
+    letter: 'C',
+    title: 'Cadence',
+    body: 'A meeting rhythm embedded into how the organisation operates — weekly, monthly, quarterly — that connects daily work to strategic direction. Fewer meetings, better meetings, each with a clear purpose and a clear output.',
   },
   {
-    name: 'Operating rhythm design',
-    desc: 'Help the team build their own weekly and fortnightly meeting cadence that keeps everyone aligned.',
+    letter: 'E',
+    title: 'Execution',
+    body: 'Decisions become actions. Actions have owners. Owners have accountability. Progress is visible without micromanagement. This is where most organisations break down — and where the engagement stays, not just advises.',
   },
 ]
 
-const WHAT_WE_WORK_ON = [
-  'Defining your core customer, brand promise, and competitive differentiation',
-  'Building a one-page strategic plan the leadership team can execute from',
-  'Connecting strategy to daily work through OKRs and KPIs',
-  'Designing the leadership team meeting and review rhythm',
-  'Identifying and removing the top constraints to growth',
-  'Succession planning and organisational structure for the next stage',
-  'Building a culture of accountability and continuous improvement',
+const levels = [
+  {
+    number: 'L1',
+    title: 'Reactive Organisation',
+    body: 'No planning beyond next month. Founder decides everything daily. The business responds to what arrives, not what it chose.',
+  },
+  {
+    number: 'L2',
+    title: 'Intuitive Direction',
+    body: 'Founder knows where the business is going but it lives in their head. The team operates on assumption. Alignment is accidental.',
+  },
+  {
+    number: 'L3',
+    title: 'Structured Intent',
+    body: 'An annual plan exists. The team knows the goals. But execution breaks down by quarter two and the plan lives in a document nobody has opened since January.',
+  },
+  {
+    number: 'L4',
+    title: 'Aligned Execution',
+    body: 'Strategy is shared. Leadership team owns their part. A review cadence exists but depends on the founder\'s energy to maintain.',
+  },
+  {
+    number: 'L5',
+    title: 'Growth Rhythm',
+    body: 'Strategy, execution, and review are embedded in how the organisation operates week to week. The founder is working on the business, not in it.',
+  },
 ]
 
-const WHO_FOR = [
-  'Founder-led companies scaling from 50 to 500 people',
-  'Family businesses professionalising their leadership structure',
-  'Leadership teams that feel misaligned or stuck in execution',
-  'Organisations preparing for a significant growth phase or transition',
+const differentiators = [
+  {
+    title: 'Tailored, not templated',
+    body: 'Every business gets a bespoke approach. The PACE framework is the thinking tool. What gets built from it is specific to your business, your leadership team, and your stage of growth.',
+  },
+  {
+    title: 'Embedded, not advisory',
+    body: 'The work does not end with a plan. The engagement stays through deployment — present in the review cadence, visible in the accountability structures, reachable when execution hits resistance.',
+  },
+  {
+    title: 'Outcome-oriented',
+    body: 'The measure of success is not a document or a workshop. It is whether the organisation is executing against its direction six months later. That is the standard the engagement is held to.',
+  },
+]
+
+const crossRefs = [
+  {
+    title: 'When OKRs come in',
+    body: 'OKRs are a Level 3 and above mechanism. Once your strategy is clear and your leadership team is broadly aligned, OKRs give you the focus and accountability structure to execute consistently.',
+    link: '/work/okr-consulting',
+    linkLabel: 'OKR Consulting',
+  },
+  {
+    title: 'When coaching comes in',
+    body: 'Sometimes the constraint is not the system — it is the person leading it. When the founder or a key leader is the bottleneck, executive coaching works alongside the strategy engagement.',
+    link: '/work/executive-coaching',
+    linkLabel: 'Executive Coaching',
+  },
+  {
+    title: 'Where to start',
+    body: 'Not sure which applies to your situation? The PACE Maturity Assessment takes ten minutes and gives you a clear starting point.',
+    link: '/work/strategy-consulting/assessment',
+    linkLabel: 'Take the Assessment',
+  },
 ]
 
 export default function StrategyConsultingPage() {
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#FAF8F5' }}>
-      <NavBar />
+    <main style={{ background: '#FAF8F5', color: '#2C2C2A', fontFamily: 'Inter, sans-serif' }}>
 
-      {/* ── Breadcrumb ───────────────────────────────────── */}
-      <div className="max-w-7xl mx-auto px-6 lg:px-10 pt-8">
-        <nav className="flex items-center gap-2 text-sm text-[#5F5E5A]">
-          <a href="/" className="hover:text-[#633806] transition-colors">Home</a>
-          <span className="text-[#2C2C2A]/30">/</span>
-          <a href="/work" className="hover:text-[#633806] transition-colors">Work</a>
-          <span className="text-[#2C2C2A]/30">/</span>
-          <span className="text-[#2C2C2A] font-medium">Strategy Consulting</span>
-        </nav>
+      {/* Breadcrumb */}
+      <div style={{ padding: '1rem 2rem', fontSize: '0.85rem', color: '#5F5E5A', maxWidth: '900px', margin: '0 auto' }}>
+        <Link href="/work" style={{ color: '#5F5E5A', textDecoration: 'none' }}>Work</Link>
+        <span style={{ margin: '0 0.5rem' }}>›</span>
+        <span>Strategy Consulting</span>
       </div>
 
-      {/* ── Hero ─────────────────────────────────────────── */}
-      <section className="max-w-7xl mx-auto px-6 lg:px-10 pt-10 pb-16 lg:pt-14 lg:pb-20 text-center">
-        <p className="section-label mb-6">STRATEGY CONSULTING</p>
-        <h1 className="font-lora text-4xl sm:text-5xl lg:text-[3.4rem] font-bold text-[#2C2C2A] leading-[1.12] tracking-tight mb-2">
-          From vision to execution — closing the gap
-        </h1>
-        <p className="text-sm italic mb-6" style={{ color: '#1D9E75' }}>Helping Leaders Grow. Helping Organisations Grow.</p>
-        <p className="text-lg text-[#5F5E5A] leading-relaxed max-w-2xl mx-auto mb-10">
-          Helping leadership teams build strategic clarity, alignment, and the operating rhythm
-          to turn plans into results.
+      {/* Hero */}
+      <section style={{ padding: '2.5rem 2rem 3rem', maxWidth: '900px', margin: '0 auto' }}>
+        <p style={{ fontSize: '0.8rem', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#1D9E75', marginBottom: '1rem' }}>
+          Strategy Consulting
         </p>
-        <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <a
-            href="/contact"
-            className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-[#633806] text-white font-medium rounded-lg hover:bg-[#633806]/90 transition-colors"
-          >
-            Let&apos;s talk strategy
-            <ArrowIcon />
-          </a>
-          <a
-            href="/work"
-            className="inline-flex items-center justify-center gap-2 px-8 py-4 border border-[#2C2C2A]/20 text-[#5F5E5A] font-medium rounded-lg hover:border-[#633806] hover:text-[#633806] transition-colors"
-          >
-            ← All services
-          </a>
+        <h1 style={{ fontFamily: 'Lora, serif', fontSize: 'clamp(1.75rem, 4vw, 3rem)', fontWeight: 700, lineHeight: 1.2, color: '#2C2C2A', marginBottom: '1.5rem', maxWidth: '720px' }}>
+          Most organisations do not have a strategy problem. They have an execution problem.
+        </h1>
+        <p style={{ fontSize: '1.05rem', lineHeight: 1.75, color: '#5F5E5A', maxWidth: '640px', marginBottom: '2rem' }}>
+          The plan exists. The leadership team nodded in the meeting. And by February, nothing has moved. The gap between what was decided and what actually happens is where growth dies. The Growth Architecture Framework — PACE — is built to close that gap.
+        </p>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          <Link href="https://cal.id/pgs" target="_blank" style={{
+            background: '#633806', color: '#fff', padding: '0.85rem 1.75rem',
+            borderRadius: '6px', textDecoration: 'none', fontWeight: 600, fontSize: '0.95rem',
+          }}>
+            Book a Discovery Call
+          </Link>
+          <Link href="/work/strategy-consulting/assessment" style={{
+            border: '1.5px solid #633806', color: '#633806', padding: '0.85rem 1.75rem',
+            borderRadius: '6px', textDecoration: 'none', fontWeight: 600, fontSize: '0.95rem',
+          }}>
+            Take the PACE Assessment
+          </Link>
         </div>
       </section>
 
-      <Divider />
-
-      {/* ── The problem ───────────────────────────────────── */}
-      <section className="py-16 lg:py-24" style={{ backgroundColor: '#FAF8F5' }}>
-        <div className="max-w-7xl mx-auto px-6 lg:px-10">
-          <div className="max-w-3xl mx-auto">
-            <p className="section-label mb-4">THE PROBLEM</p>
-            <h2 className="font-lora text-3xl lg:text-4xl font-bold text-[#2C2C2A] mb-6 leading-[1.15]">
-              Most leadership teams are not short on ambition. They are short on alignment.
-            </h2>
-            <p className="text-[#5F5E5A] leading-relaxed text-lg">
-              They have a vision. They have annual goals. But when you ask different members of the
-              leadership team what the top three priorities are this quarter, you get five different
-              answers. Strategy consulting with Subramaniam P G addresses the fundamental dimensions
-              that every growing organisation must get right — drawing from the Growth Excellence
-              Framework, a synthesis of the Malcolm Baldrige National Quality Award criteria, the
-              EFQM Excellence Model, and leading strategy execution research.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Growth Excellence Framework ───────────────────── */}
-      <section className="py-16 lg:py-24 bg-white">
-        <div className="max-w-7xl mx-auto px-6 lg:px-10">
-          <div className="text-center mb-4">
-            <p className="section-label mb-4">FRAMEWORK</p>
-            <h2 className="font-lora text-3xl lg:text-4xl font-bold text-[#2C2C2A] mb-3">
-              The Growth Excellence Framework
-            </h2>
-            <p className="text-[#5F5E5A] max-w-2xl mx-auto leading-relaxed mb-2">
-              A proprietary synthesis of Malcolm Baldrige, EFQM, and leading strategy execution research
-            </p>
-            <p className="text-xs text-[#5F5E5A]/60 max-w-2xl mx-auto leading-relaxed mb-12">
-              The Growth Excellence Framework draws inspiration from the Malcolm Baldrige National Quality
-              Award criteria, the EFQM Excellence Model, and leading strategy execution research.
-            </p>
-          </div>
-
-          <div className="space-y-6">
-            {DIMENSIONS.map((dim) => (
-              <div key={dim.num} className="rounded-2xl overflow-hidden border" style={{ borderColor: '#E8E4DC' }}>
-
-                {/* Dimension header — large number + prominent name */}
-                <div
-                  className="flex items-center gap-5 px-8 py-6"
-                  style={{ backgroundColor: dim.color }}
-                >
-                  <span
-                    className="font-lora font-bold leading-none select-none shrink-0"
-                    style={{ fontSize: '3.5rem', color: dim.textColor, opacity: 0.2, lineHeight: 1 }}
-                  >
-                    {dim.num}
-                  </span>
-                  <div>
-                    <p
-                      className="text-xs font-bold tracking-[0.15em] uppercase mb-0.5"
-                      style={{ color: dim.textColor, opacity: 0.6 }}
-                    >
-                      Dimension {dim.num}
-                    </p>
-                    <h3 className="font-lora text-2xl font-bold" style={{ color: dim.textColor }}>
-                      {dim.name}
-                    </h3>
-                  </div>
-                </div>
-
-                {/* Sub-dimensions as table rows */}
-                <div className="bg-white">
-                  {dim.subs.map((sub, subIdx) => (
-                    <div
-                      key={sub.code}
-                      className="flex items-start gap-6 px-8 py-5"
-                      style={{ borderTop: subIdx > 0 ? '1px solid #E8E4DC' : 'none' }}
-                    >
-                      {/* Code column */}
-                      <div className="w-10 shrink-0 pt-0.5">
-                        <span className="text-sm font-bold uppercase" style={{ color: dim.textColor }}>
-                          {sub.code.toUpperCase()}
-                        </span>
-                      </div>
-                      {/* Name + description */}
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-[#2C2C2A] text-base leading-snug mb-1">
-                          {sub.name}
-                        </p>
-                        <p className="text-[#5F5E5A] text-sm leading-relaxed">{sub.desc}</p>
-                      </div>
-                      {/* Baldrige / EFQM reference */}
-                      <div className="w-52 shrink-0 text-right hidden sm:block">
-                        {sub.ref && (
-                          <p className="text-xs leading-relaxed" style={{ color: '#5F5E5A99' }}>
-                            {sub.ref}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-              </div>
-            ))}
-          </div>
-
-          <p className="text-center text-sm text-[#5F5E5A]/60 italic mt-8 max-w-2xl mx-auto leading-relaxed">
-            Results inform Direction, creating a continuous improvement loop at the heart of the framework.
+      {/* Sound Familiar */}
+      <section style={{ background: '#FAEEDA', padding: '4rem 2rem' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+          <p style={{ fontSize: '0.8rem', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#633806', marginBottom: '2rem' }}>
+            What Founders Say
           </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
+            {painQuotes.map((q, i) => (
+              <div key={i} style={{ borderLeft: '4px solid #633806', background: '#fff', padding: '1.5rem', borderRadius: '0 8px 8px 0' }}>
+                <p style={{ fontSize: '0.95rem', lineHeight: 1.7, color: '#2C2C2A', margin: 0, fontStyle: 'italic' }}>
+                  &ldquo;{q.text}&rdquo;
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      <Divider />
-
-      {/* ── Engagement rhythm ─────────────────────────────── */}
-      <section className="py-16 lg:py-24" style={{ backgroundColor: '#FAF8F5' }}>
-        <div className="max-w-7xl mx-auto px-6 lg:px-10">
-          <div className="text-center mb-4">
-            <p className="section-label mb-4">HOW IT WORKS</p>
-            <h2 className="font-lora text-3xl lg:text-4xl font-bold text-[#2C2C2A] mb-6">
-              How the work happens
-            </h2>
-          </div>
-          <p className="text-[#5F5E5A] leading-relaxed max-w-3xl mx-auto text-center mb-12">
-            The work happens in focused working sessions with your leadership team. The output is not
-            a presentation or a report. It is a living plan your team owns and acts on.
+      {/* The Real Problem */}
+      <section style={{ padding: '4rem 2rem' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+          <p style={{ fontSize: '0.8rem', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#633806', marginBottom: '2rem' }}>
+            What Gets in the Way
           </p>
-          <div className="grid sm:grid-cols-2 gap-6 max-w-4xl mx-auto">
-            {RHYTHM.map((item, idx) => (
-              <div
-                key={item.name}
-                className="p-7 rounded-2xl bg-white border"
-                style={{ borderColor: '#E8E4DC' }}
-              >
-                <div className="flex items-start gap-4">
-                  <span
-                    className="font-lora text-4xl font-bold leading-none select-none shrink-0"
-                    style={{ color: '#63380618' }}
-                  >
-                    {String(idx + 1).padStart(2, '0')}
-                  </span>
-                  <div>
-                    <h3 className="font-semibold text-[#2C2C2A] mb-2">{item.name}</h3>
-                    <p className="text-[#5F5E5A] text-sm leading-relaxed">{item.desc}</p>
-                  </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.5rem' }}>
+            {problems.map((p) => (
+              <div key={p.number} style={{ background: '#fff', border: '1px solid #E8E4DC', borderRadius: '8px', padding: '2rem' }}>
+                <p style={{ fontFamily: 'Lora, serif', fontSize: '2.5rem', fontWeight: 700, color: '#FAEEDA', margin: '0 0 1rem', lineHeight: 1 }}>{p.number}</p>
+                <h3 style={{ fontFamily: 'Lora, serif', fontSize: '1.1rem', fontWeight: 700, color: '#2C2C2A', margin: '0 0 0.75rem' }}>{p.title}</h3>
+                <p style={{ fontSize: '0.95rem', lineHeight: 1.7, color: '#5F5E5A', margin: 0 }}>{p.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* PACE Framework */}
+      <section style={{ background: '#FAEEDA', padding: '4rem 2rem' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+          <p style={{ fontSize: '0.8rem', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#633806', marginBottom: '0.75rem' }}>
+            The Growth Architecture Framework
+          </p>
+          <h2 style={{ fontFamily: 'Lora, serif', fontSize: 'clamp(1.5rem, 3vw, 2rem)', fontWeight: 700, color: '#2C2C2A', marginBottom: '0.75rem' }}>
+            PACE is not a template. It is a tailored operating system for your business.
+          </h2>
+          <p style={{ fontSize: '1rem', lineHeight: 1.7, color: '#5F5E5A', marginBottom: '2.5rem', maxWidth: '640px' }}>
+            What works for a 500-person technology company does not work for an 80-person family business. PACE starts with understanding your business, your sector, your leadership team, and your constraints — then builds a system that fits.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem' }}>
+            {pillars.map((p) => (
+              <div key={p.letter} style={{ background: '#fff', borderRadius: '8px', padding: '1.75rem' }}>
+                <div style={{
+                  width: '44px', height: '44px', borderRadius: '50%',
+                  background: '#633806', color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontFamily: 'Lora, serif', fontWeight: 700, fontSize: '1.1rem',
+                  marginBottom: '1rem',
+                }}>
+                  {p.letter}
                 </div>
+                <h3 style={{ fontFamily: 'Lora, serif', fontSize: '1.05rem', fontWeight: 700, color: '#2C2C2A', margin: '0 0 0.6rem' }}>{p.title}</h3>
+                <p style={{ fontSize: '0.9rem', lineHeight: 1.7, color: '#5F5E5A', margin: 0 }}>{p.body}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── What we work on ───────────────────────────────── */}
-      <section className="py-16 lg:py-24 bg-white">
-        <div className="max-w-7xl mx-auto px-6 lg:px-10">
-          <div className="text-center mb-12">
-            <p className="section-label mb-4">SCOPE</p>
-            <h2 className="font-lora text-3xl lg:text-4xl font-bold text-[#2C2C2A]">
-              What we work on
-            </h2>
+      {/* Five Maturity Levels */}
+      <section style={{ padding: '4rem 2rem' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+          <p style={{ fontSize: '0.8rem', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#633806', marginBottom: '0.75rem' }}>
+            Five Levels of Strategy Maturity
+          </p>
+          <h2 style={{ fontFamily: 'Lora, serif', fontSize: 'clamp(1.5rem, 3vw, 2rem)', fontWeight: 700, color: '#2C2C2A', marginBottom: '0.75rem' }}>
+            Where are you on the strategy maturity curve?
+          </h2>
+          <p style={{ fontSize: '1rem', lineHeight: 1.7, color: '#5F5E5A', marginBottom: '2.5rem', maxWidth: '640px' }}>
+            Most organisations sit somewhere between having no shared direction and having a fully embedded growth rhythm. Understanding where you are is the starting point for knowing what to build next.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+            {levels.map((l, i) => (
+              <div key={i} style={{ background: '#fff', border: '1px solid #E8E4DC', borderRadius: '8px', padding: '1.5rem' }}>
+                <p style={{ fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.1em', color: '#633806', textTransform: 'uppercase', marginBottom: '0.5rem' }}>{l.number}</p>
+                <h3 style={{ fontFamily: 'Lora, serif', fontSize: '0.95rem', fontWeight: 700, color: '#2C2C2A', margin: '0 0 0.6rem' }}>{l.title}</h3>
+                <p style={{ fontSize: '0.85rem', lineHeight: 1.65, color: '#5F5E5A', margin: 0 }}>{l.body}</p>
+              </div>
+            ))}
           </div>
-          <div className="grid sm:grid-cols-2 gap-4 max-w-4xl mx-auto">
-            {WHAT_WE_WORK_ON.map((item) => (
-              <div key={item} className="flex items-start gap-3 p-5 rounded-xl border" style={{ borderColor: '#E8E4DC' }}>
-                <CheckIcon />
-                <span className="text-[#2C2C2A] text-sm leading-relaxed">{item}</span>
+          <Link href="/work/strategy-consulting/assessment" style={{
+            display: 'inline-block', background: '#633806', color: '#fff',
+            padding: '0.85rem 1.75rem', borderRadius: '6px',
+            textDecoration: 'none', fontWeight: 600, fontSize: '0.95rem',
+          }}>
+            Take the PACE Assessment
+          </Link>
+        </div>
+      </section>
+
+      {/* Who This Is For */}
+      <section style={{ background: '#FAEEDA', padding: '4rem 2rem' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+          <p style={{ fontSize: '0.8rem', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#633806', marginBottom: '2rem' }}>
+            Built For
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '2rem' }}>
+            <div style={{ background: '#fff', borderRadius: '8px', padding: '2rem' }}>
+              <h3 style={{ fontFamily: 'Lora, serif', fontSize: '1.15rem', fontWeight: 700, color: '#2C2C2A', margin: '0 0 1rem' }}>Founder-led companies</h3>
+              <p style={{ fontSize: '0.95rem', lineHeight: 1.75, color: '#5F5E5A', margin: 0 }}>
+                You built this business on your instincts and your energy. Now it has outgrown that. The team is capable but the system is not there yet. You need a way to lead the business that does not require you to be everywhere.
+              </p>
+            </div>
+            <div style={{ background: '#fff', borderRadius: '8px', padding: '2rem' }}>
+              <h3 style={{ fontFamily: 'Lora, serif', fontSize: '1.15rem', fontWeight: 700, color: '#2C2C2A', margin: '0 0 1rem' }}>Family businesses in transition</h3>
+              <p style={{ fontSize: '0.95rem', lineHeight: 1.75, color: '#5F5E5A', margin: 0 }}>
+                A second generation stepping in. An external leader brought in to professionalise. A business that has grown faster than its structures. These transitions expose every gap in strategy, alignment, and accountability — and they require a different kind of sensitivity to navigate.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* What Makes This Different */}
+      <section style={{ padding: '4rem 2rem' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+          <p style={{ fontSize: '0.8rem', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#633806', marginBottom: '2rem' }}>
+            Not Consulting As Usual
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
+            {differentiators.map((d, i) => (
+              <div key={i} style={{ background: '#fff', border: '1px solid #E8E4DC', borderRadius: '8px', padding: '1.75rem' }}>
+                <h3 style={{ fontFamily: 'Lora, serif', fontSize: '1.05rem', fontWeight: 700, color: '#2C2C2A', margin: '0 0 0.75rem' }}>{d.title}</h3>
+                <p style={{ fontSize: '0.95rem', lineHeight: 1.7, color: '#5F5E5A', margin: 0 }}>{d.body}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <Divider />
-
-      {/* ── Who this is for ───────────────────────────────── */}
-      <section className="py-16 lg:py-24" style={{ backgroundColor: '#FAF8F5' }}>
-        <div className="max-w-7xl mx-auto px-6 lg:px-10">
-          <div className="text-center mb-12">
-            <p className="section-label mb-4">FIT</p>
-            <h2 className="font-lora text-3xl lg:text-4xl font-bold text-[#2C2C2A]">
-              Who this is for
-            </h2>
-          </div>
-          <div className="grid sm:grid-cols-2 gap-6 max-w-4xl mx-auto">
-            {WHO_FOR.map((item) => (
-              <div
-                key={item}
-                className="flex items-start gap-4 p-6 rounded-2xl bg-white border"
-                style={{ borderColor: '#E8E4DC' }}
-              >
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5"
-                  style={{ backgroundColor: '#FAEEDA' }}
-                >
-                  <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" style={{ color: '#633806' }}>
-                    <path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <p className="text-[#2C2C2A] text-sm leading-relaxed">{item}</p>
+      {/* Cross Reference */}
+      <section style={{ background: '#FAEEDA', padding: '4rem 2rem' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+          <p style={{ fontSize: '0.8rem', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#633806', marginBottom: '2rem' }}>
+            Strategy, OKRs, and Coaching Work Together
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
+            {crossRefs.map((c, i) => (
+              <div key={i} style={{ background: '#fff', borderRadius: '8px', padding: '1.75rem' }}>
+                <h3 style={{ fontFamily: 'Lora, serif', fontSize: '1.05rem', fontWeight: 700, color: '#2C2C2A', margin: '0 0 0.75rem' }}>{c.title}</h3>
+                <p style={{ fontSize: '0.9rem', lineHeight: 1.7, color: '#5F5E5A', marginBottom: '1.25rem' }}>{c.body}</p>
+                <Link href={c.link} style={{ color: '#633806', fontWeight: 600, fontSize: '0.9rem', textDecoration: 'none' }}>
+                  {c.linkLabel} →
+                </Link>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── CTA ──────────────────────────────────────────── */}
-      <section className="py-14 lg:py-20" style={{ backgroundColor: '#633806' }}>
-        <div className="max-w-7xl mx-auto px-6 lg:px-10">
-          <div className="max-w-2xl mx-auto text-center">
-            <h2 className="font-lora text-3xl lg:text-4xl font-bold text-white mb-4">
-              Ready to align your team around what matters most?
-            </h2>
-            <p className="text-white/70 leading-relaxed mb-8">
-              Start with a conversation about where you are and where you want to go.
-            </p>
-            <a
-              href="/contact"
-              className="inline-flex items-center gap-2 px-8 py-4 border-2 border-white text-white font-medium rounded-lg hover:bg-white hover:text-[#633806] transition-colors"
-            >
-              Let&apos;s talk strategy
-              <ArrowIcon />
-            </a>
+      {/* Dark CTA */}
+      <section style={{ background: '#2C2C2A', padding: '4rem 2rem' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+          <h2 style={{ fontFamily: 'Lora, serif', fontSize: '1.75rem', fontWeight: 700, color: '#fff', marginBottom: '2rem' }}>
+            Ready to start?
+          </h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem' }}>
+            {[
+              { title: 'Take the PACE Assessment', body: 'Find your maturity level and your most important next step.', link: '/work/strategy-consulting/assessment', label: 'Start the assessment' },
+              { title: 'Read about the approach', body: 'Understand how the work unfolds before you decide.', link: '/work/strategy-consulting/approach', label: 'See the approach' },
+              { title: 'Book a discovery call', body: '30 minutes. No commitment required.', link: 'https://cal.id/pgs', label: 'Book a call', external: true },
+            ].map((c, i) => (
+              <div key={i} style={{ background: '#3a3a38', borderRadius: '8px', padding: '1.75rem' }}>
+                <h3 style={{ fontFamily: 'Lora, serif', fontSize: '1.05rem', fontWeight: 700, color: '#fff', margin: '0 0 0.6rem' }}>{c.title}</h3>
+                <p style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.6)', lineHeight: 1.6, marginBottom: '1.25rem' }}>{c.body}</p>
+                <Link href={c.link} target={c.external ? '_blank' : undefined} style={{ color: '#1D9E75', fontWeight: 600, fontSize: '0.9rem', textDecoration: 'none' }}>
+                  {c.label} →
+                </Link>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
-      <Footer />
-    </div>
+    </main>
   )
 }

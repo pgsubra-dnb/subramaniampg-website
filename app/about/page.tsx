@@ -2,24 +2,46 @@ import Image from 'next/image'
 import Link from 'next/link'
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
-import { CAREER_DATA } from '@/lib/careerData'
+import { client } from '@/lib/sanity'
+
+type SanityCareerEntry = {
+  _id: string
+  slug: string
+  role: string
+  organisation: string
+  city: string
+  startDate: string
+  endDate?: string
+  isCurrent: boolean
+  order: number
+}
+
+function formatPeriod(entry: SanityCareerEntry): string {
+  return `${entry.startDate} – ${entry.isCurrent ? 'Present' : (entry.endDate ?? '')}`
+}
+
+const FALLBACK_CAREER: SanityCareerEntry[] = [
+  {
+    _id: 'f1', slug: 'embiggen-consulting', order: 1,
+    role: 'Chief Growth Enabler', organisation: 'Embiggen Consulting LLP', city: 'Chennai',
+    startDate: 'Jul 2023', isCurrent: true,
+  },
+  {
+    _id: 'f2', slug: 'enerji-amnet', order: 2,
+    role: 'Director', organisation: 'Enerji Systems Pvt Ltd / Amnet Systems Pvt Ltd / We Are Amnet', city: 'Chennai',
+    startDate: 'Mar 2022', isCurrent: true,
+  },
+  {
+    _id: 'f3', slug: 'amnet-coo', order: 3,
+    role: 'Chief Operating Officer', organisation: 'Amnet Systems / Habiliss', city: 'Chennai',
+    startDate: 'Oct 2015', endDate: 'Jun 2023', isCurrent: false,
+  },
+]
 
 const EDUCATION = [
-  {
-    institution: 'IIT BHU Varanasi',
-    qualification: 'B Tech, Chemical Engineering',
-    period: '1982 – 1986',
-  },
-  {
-    institution: 'Kendriya Vidyalaya',
-    qualification: 'Plus 2',
-    period: '1979 – 1981',
-  },
-  {
-    institution: 'Sainik School Tillaiya',
-    qualification: 'Class 10',
-    period: '1973 – 1978',
-  },
+  { institution: 'IIT BHU Varanasi', qualification: 'B Tech, Chemical Engineering', period: '1982 – 1986' },
+  { institution: 'Kendriya Vidyalaya', qualification: 'Plus 2', period: '1979 – 1981' },
+  { institution: 'Sainik School Tillaiya', qualification: 'Class 10', period: '1973 – 1978' },
 ]
 
 const CERTIFICATIONS = [
@@ -42,7 +64,30 @@ const Divider = () => (
   <div className="w-full h-px" style={{ backgroundColor: '#E8E4DC' }} />
 )
 
-export default function AboutPage() {
+export default async function AboutPage() {
+  let careerData: SanityCareerEntry[] = []
+
+  try {
+    const fetched: SanityCareerEntry[] = await client.fetch(
+      `*[_type == "careerEntry"] | order(order asc) {
+        _id,
+        "slug": slug.current,
+        role,
+        organisation,
+        city,
+        startDate,
+        endDate,
+        isCurrent,
+        order
+      }`,
+      {},
+      { next: { revalidate: 3600 } }
+    )
+    careerData = fetched.length > 0 ? fetched : FALLBACK_CAREER
+  } catch {
+    careerData = FALLBACK_CAREER
+  }
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#FAF8F5' }}>
       <NavBar />
@@ -173,23 +218,23 @@ export default function AboutPage() {
                 />
 
                 <ol className="space-y-6">
-                  {CAREER_DATA.map(({ slug, role, company, city, period }) => (
-                    <li key={slug} className="relative pl-10">
+                  {careerData.map((entry) => (
+                    <li key={entry._id} className="relative pl-10">
                       <div
                         className="absolute left-0 top-1.5 w-3.5 h-3.5 rounded-full border-2 border-[#633806] bg-white"
                       />
                       <p className="text-xs font-semibold tracking-widest uppercase text-[#1D9E75] mb-0.5">
-                        {period}
+                        {formatPeriod(entry)}
                       </p>
                       <h3 className="font-lora text-lg font-semibold text-[#2C2C2A] mb-0.5">
-                        {role}
+                        {entry.role}
                       </h3>
-                      <p className="text-sm font-medium text-[#633806] mb-0.5">{company}</p>
-                      {city && (
-                        <p className="text-xs text-[#888780] mb-1.5">{city}</p>
+                      <p className="text-sm font-medium text-[#633806] mb-0.5">{entry.organisation}</p>
+                      {entry.city && (
+                        <p className="text-xs text-[#888780] mb-1.5">{entry.city}</p>
                       )}
                       <Link
-                        href={`/about/career/${slug}`}
+                        href={`/about/career/${entry.slug}`}
                         className="inline-flex items-center gap-1 text-xs font-semibold transition-all hover:gap-1.5"
                         style={{ color: '#633806' }}
                       >

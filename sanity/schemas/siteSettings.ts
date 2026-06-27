@@ -7,23 +7,27 @@ export default defineType({
   fields: [
     defineField({
       name: 'yearsExperience',
-      title: 'Years of Experience',
-      type: 'number',
+      title: 'Years Experience',
+      type: 'string',
+      description: 'e.g. 40+',
     }),
     defineField({
       name: 'booksPublished',
       title: 'Books Published',
-      type: 'number',
+      type: 'string',
+      description: 'e.g. 7',
     }),
     defineField({
       name: 'articlesWritten',
       title: 'Articles Written',
-      type: 'number',
+      type: 'string',
+      description: 'e.g. 182',
     }),
     defineField({
       name: 'leadersCoached',
       title: 'Leaders Coached',
-      type: 'number',
+      type: 'string',
+      description: 'e.g. 100+',
     }),
     defineField({
       name: 'motionBookingUrl',

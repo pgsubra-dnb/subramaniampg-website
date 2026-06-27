@@ -3,18 +3,11 @@ import Image from 'next/image'
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
 import WhatLeadersSay from '@/components/WhatLeadersSay'
-import { getLatestPosts, getTestimonials, formatPostDate } from '@/lib/sanity'
+import { getLatestPosts, getTestimonials, formatPostDate, client } from '@/lib/sanity'
 import { getPlaylistVideos } from '@/lib/getPlaylistVideos'
 import { BOOKS } from '@/lib/books-data'
 
 export const revalidate = 3600
-
-const STATS = [
-  { value: '40+',  label: 'Years Experience' },
-  { value: '7',    label: 'Books Published' },
-  { value: '182',  label: 'Articles Written' },
-  { value: '100+', label: 'Leaders Coached' },
-]
 
 const SERVICES = [
   {
@@ -113,11 +106,19 @@ const RESOURCES = [
 ]
 
 export default async function HomePage() {
-  const [latestPosts, videos, sanityTestimonials] = await Promise.all([
+  const [latestPosts, videos, sanityTestimonials, siteSettings] = await Promise.all([
     getLatestPosts(3),
     getPlaylistVideos(),
     getTestimonials(),
+    client.fetch(`*[_type == "siteSettings"][0]{yearsExperience,booksPublished,articlesWritten,leadersCoached}`),
   ])
+
+  const STATS = [
+    { value: siteSettings?.yearsExperience || '40+', label: 'Years Experience' },
+    { value: siteSettings?.booksPublished   || '7',   label: 'Books Published' },
+    { value: siteSettings?.articlesWritten  || '182', label: 'Articles Written' },
+    { value: siteSettings?.leadersCoached   || '100+',label: 'Leaders Coached' },
+  ]
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--brand-bg)' }}>
       <NavBar />
