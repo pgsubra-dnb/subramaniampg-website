@@ -123,6 +123,7 @@ export default function DashboardPage() {
                   {showFeedback === course._id && (
                     <FeedbackForm courseId={course._id} onDone={() => setShowFeedback(null)} />
                   )}
+                </div>
               ) : (
                 <Link href={`/academy/${course.slug?.current}`}
                   className="inline-block text-sm px-6 py-2 rounded font-medium"
