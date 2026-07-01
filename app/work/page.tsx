@@ -2,6 +2,18 @@ import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
 import TestimonialsCarousel from '@/components/TestimonialsCarousel'
 
+export const metadata = {
+  title: 'Work with Subramaniam P G — OKR Consulting, Executive Coaching & Strategy',
+  description:
+    'Three focused engagements: OKR consulting, executive coaching, and strategy consulting. Subramaniam P G works with founders, CXOs, and leadership teams across India and Asia.',
+  alternates: { canonical: 'https://www.subramaniampg.guru/work' },
+  openGraph: {
+    title: 'Work with Subramaniam P G',
+    description: 'OKR consulting, executive coaching, and strategy for founders and CXOs.',
+    url: 'https://www.subramaniampg.guru/work',
+  },
+}
+
 const SERVICES = [
   {
     bg: '#FAF8F5' as const,

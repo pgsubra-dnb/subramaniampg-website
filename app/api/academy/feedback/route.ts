@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
     }
 
-    const { courseId, starRating, mostUseful, wouldRecommend, advancedInterest } = await req.json()
+    const { courseId, courseSlug, starRating, mostUseful, wouldRecommend, advancedInterest } = await req.json()
 
     const learner = await sanityClient.getDocument(sessionId)
     if (!learner) {
@@ -32,10 +32,14 @@ export async function POST(req: NextRequest) {
       await sanityClient.patch(sessionId).set({ advancedCourseInterest: true }).commit()
     }
 
+    // Derive course-generic Brevo attribute prefix from slug
+    // e.g. "okr-foundations" → "OKR_FOUNDATIONS", "raci-decoded" → "RACI_DECODED"
+    const prefix = (courseSlug || 'course').toUpperCase().replace(/-/g, '_')
+
     await upsertBrevoContact(learner.email, {
-      OKR_FOUNDATIONS_FEEDBACK: 'true',
-      OKR_ADVANCED_INTEREST: advancedInterest === 'yes' ? 'true' : 'false',
-      OKR_STAR_RATING: String(starRating),
+      [`${prefix}_FEEDBACK`]: 'true',
+      [`${prefix}_ADVANCED_INTEREST`]: advancedInterest === 'yes' ? 'true' : 'false',
+      [`${prefix}_STAR_RATING`]: String(starRating),
     })
 
     return NextResponse.json({ success: true })

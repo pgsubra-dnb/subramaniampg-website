@@ -4,6 +4,18 @@ import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
 import { client } from '@/lib/sanity'
 
+export const metadata = {
+  title: 'About Subramaniam P G — OKR Coach, Executive Coach & Author',
+  description:
+    'Learn about Subramaniam P G — certified OKR coach, executive coach, and author of 7 books. 40+ years helping leaders and organisations grow across India and Asia.',
+  alternates: { canonical: 'https://www.subramaniampg.guru/about' },
+  openGraph: {
+    title: 'About Subramaniam P G',
+    description: 'Certified OKR coach, executive coach, and author with 40+ years of experience in leadership and strategy.',
+    url: 'https://www.subramaniampg.guru/about',
+  },
+}
+
 type SanityCareerEntry = {
   _id: string
   slug: string

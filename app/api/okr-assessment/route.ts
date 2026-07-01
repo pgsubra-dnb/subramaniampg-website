@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 
+const BASE = 'https://api.brevo.com/v3'
+
+const LEVEL_NAMES: Record<number, string> = {
+  1: 'Level 1 — Founder-Dependent Execution',
+  2: 'Level 2 — Functional Silos',
+  3: 'Level 3 — Structured Alignment',
+  4: 'Level 4 — Disciplined Execution',
+  5: 'Level 5 — Institutionalised Growth',
+}
+
 const levelEmails: Record<number, { subject: string; text: (name: string) => string }> = {
   1: {
     subject: 'Your OKR Readiness result — and what it means for you',
@@ -144,6 +154,21 @@ pgs@embiggen.co.in`,
   },
 }
 
+async function ensureAttributes(apiKey: string) {
+  const attrs = ['OKR_ASSESSMENT_LEVEL', 'OKR_ASSESSMENT_DATE', 'OKR_ASSESSMENT_ORGANISATION']
+  await Promise.all(attrs.map(name =>
+    fetch(`${BASE}/contacts/attributes/normal/${name}`, {
+      method: 'POST',
+      headers: { 'api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'text' }),
+    }).catch(() => {})
+  ))
+}
+
+function formatDate(d: Date): string {
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+}
+
 export async function POST(req: NextRequest) {
   try {
     const data = await req.json()
@@ -160,6 +185,21 @@ export async function POST(req: NextRequest) {
       htmlContent: textContent.replace(/\n/g, '<br>'),
       textContent,
     })
+
+    const apiKey = process.env.BREVO_API_KEY ?? ''
+    await ensureAttributes(apiKey)
+    const attributes: Record<string, string> = {
+      OKR_ASSESSMENT_LEVEL: LEVEL_NAMES[level] ?? String(level),
+      OKR_ASSESSMENT_DATE: formatDate(new Date()),
+    }
+    if (data.organisation) attributes.OKR_ASSESSMENT_ORGANISATION = data.organisation
+
+    await fetch(`${BASE}/contacts`, {
+      method: 'POST',
+      headers: { 'api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: data.email, attributes, updateEnabled: true }),
+    })
+
     return NextResponse.json({ status: 'ok' })
   } catch (err) {
     console.error('OKR assessment API error:', err)

@@ -5,6 +5,18 @@ import { getPosts } from '@/lib/sanity'
 
 export const revalidate = 3600
 
+export const metadata = {
+  title: 'Blog — Leadership, OKR & Ancient Wisdom',
+  description:
+    'Weekly articles by Subramaniam P G on leadership, OKR implementation, strategy, and the timeless wisdom of Indian philosophy. 180+ articles published.',
+  alternates: { canonical: 'https://www.subramaniampg.guru/blog' },
+  openGraph: {
+    title: 'Blog — Leadership, OKR & Ancient Wisdom | Subramaniam P G',
+    description: 'Weekly insights on leadership, OKR, and ancient wisdom by Subramaniam P G.',
+    url: 'https://www.subramaniampg.guru/blog',
+  },
+}
+
 export default async function BlogPage() {
   const posts = await getPosts()
 

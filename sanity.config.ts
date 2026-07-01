@@ -17,6 +17,12 @@ import learnerRecord from './sanity/schemas/learnerRecord'
 import certificateRecord from './sanity/schemas/certificateRecord'
 import feedbackRecord from './sanity/schemas/feedbackRecord'
 import magicToken from './sanity/schemas/magicToken'
+import faq from './sanity/schemas/faq'
+import coupon from './sanity/schemas/coupon'
+import assignment from './sanity/schemas/assignment'
+import assignmentSubmission from './sanity/schemas/assignmentSubmission'
+import bookingLink from './sanity/schemas/bookingLink'
+import bookingPurchase from './sanity/schemas/bookingPurchase'
 
 export default defineConfig({
   name: 'default',
@@ -46,6 +52,12 @@ export default defineConfig({
       certificateRecord,
       feedbackRecord,
       magicToken,
+      faq,
+      coupon,
+      assignment,
+      assignmentSubmission,
+      bookingLink,
+      bookingPurchase,
     ],
   },
 })

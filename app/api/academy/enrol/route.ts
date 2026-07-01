@@ -1,9 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getLearnerByEmail, createLearnerRecord, sendBrevoEmail, upsertBrevoContact, sanityClient } from '@/lib/academy'
+import { getLearnerByEmail, createLearnerRecord, sendBrevoEmail, sanityClient } from '@/lib/academy'
+
+const BASE = 'https://api.brevo.com/v3'
+
+async function getExistingEnrolledCourses(apiKey: string, email: string): Promise<string> {
+  try {
+    const res = await fetch(`${BASE}/contacts/${encodeURIComponent(email)}`, {
+      headers: { 'api-key': apiKey },
+    })
+    if (!res.ok) return ''
+    const data = await res.json() as { attributes?: Record<string, unknown> }
+    return (data.attributes?.ENROLLED_COURSE as string) ?? ''
+  } catch {
+    return ''
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const { name, email, company, courseId, courseSlug } = await req.json()
+    const { name, email, company, courseId, courseSlug, courseTitle } = await req.json()
 
     if (!name || !email || !courseId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -24,21 +39,39 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    await upsertBrevoContact(email, {
-      FIRSTNAME: name.split(' ')[0],
-      LASTNAME: name.split(' ').slice(1).join(' '),
-      COMPANY: company,
-      ACADEMY_ENROLLED: 'true',
-      ENROLLED_COURSE: courseSlug,
+    const apiKey = process.env.BREVO_API_KEY ?? ''
+
+    // Build additive ENROLLED_COURSE list — never overwrite an existing course slug
+    const existing = await getExistingEnrolledCourses(apiKey, email)
+    const existingCourses = existing ? existing.split(',').map(s => s.trim()).filter(Boolean) : []
+    if (!existingCourses.includes(courseSlug)) {
+      existingCourses.push(courseSlug)
+    }
+    const enrolledCourseValue = existingCourses.join(', ')
+
+    await fetch(`${BASE}/contacts`, {
+      method: 'POST',
+      headers: { 'api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email,
+        attributes: {
+          FIRSTNAME: name.split(' ')[0],
+          LASTNAME: name.split(' ').slice(1).join(' '),
+          COMPANY: company,
+          ACADEMY_ENROLLED: 'true',
+          ENROLLED_COURSE: enrolledCourseValue,
+        },
+        updateEnabled: true,
+      }),
     })
 
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://subramaniampg.guru'
     await sendBrevoEmail(
       email,
-      'Welcome to OKR Foundations — You are enrolled',
+      `Welcome to ${courseTitle} — You are enrolled`,
       `
         <p>Hi ${name},</p>
-        <p>You are now enrolled in <strong>OKR Foundations</strong>.</p>
+        <p>You are now enrolled in <strong>${courseTitle}</strong>.</p>
         <p>Start learning here: <a href="${siteUrl}/academy/${courseSlug}">${siteUrl}/academy/${courseSlug}</a></p>
         <p>If you ever need to return to the course, just visit that link and enter your email to get a login link.</p>
         <p>Subramaniam P G<br>Growth Architect and Executive Coach<br>Embiggen Consulting LLP</p>

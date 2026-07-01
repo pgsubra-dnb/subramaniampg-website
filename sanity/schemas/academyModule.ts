@@ -45,6 +45,19 @@ export default defineType({
         preview: { select: { title: 'questionText', subtitle: 'correctAnswer' } },
       }],
     }),
+    defineField({
+      name: 'assignmentBank',
+      title: 'Assignment Bank',
+      type: 'array',
+      of: [{ type: 'reference', to: [{ type: 'assignment' }] }],
+      description: 'Pool of assignments for this module. One is selected at random per learner.',
+    }),
+    defineField({
+      name: 'infographicAsset',
+      title: 'Module Infographic PDF',
+      type: 'file',
+      description: 'The generated or uploaded infographic PDF for this module.',
+    }),
   ],
   preview: {
     select: { title: 'title', media: 'badgeImage' },

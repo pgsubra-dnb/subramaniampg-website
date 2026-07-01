@@ -2,6 +2,13 @@ import Link from 'next/link'
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
 
+export const metadata = {
+  title: 'OKR Maturity Framework — 5 Levels of Execution | Subramaniam P G',
+  description:
+    'The five-level OKR Maturity Framework used to diagnose where an organisation stands and design the right OKR implementation path.',
+  alternates: { canonical: 'https://www.subramaniampg.guru/work/okr-consulting/framework' },
+}
+
 const LEVELS = [
   {
     num: 1,

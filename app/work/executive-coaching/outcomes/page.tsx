@@ -5,6 +5,7 @@ import Footer from '@/components/Footer'
 export const metadata = {
   title: 'Coaching Outcomes | Executive Coaching | Subramaniam P G',
   description: 'Real outcomes from real executive coaching engagements. No names. Verified results.',
+  alternates: { canonical: 'https://www.subramaniampg.guru/work/executive-coaching/outcomes' },
 }
 
 const stories = [

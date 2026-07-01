@@ -1,9 +1,32 @@
 import Link from 'next/link'
 
+const BASE = 'https://www.subramaniampg.guru'
+
 export const metadata = {
-  title: 'Strategy Consulting | Growth Architecture Framework — PACE | Subramaniam P G',
+  title: 'Strategy Consulting India | PACE Growth Architecture | Subramaniam P G',
   description:
-    'The Growth Architecture Framework — PACE. Strategy consulting for founder-led and family businesses. Planning, Alignment, Cadence, and Execution.',
+    'Strategy consulting for founder-led and family businesses in India. The PACE Growth Architecture Framework — Planning, Alignment, Cadence, and Execution.',
+  alternates: { canonical: `${BASE}/work/strategy-consulting` },
+  openGraph: {
+    title: 'Strategy Consulting | Subramaniam P G',
+    description: 'The PACE Growth Architecture Framework. Strategy consulting for founder-led businesses across India.',
+    url: `${BASE}/work/strategy-consulting`,
+  },
+}
+
+const serviceJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Service',
+  name: 'Strategy Consulting',
+  description:
+    'Strategy consulting using the PACE Growth Architecture Framework — Planning, Alignment, Cadence, and Execution. For founder-led and family businesses.',
+  provider: {
+    '@type': 'Person',
+    name: 'Subramaniam P G',
+    url: BASE,
+  },
+  areaServed: { '@type': 'Country', name: 'India' },
+  url: `${BASE}/work/strategy-consulting`,
 }
 
 const painQuotes = [
@@ -121,6 +144,7 @@ const crossRefs = [
 export default function StrategyConsultingPage() {
   return (
     <main style={{ background: '#FAF8F5', color: '#2C2C2A', fontFamily: 'Inter, sans-serif' }}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceJsonLd) }} />
 
       {/* Breadcrumb */}
       <div style={{ padding: '1rem 2rem', fontSize: '0.85rem', color: '#5F5E5A', maxWidth: '900px', margin: '0 auto' }}>

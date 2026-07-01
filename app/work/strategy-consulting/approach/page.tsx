@@ -4,6 +4,7 @@ export const metadata = {
   title: 'The PACE Approach | Strategy Consulting | Subramaniam P G',
   description:
     'How the Growth Architecture Framework — PACE — is deployed. A tailored, embedded engagement that stays through execution, not just planning.',
+  alternates: { canonical: 'https://www.subramaniampg.guru/work/strategy-consulting/approach' },
 }
 
 const stages = [

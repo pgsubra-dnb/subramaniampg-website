@@ -2,6 +2,13 @@ import Link from 'next/link'
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
 
+export const metadata = {
+  title: 'How OKR Consulting Works — Discover, Design, Deploy | Subramaniam P G',
+  description:
+    'The three-stage OKR consulting engagement model: Discover, Design, Deploy. How Subramaniam P G works with leadership teams to implement OKRs that stick.',
+  alternates: { canonical: 'https://www.subramaniampg.guru/work/okr-consulting/how-we-work' },
+}
+
 const CheckCircle = () => (
   <div
     className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"

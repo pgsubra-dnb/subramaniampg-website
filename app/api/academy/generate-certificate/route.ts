@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sanityClient, generateCertificateId, sendBrevoEmail, upsertBrevoContact } from '@/lib/academy'
 
+// Derives a short code for the certificate ID from the course slug
+// e.g. "okr-foundations" → "OKR-F", "raci-decoded" → "RACI-D"
+function slugToCode(slug: string): string {
+  const parts = slug.toUpperCase().split('-')
+  if (parts.length === 1) return parts[0].slice(0, 4)
+  return parts[0] + '-' + parts[1].charAt(0)
+}
+
 export async function POST(req: NextRequest) {
   try {
     const sessionId = req.cookies.get('academy_session')?.value
@@ -15,6 +23,7 @@ export async function POST(req: NextRequest) {
       sanityClient.fetch(
         `*[_type == 'course' && _id == $courseId][0]{
           _id, title, descriptionLine,
+          slug { current },
           badgeImage { asset -> { url } }
         }`,
         { courseId }
@@ -33,7 +42,9 @@ export async function POST(req: NextRequest) {
     let certRecord = existing
 
     if (!existing) {
-      const certId = generateCertificateId('OKR-F')
+      const courseSlug = course.slug?.current || 'course'
+      const certCode = slugToCode(courseSlug)
+      const certId = generateCertificateId(certCode)
 
       certRecord = await sanityClient.create({
         _type: 'certificateRecord',
@@ -51,22 +62,24 @@ export async function POST(req: NextRequest) {
         .append('certificateRefs', [{ _type: 'reference', _ref: certRecord._id }])
         .commit()
 
+      // Course-generic Brevo attributes
+      const prefix = courseSlug.toUpperCase().replace(/-/g, '_')
       await upsertBrevoContact(learner.email, {
-        OKR_FOUNDATIONS_CERTIFIED: 'true',
-        OKR_FOUNDATIONS_CERT_ID: certId,
-        OKR_FOUNDATIONS_DATE: new Date().toISOString().split('T')[0],
+        [`${prefix}_CERTIFIED`]: 'true',
+        [`${prefix}_CERT_ID`]: certId,
+        [`${prefix}_CERT_DATE`]: new Date().toISOString().split('T')[0],
       })
 
       const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://subramaniampg.guru'
       await sendBrevoEmail(
         learner.email,
-        `Congratulations ${learner.name} — Your OKR Foundations certificate`,
+        `Congratulations ${learner.name} — Your ${course.title} certificate`,
         `
           <p>Hi ${learner.name},</p>
-          <p>Congratulations on completing <strong>OKR Foundations</strong>.</p>
+          <p>Congratulations on completing <strong>${course.title}</strong>.</p>
           <p>Your certificate ID is: <strong>${certId}</strong></p>
           <p>Download your certificate here: <a href="${siteUrl}/academy/dashboard">Visit your dashboard</a></p>
-          <p>You can verify this certificate anytime using your certificate ID at ${siteUrl}/academy/verify-certificate</p>
+          <p>You can verify this certificate anytime using your certificate ID.</p>
           <p>Subramaniam P G<br>Growth Architect and Executive Coach<br>Embiggen Consulting LLP</p>
         `
       )

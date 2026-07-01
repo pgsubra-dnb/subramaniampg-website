@@ -1,5 +1,14 @@
 'use client'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+
+function shuffleArray<T>(array: T[]): T[] {
+  const shuffled = [...array]
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+  }
+  return shuffled
+}
 
 interface Props {
   type: string
@@ -16,14 +25,24 @@ interface InteractiveData {
   explanation?: string
 }
 
+function parseContent(content: string): InteractiveData | null {
+  try { return JSON.parse(content) } catch { return null }
+}
+
 export default function InteractiveElement({ type, content, onComplete }: Props) {
   const [answered, setAnswered] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
   const [reflection, setReflection] = useState('')
   const [reflectionSent, setReflectionSent] = useState(false)
 
-  let data: InteractiveData = {}
-  try { data = JSON.parse(content) } catch { return null }
+  const data = parseContent(content)
+
+  const shuffledOptions = useMemo(() => {
+    if (!data?.options || type !== 'sort') return data?.options
+    return shuffleArray(data.options)
+  }, [data?.question, data?.options, type])
+
+  if (!data) return null
 
   const boxStyle = {
     background: '#E1F5EE',
@@ -113,7 +132,7 @@ export default function InteractiveElement({ type, content, onComplete }: Props)
         ))}
       </div>
       <div className="space-y-2">
-        {data.options?.map((opt, i) => {
+        {shuffledOptions?.map((opt, i) => {
           const isCorrect = opt.value === data.correctAnswer
           const isSelected = selected === opt.value
           const lines = opt.label.split(/\n|—/).map((l: string) => l.trim()).filter(Boolean)

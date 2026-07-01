@@ -1,6 +1,6 @@
 import Link from 'next/link'
 
-const FOOTER_LINKS = ['About', 'Work', 'Books', 'Academy', 'Resources', 'Blog']
+const FOOTER_LINKS = ['About', 'Work', 'Books', 'Academy', 'Resources', 'Blog', 'FAQ']
 
 export default function Footer() {
   return (
@@ -74,6 +74,17 @@ export default function Footer() {
             © {new Date().getFullYear()} Subramaniam P G. All rights reserved.
           </p>
           <p className="text-xs text-white/30">Built with purpose.</p>
+        </div>
+
+        {/* Legal links */}
+        <div className="pt-4 mt-4 border-t border-white/10 text-center">
+          <p className="text-xs" style={{ color: '#888888' }}>
+            <Link href="/privacy-policy" className="hover:text-white/60 transition-colors">Privacy Policy</Link>
+            <span className="mx-2">·</span>
+            <Link href="/terms" className="hover:text-white/60 transition-colors">Terms and Conditions</Link>
+            <span className="mx-2">·</span>
+            <Link href="/refund-policy" className="hover:text-white/60 transition-colors">Refund Policy</Link>
+          </p>
         </div>
       </div>
     </footer>

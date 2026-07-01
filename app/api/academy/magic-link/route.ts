@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     await sendBrevoEmail(
       email,
-      'Your login link for OKR Foundations',
+      'Your Academy login link',
       `
         <p>Hi ${learner.name},</p>
         <p>Click this link to return to your course. The link expires in 15 minutes.</p>

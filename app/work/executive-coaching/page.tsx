@@ -2,15 +2,39 @@ import Link from 'next/link'
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
 
+const BASE = 'https://www.subramaniampg.guru'
+
 export const metadata = {
-  title: 'Executive Coaching — Subramaniam P G',
+  title: 'Executive Coaching for Founders & CXOs India | Subramaniam P G',
   description:
-    'One-on-one executive coaching for founders and CXOs navigating growth, transition, and complexity.',
+    'One-on-one executive coaching for founders and CXOs navigating growth, transition, and complexity. Subramaniam P G coaches senior leaders across India and Asia.',
+  alternates: { canonical: `${BASE}/work/executive-coaching` },
+  openGraph: {
+    title: 'Executive Coaching | Subramaniam P G',
+    description: 'One-on-one coaching for founders and CXOs navigating growth, transition, and leadership complexity.',
+    url: `${BASE}/work/executive-coaching`,
+  },
+}
+
+const serviceJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Service',
+  name: 'Executive Coaching',
+  description:
+    'One-on-one executive coaching for founders and CXOs. Subramaniam P G works with senior leaders on thinking, decision-making, and leadership effectiveness.',
+  provider: {
+    '@type': 'Person',
+    name: 'Subramaniam P G',
+    url: BASE,
+  },
+  areaServed: { '@type': 'Country', name: 'India' },
+  url: `${BASE}/work/executive-coaching`,
 }
 
 export default function ExecutiveCoachingPage() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#FAF8F5' }}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceJsonLd) }} />
       <NavBar />
 
       {/* Breadcrumb */}

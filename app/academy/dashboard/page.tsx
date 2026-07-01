@@ -121,7 +121,7 @@ export default function DashboardPage() {
                     )}
                   </div>
                   {showFeedback === course._id && (
-                    <FeedbackForm courseId={course._id} onDone={() => setShowFeedback(null)} />
+                    <FeedbackForm courseId={course._id} courseSlug={course.slug?.current || ''} showAdvancedInterest={course.slug?.current === 'okr-foundations'} onDone={() => setShowFeedback(null)} />
                   )}
                 </div>
               ) : (

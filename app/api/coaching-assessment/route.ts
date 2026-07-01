@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 
+const BASE = 'https://api.brevo.com/v3'
+
 const resultEmails: Record<string, { subject: string; text: (name: string) => string }> = {
   C: {
     subject: 'Your coaching assessment result — and what it means',
@@ -100,6 +102,21 @@ pgs@embiggen.co.in`,
   },
 }
 
+async function ensureAttributes(apiKey: string) {
+  const attrs = ['COACHING_ASSESSMENT_OUTCOME', 'COACHING_ASSESSMENT_DATE', 'COACHING_ASSESSMENT_ORGANISATION']
+  await Promise.all(attrs.map(name =>
+    fetch(`${BASE}/contacts/attributes/normal/${name}`, {
+      method: 'POST',
+      headers: { 'api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'text' }),
+    }).catch(() => {})
+  ))
+}
+
+function formatDate(d: Date): string {
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+}
+
 export async function POST(req: NextRequest) {
   console.log('API key present:', !!process.env.BREVO_API_KEY)
   console.log('API key first 6 chars:', process.env.BREVO_API_KEY?.slice(0, 6))
@@ -117,6 +134,21 @@ export async function POST(req: NextRequest) {
       htmlContent: textContent.replace(/\n/g, '<br>'),
       textContent,
     })
+
+    const apiKey = process.env.BREVO_API_KEY ?? ''
+    await ensureAttributes(apiKey)
+    const attributes: Record<string, string> = {
+      COACHING_ASSESSMENT_OUTCOME: data.outcome,
+      COACHING_ASSESSMENT_DATE: formatDate(new Date()),
+    }
+    if (data.organisation) attributes.COACHING_ASSESSMENT_ORGANISATION = data.organisation
+
+    await fetch(`${BASE}/contacts`, {
+      method: 'POST',
+      headers: { 'api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: data.email, attributes, updateEnabled: true }),
+    })
+
     return NextResponse.json({ status: 'ok' })
   } catch (err) {
     console.error('Coaching assessment API error:', err)

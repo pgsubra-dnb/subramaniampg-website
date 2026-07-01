@@ -4,12 +4,6 @@ import { useParams, useRouter } from 'next/navigation'
 import CertificateDisplay from '@/components/academy/CertificateDisplay'
 import FeedbackForm from '@/components/academy/FeedbackForm'
 
-const INFOGRAPHIC_PATHS: Record<number, string> = {
-  1: '/infographics/module1-okr-explorer.svg',
-  2: '/infographics/module2-okr-navigator.svg',
-  3: '/infographics/module3-okr-practitioner.svg',
-}
-
 interface CertData {
   certificateId: string
   learnerName: string
@@ -19,13 +13,31 @@ interface CertData {
   badgeImageUrl?: string
 }
 
+interface PaidConsultation {
+  enabled: boolean
+  title: string
+  description: string
+  price: number
+  durationMinutes: number
+  bookingLink?: { url: string }
+}
+
+declare global {
+  interface Window {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    Razorpay: any
+  }
+}
+
 export default function ModuleCompletePage() {
   const params = useParams()
   const router = useRouter()
   const [course, setCourse] = useState<{
-    _id: string; title: string
+    _id: string; title: string; slug?: { current: string }
     modules?: { _id: string; order: number; title: string; badgeName?: string; badgeImage?: { asset?: { url: string } } }[]
+    paidConsultation?: PaidConsultation
   } | null>(null)
+  const [learnerEmail, setLearnerEmail] = useState('')
   const [currentModule, setCurrentModule] = useState<{
     _id: string; order: number; title: string; badgeName?: string; badgeImage?: { asset?: { url: string } }
   } | null>(null)
@@ -33,6 +45,9 @@ export default function ModuleCompletePage() {
   const [generating, setGenerating] = useState(false)
   const [loading, setLoading] = useState(true)
   const [feedbackDone, setFeedbackDone] = useState(false)
+  const [consultPaying, setConsultPaying] = useState(false)
+  const [consultBooked, setConsultBooked] = useState(false)
+  const [consultBookingUrl, setConsultBookingUrl] = useState('')
   const moduleOrder = Number(params.moduleOrder)
 
   useEffect(() => {
@@ -40,6 +55,7 @@ export default function ModuleCompletePage() {
       try {
         const meRes = await fetch('/api/academy/me').then(r => r.json())
         if (!meRes.authenticated) { router.push(`/academy/${params.courseSlug}`); return }
+        setLearnerEmail(meRes.learner.email)
 
         const courseRes = await fetch(`/api/academy/course/${params.courseSlug}`).then(r => r.json())
         const courseData = courseRes.course
@@ -57,27 +73,92 @@ export default function ModuleCompletePage() {
               body: JSON.stringify({ courseId: courseData._id }),
             }).then(r => r.json())
             if (certRes.certificate) setCertificate(certRes.certificate)
-          } catch { /* certificate already exists or generation failed — continue */ }
+          } catch { /* certificate already exists or generation failed */ }
           setGenerating(false)
         }
-      } catch { /* network error — still clear loading so page renders */ }
+      } catch { /* network error */ }
       setLoading(false)
     }
     load()
   }, [params, moduleOrder, router])
+
+  async function handleConsultPay() {
+    if (!course || !learnerEmail) return
+    setConsultPaying(true)
+    try {
+      const orderRes = await fetch('/api/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderType: 'consultation',
+          courseSlug: params.courseSlug,
+          email: learnerEmail,
+        }),
+      }).then(r => r.json())
+
+      if (!orderRes.orderId) {
+        alert('Could not create order. Please try again.')
+        setConsultPaying(false)
+        return
+      }
+
+      const script = document.createElement('script')
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js'
+      document.body.appendChild(script)
+      await new Promise(resolve => { script.onload = resolve })
+
+      const rzp = new window.Razorpay({
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        order_id: orderRes.orderId,
+        amount: orderRes.amount,
+        currency: orderRes.currency,
+        name: 'Embiggen Consulting LLP',
+        description: `Expert Guidance Call — ${course.title}`,
+        prefill: { email: learnerEmail },
+        theme: { color: '#633806' },
+        handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
+          const verifyRes = await fetch('/api/verify-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderType: 'consultation',
+              courseSlug: params.courseSlug,
+              email: learnerEmail,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            }),
+          }).then(r => r.json())
+
+          if (verifyRes.success) {
+            setConsultBookingUrl(verifyRes.bookingUrl || course.paidConsultation?.bookingLink?.url || '')
+            setConsultBooked(true)
+          } else {
+            alert('Payment verification failed. Please contact pgs@embiggen.co.in.')
+          }
+          setConsultPaying(false)
+        },
+        modal: { ondismiss: () => setConsultPaying(false) },
+      })
+      rzp.open()
+    } catch {
+      alert('Something went wrong. Please try again.')
+      setConsultPaying(false)
+    }
+  }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"
     style={{ background: '#FAF8F5', color: '#5F5E5A' }}>Loading...</div>
 
   const isLastModule = moduleOrder === course?.modules?.length
   const nextModule = course?.modules?.find(m => m.order === moduleOrder + 1)
-  const infographicPath = INFOGRAPHIC_PATHS[moduleOrder]
+  const consultation = course?.paidConsultation
 
   return (
     <main style={{ background: '#FAF8F5', minHeight: '100vh' }}>
       <div className="max-w-2xl mx-auto px-6 py-12 text-center">
 
-        {/* Badge */}
+        {/* Module badge */}
         {currentModule?.badgeImage?.asset?.url && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={currentModule.badgeImage.asset.url} alt={currentModule.badgeName}
@@ -94,37 +175,9 @@ export default function ModuleCompletePage() {
         </h1>
         <p className="mb-8" style={{ color: '#5F5E5A' }}>
           {isLastModule
-            ? 'You have completed OKR Foundations. Your certificate is ready.'
+            ? `You have completed ${course?.title}. Your certificate is ready.`
             : `Well done. You have completed ${currentModule?.title}.`}
         </p>
-
-        {/* Infographic download */}
-        {infographicPath && (
-          <button
-            onClick={async () => {
-              const { jsPDF } = await import('jspdf')
-              const svgText = await fetch(infographicPath).then(r => r.text())
-              const canvas = document.createElement('canvas')
-              canvas.width = 1360
-              canvas.height = 960
-              const ctx = canvas.getContext('2d')
-              if (!ctx) return
-              const img = new Image()
-              const svgBlob = new Blob([svgText], { type: 'image/svg+xml' })
-              const url = URL.createObjectURL(svgBlob)
-              await new Promise<void>((resolve) => {
-                img.onload = () => { ctx.drawImage(img, 0, 0, canvas.width, canvas.height); URL.revokeObjectURL(url); resolve() }
-                img.src = url
-              })
-              const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
-              doc.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, 297, 210)
-              doc.save(`OKR-Foundations-Module-${moduleOrder}-Reference-Card.pdf`)
-            }}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded border mb-6 text-sm"
-            style={{ borderColor: '#633806', color: '#633806', background: '#FFFFFF' }}>
-            Download module reference card (PDF)
-          </button>
-        )}
 
         {/* Certificate */}
         {isLastModule && certificate && (
@@ -134,10 +187,69 @@ export default function ModuleCompletePage() {
           <p className="text-sm mb-6" style={{ color: '#5F5E5A' }}>Generating your certificate...</p>
         )}
 
-        {/* Feedback form — shown after final module */}
+        {/* Paid consultation offer — only on final module */}
+        {isLastModule && consultation?.enabled && !consultBooked && (
+          <div className="mt-8 mb-8 p-6 rounded-xl border text-left"
+            style={{ borderColor: '#EFD1B0', background: '#FDF5EC' }}>
+            <p className="text-xs tracking-widest mb-2 font-medium" style={{ color: '#633806' }}>
+              OPTIONAL ADD-ON
+            </p>
+            <h2 className="text-xl mb-2" style={{ fontFamily: 'Lora, serif', color: '#2C2C2A' }}>
+              {consultation.title}
+            </h2>
+            <p className="text-sm mb-4" style={{ color: '#5F5E5A' }}>{consultation.description}</p>
+            <div className="flex justify-between text-sm mb-1" style={{ color: '#5F5E5A' }}>
+              <span>Expert Guidance Call ({consultation.durationMinutes} minutes)</span>
+              <span>₹{consultation.price.toLocaleString('en-IN')}</span>
+            </div>
+            <div className="flex justify-between text-sm mb-3" style={{ color: '#5F5E5A' }}>
+              <span>GST (18%)</span>
+              <span>₹{Math.round(consultation.price * 0.18).toLocaleString('en-IN')}</span>
+            </div>
+            <div className="flex justify-between text-sm font-medium border-t pt-3 mb-5"
+              style={{ borderColor: '#EFD1B0', color: '#2C2C2A' }}>
+              <span>Total</span>
+              <span>₹{(consultation.price + Math.round(consultation.price * 0.18)).toLocaleString('en-IN')}</span>
+            </div>
+            <button
+              onClick={handleConsultPay}
+              disabled={consultPaying}
+              className="w-full py-3 rounded font-medium text-sm"
+              style={{ background: '#633806', color: '#FAEEDA', opacity: consultPaying ? 0.6 : 1 }}>
+              {consultPaying ? 'Opening payment...' : 'Book This Call'}
+            </button>
+          </div>
+        )}
+
+        {/* Consultation booked confirmation */}
+        {isLastModule && consultBooked && (
+          <div className="mt-8 mb-8 p-6 rounded-xl border text-left"
+            style={{ borderColor: '#A3D9C0', background: '#E1F5EE' }}>
+            <h2 className="text-lg mb-2" style={{ fontFamily: 'Lora, serif', color: '#085041' }}>
+              Call booked — confirmation sent
+            </h2>
+            <p className="text-sm mb-4" style={{ color: '#085041' }}>
+              A confirmation email with the booking link has been sent to {learnerEmail}. Use the button below to select your slot.
+            </p>
+            {consultBookingUrl && (
+              <a href={consultBookingUrl} target="_blank" rel="noopener noreferrer"
+                className="inline-block px-6 py-2.5 rounded font-medium text-sm"
+                style={{ background: '#085041', color: '#FFFFFF' }}>
+                Select your time slot →
+              </a>
+            )}
+          </div>
+        )}
+
+        {/* Feedback form */}
         {isLastModule && !feedbackDone && course && (
           <div className="text-left">
-            <FeedbackForm courseId={course._id} onDone={() => setFeedbackDone(true)} />
+            <FeedbackForm
+              courseId={course._id}
+              courseSlug={params.courseSlug as string}
+              showAdvancedInterest={params.courseSlug === 'okr-foundations'}
+              onDone={() => setFeedbackDone(true)}
+            />
           </div>
         )}
 

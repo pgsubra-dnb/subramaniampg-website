@@ -4,6 +4,18 @@ import Footer from '@/components/Footer'
 import { SERIES_BOOKS, OTHER_BOOKS } from '@/lib/books-data'
 import type { Book } from '@/lib/books-data'
 
+export const metadata = {
+  title: 'Books by Subramaniam P G — Leadership, OKR & Ancient Wisdom',
+  description:
+    'Explore the 7 books published by Subramaniam P G — spanning OKR, executive leadership, strategy, and the timeless wisdom of the Bhagavad Gita, Arthashastra, and Thirukkural.',
+  alternates: { canonical: 'https://www.subramaniampg.guru/books' },
+  openGraph: {
+    title: 'Books by Subramaniam P G',
+    description: '7 books on leadership, OKR, and ancient Indian wisdom.',
+    url: 'https://www.subramaniampg.guru/books',
+  },
+}
+
 function BookCover({ src, title }: { src: string; title: string }) {
   return (
     <div

@@ -5,6 +5,7 @@ import { client } from '@/lib/sanity'
 export const metadata = {
   title: 'Case Studies | Subramaniam P G',
   description: 'A selection of engagements across executive coaching, strategy consulting, and OKR implementation. All details are anonymised.',
+  alternates: { canonical: 'https://www.subramaniampg.guru/case-studies' },
 }
 
 type CaseStudy = {

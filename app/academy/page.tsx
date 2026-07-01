@@ -6,11 +6,62 @@ import Footer from '@/components/Footer'
 
 export const revalidate = 60
 
+export const metadata = {
+  title: 'Academy — OKR & Leadership Courses by Subramaniam P G',
+  description:
+    'Practical online courses on OKR foundations, leadership, and ancient wisdom — built from 40 years of experience. Start free with OKR Foundations.',
+  alternates: { canonical: 'https://www.subramaniampg.guru/academy' },
+  openGraph: {
+    title: 'Academy | Subramaniam P G',
+    description: 'Online courses on OKR, leadership, and ancient wisdom.',
+    url: 'https://www.subramaniampg.guru/academy',
+  },
+}
+
+const BASE = 'https://www.subramaniampg.guru'
+
 export default async function AcademyPage() {
   const courses = await getAllCourses()
 
+  const publishedCourses = courses.filter(
+    (c: { status: string }) => c.status === 'published'
+  )
+
+  const coursesJsonLd = publishedCourses.map((c: {
+    title: string
+    slug: { current: string }
+    shortDescription: string
+    price: number
+  }) => ({
+    '@context': 'https://schema.org',
+    '@type': 'Course',
+    name: c.title,
+    description: c.shortDescription,
+    url: `${BASE}/academy/${c.slug.current}`,
+    provider: {
+      '@type': 'Person',
+      name: 'Subramaniam P G',
+      url: BASE,
+    },
+    isAccessibleForFree: c.price === 0,
+    ...(c.price > 0 ? {
+      offers: {
+        '@type': 'Offer',
+        price: c.price,
+        priceCurrency: 'INR',
+      },
+    } : {}),
+  }))
+
   return (
     <div className="min-h-screen" style={{ background: '#FAF8F5' }}>
+      {coursesJsonLd.map((ld: object, i: number) => (
+        <script
+          key={i}
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(ld) }}
+        />
+      ))}
       <NavBar />
 
       {/* Header */}
@@ -35,11 +86,21 @@ export default async function AcademyPage() {
             shortDescription: string
             price: number
             status: string
+            discountActive?: boolean
+            discountPercent?: number
+            discountReason?: string
+            discountExpiry?: string
             coverImage?: { asset?: { url: string } }
             moduleCount: number
             avgRating?: number
             ratingCount?: number
-          }) => (
+          }) => {
+            const hasDiscount = course.price > 0 && course.discountActive && course.discountPercent
+            const discountedPrice = hasDiscount
+              ? Math.round(course.price * (1 - (course.discountPercent! / 100)))
+              : course.price
+
+            return (
             <div key={course._id} className="rounded-lg overflow-hidden border"
               style={{ borderColor: '#D3D1C7', background: '#FFFFFF' }}>
 
@@ -52,20 +113,46 @@ export default async function AcademyPage() {
 
               <div className="p-6">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs tracking-widest font-medium px-3 py-1 rounded-full"
-                    style={{
-                      background: course.price === 0 ? '#E1F5EE' : '#FAEEDA',
-                      color: course.price === 0 ? '#085041' : '#633806'
-                    }}>
-                    {course.price === 0 ? 'FREE' : `₹${course.price}`}
-                  </span>
+                  {/* Price badge */}
+                  {course.price === 0 ? (
+                    <span className="text-xs tracking-widest font-medium px-3 py-1 rounded-full"
+                      style={{ background: '#E1F5EE', color: '#085041' }}>
+                      FREE
+                    </span>
+                  ) : hasDiscount ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm tracking-widest font-bold px-3 py-1 rounded-full"
+                        style={{ background: '#FAEEDA', color: '#633806' }}>
+                        ₹{discountedPrice}
+                      </span>
+                      <span className="text-xs line-through" style={{ color: '#888780' }}>
+                        ₹{course.price}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-sm tracking-widest font-bold px-3 py-1 rounded-full"
+                      style={{ background: '#FAEEDA', color: '#633806' }}>
+                      ₹{course.price}
+                    </span>
+                  )}
                   {course.status === 'coming-soon' && (
                     <span className="text-xs tracking-widest px-3 py-1 rounded-full"
                       style={{ background: '#F1EFE8', color: '#888780' }}>
                       COMING SOON
                     </span>
                   )}
+                  {hasDiscount && course.discountReason && (
+                    <span className="text-xs font-semibold px-3 py-1 rounded-full"
+                      style={{ background: '#FEF3C7', color: '#92400E' }}>
+                      {course.discountReason}
+                    </span>
+                  )}
                 </div>
+                {hasDiscount && course.discountExpiry && (
+                  <p className="text-xs mb-3" style={{ color: '#92400E' }}>
+                    Offer ends {new Date(course.discountExpiry).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </p>
+                )}
 
                 <h2 className="text-xl mb-2" style={{ fontFamily: 'Lora, serif', color: '#2C2C2A' }}>
                   {course.title}
@@ -104,7 +191,7 @@ export default async function AcademyPage() {
                 )}
               </div>
             </div>
-          ))}
+          )})}
         </div>
       </section>
 

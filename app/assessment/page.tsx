@@ -838,7 +838,7 @@ export default function AssessmentPage() {
     fetch('/api/okr-assessment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: userData.name, email: userData.email, level: lvl }),
+      body: JSON.stringify({ name: userData.name, email: userData.email, organisation: userData.organisation, level: lvl }),
     })
     setStage('report')
     window.scrollTo({ top: 0, behavior: 'smooth' })

@@ -4,8 +4,26 @@ import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
 import { BOOKS, getBookBySlug } from '@/lib/books-data'
 
+const BASE = 'https://www.subramaniampg.guru'
+
 export function generateStaticParams() {
   return BOOKS.map((book) => ({ slug: book.slug }))
+}
+
+export function generateMetadata({ params }: { params: { slug: string } }) {
+  const book = getBookBySlug(params.slug)
+  if (!book) return {}
+  return {
+    title: `${book.title} — Book by Subramaniam P G`,
+    description: book.seoDescription.slice(0, 160),
+    alternates: { canonical: `${BASE}/books/${book.slug}` },
+    openGraph: {
+      title: book.title,
+      description: book.seoDescription.slice(0, 160),
+      url: `${BASE}/books/${book.slug}`,
+      images: [{ url: `${BASE}${book.coverImage}`, alt: book.title }],
+    },
+  }
 }
 
 const ArrowIcon = () => (
@@ -18,8 +36,34 @@ export default function BookDetailPage({ params }: { params: { slug: string } })
   const book = getBookBySlug(params.slug)
   if (!book) notFound()
 
+  const bookJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Book',
+    name: book.title,
+    description: book.seoDescription,
+    author: {
+      '@type': 'Person',
+      name: 'Subramaniam P G',
+      url: BASE,
+    },
+    publisher: {
+      '@type': 'Organization',
+      name: 'Embiggen Consulting LLP',
+    },
+    url: `${BASE}/books/${book.slug}`,
+    image: `${BASE}${book.coverImage}`,
+    potentialAction: {
+      '@type': 'ReadAction',
+      target: book.amazonUrl,
+    },
+  }
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#FAF8F5' }}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(bookJsonLd) }}
+      />
       <NavBar />
 
       {/* ── Breadcrumb ───────────────────────────────────── */}

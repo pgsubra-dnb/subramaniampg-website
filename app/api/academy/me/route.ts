@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
         _id, name, email, company, pointsTotal,
         enrolledCourses[]->{ _id, title, slug, status },
         completionLog,
+        submittedAssignments,
         certificateRefs[]->{ certificateId, courseName, dateIssued }
       }`,
       { id: sessionId }

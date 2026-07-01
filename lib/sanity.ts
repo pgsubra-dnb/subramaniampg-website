@@ -85,6 +85,21 @@ export async function getTestimonials(): Promise<SanityTestimonial[]> {
   )
 }
 
+export type SanityFaq = {
+  _id: string
+  question: string
+  answer: unknown[]
+}
+
+export async function getFaqs(limit?: number): Promise<SanityFaq[]> {
+  const slice = limit ? `[0...${limit}]` : ''
+  return client.fetch(
+    `*[_type == "faq" && active == true] | order(sortOrder asc) ${slice} { _id, question, answer }`,
+    {},
+    { next: { revalidate: 3600 } }
+  )
+}
+
 export function formatPostDate(publishedAt: string | null): string {
   if (!publishedAt) return ''
   const d = new Date(publishedAt)

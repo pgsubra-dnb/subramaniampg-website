@@ -2,9 +2,39 @@ import Link from 'next/link'
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
 
+const BASE = 'https://www.subramaniampg.guru'
+
+export const metadata = {
+  title: 'OKR Consulting India — Align Your Team Around What Matters | Subramaniam P G',
+  description:
+    'OKR consulting for founders and leadership teams in India. Subramaniam P G helps organisations implement OKRs that stick — creating clarity, alignment, and accountability. Based in Chennai.',
+  alternates: { canonical: `${BASE}/work/okr-consulting` },
+  openGraph: {
+    title: 'OKR Consulting India | Subramaniam P G',
+    description: 'OKR consulting for founders and leadership teams. Build the execution system your strategy deserves.',
+    url: `${BASE}/work/okr-consulting`,
+  },
+}
+
+const serviceJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Service',
+  name: 'OKR Consulting',
+  description:
+    'OKR consulting for founders, CXOs, and leadership teams. Subramaniam P G designs and embeds OKR systems that create clarity, alignment, and accountability across organisations.',
+  provider: {
+    '@type': 'Person',
+    name: 'Subramaniam P G',
+    url: BASE,
+  },
+  areaServed: { '@type': 'Country', name: 'India' },
+  url: `${BASE}/work/okr-consulting`,
+}
+
 export default function OkrConsultingPage() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#FAF8F5' }}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceJsonLd) }} />
       <NavBar />
 
       {/* Breadcrumb */}

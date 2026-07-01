@@ -3,6 +3,18 @@ import Footer from '@/components/Footer'
 import EmailGatedResources from '@/components/EmailGatedResources'
 import { client } from '@/lib/sanity'
 
+export const metadata = {
+  title: 'Free Resources — OKR Templates, RACI Guides & Leadership Tools',
+  description:
+    'Download free OKR templates, RACI frameworks, leadership assessments, and other tools by Subramaniam P G. Practical resources for leaders and teams.',
+  alternates: { canonical: 'https://www.subramaniampg.guru/resources' },
+  openGraph: {
+    title: 'Free Leadership Resources | Subramaniam P G',
+    description: 'Free OKR templates, RACI guides, and leadership tools for founders and CXOs.',
+    url: 'https://www.subramaniampg.guru/resources',
+  },
+}
+
 const Divider = () => (
   <div className="w-full h-px" style={{ backgroundColor: '#E8E4DC' }} />
 )

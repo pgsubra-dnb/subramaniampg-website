@@ -21,6 +21,7 @@ interface QuizResult {
 export default function QuizPage() {
   const params = useParams()
   const router = useRouter()
+  const [hasAssignments, setHasAssignments] = useState(false)
   const [academyModule, setAcademyModule] = useState<{
     _id: string; title: string; questionsToShow: number
     quizQuestionBank: Question[]
@@ -40,6 +41,7 @@ export default function QuizPage() {
       const mod = courseRes.course?.modules?.find((m: { order: number }) => m.order === Number(params.moduleOrder))
       if (!mod) { router.push(`/academy/${params.courseSlug}`); return }
 
+      setHasAssignments(!!courseRes.course?.hasAssignments)
       const modRes = await fetch(`/api/academy/module/${mod._id}`).then(r => r.json())
       setAcademyModule(modRes.module)
 
@@ -67,7 +69,10 @@ export default function QuizPage() {
     setResults(data)
     setSubmitting(false)
     if (data.allCorrect) {
-      setTimeout(() => router.push(`/academy/${params.courseSlug}/${params.moduleOrder}/complete`), 1500)
+      const nextPath = hasAssignments
+        ? `/academy/${params.courseSlug}/${params.moduleOrder}/assignment`
+        : `/academy/${params.courseSlug}/${params.moduleOrder}/complete`
+      setTimeout(() => router.push(nextPath), 1500)
     }
   }
 

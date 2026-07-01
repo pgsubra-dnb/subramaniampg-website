@@ -6,6 +6,24 @@ import { getSanityPostBySlug, getLatestPosts, getAllSlugs, formatPostDate } from
 
 export const revalidate = 3600
 
+export async function generateMetadata({ params }: { params: { slug: string } }) {
+  const post = await getSanityPostBySlug(params.slug)
+  if (!post) return {}
+  return {
+    title: post.title,
+    description: post.excerpt ?? `An article by Subramaniam P G on ${post.categories?.[0] ?? 'leadership'}.`,
+    alternates: { canonical: `https://www.subramaniampg.guru/blog/${params.slug}` },
+    openGraph: {
+      title: post.title,
+      description: post.excerpt ?? '',
+      url: `https://www.subramaniampg.guru/blog/${params.slug}`,
+      type: 'article',
+      authors: ['Subramaniam P G'],
+      ...(post.mainImage ? { images: [{ url: post.mainImage }] } : {}),
+    },
+  }
+}
+
 export async function generateStaticParams() {
   const slugs = await getAllSlugs()
   return slugs.map((slug) => ({ slug }))

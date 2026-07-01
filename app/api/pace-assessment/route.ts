@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 
+const BASE = 'https://api.brevo.com/v3'
+
+const LEVEL_NAMES: Record<number, string> = {
+  1: 'Level 1 — Reactive Organisation',
+  2: 'Level 2 — Intuitive Direction',
+  3: 'Level 3 — Structured Intent',
+  4: 'Level 4 — Aligned Execution',
+  5: 'Level 5 — Growth Rhythm',
+}
+
 const levelEmails: Record<number, { subject: string; text: (name: string) => string }> = {
   1: {
     subject: 'Your PACE Maturity result — and what it means for your organisation',
@@ -132,7 +142,7 @@ Strategy, execution, and review are embedded in how your organisation operates w
 
 How PACE helps at your stage:
 
-At Level 5, the value of PACE is in sustaining and scaling what you have built. As the organisation grows — new teams, new markets, new leaders — the execution culture that got you here needs to be consciously maintained. The risk at this stage is not failure. It is complacency. The systems are working, which makes it easy to stop questioning them.
+At this stage, the value of PACE is in sustaining and scaling what you have built. As the organisation grows — new teams, new markets, new leaders — the execution culture that got you here needs to be consciously maintained. The risk at this stage is not failure. It is complacency. The systems are working, which makes it easy to stop questioning them.
 
 Your next step:
 
@@ -146,6 +156,21 @@ Growth Architect and Executive Coach
 Embiggen Consulting LLP
 pgs@embiggen.co.in`,
   },
+}
+
+async function ensureAttributes(apiKey: string) {
+  const attrs = ['PACE_ASSESSMENT_LEVEL', 'PACE_ASSESSMENT_DATE', 'PACE_ASSESSMENT_ORGANISATION']
+  await Promise.all(attrs.map(name =>
+    fetch(`${BASE}/contacts/attributes/normal/${name}`, {
+      method: 'POST',
+      headers: { 'api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'text' }),
+    }).catch(() => {})
+  ))
+}
+
+function formatDate(d: Date): string {
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
 }
 
 export async function POST(req: NextRequest) {
@@ -166,6 +191,20 @@ export async function POST(req: NextRequest) {
       subject: template.subject,
       htmlContent: textContent.replace(/\n/g, '<br>'),
       textContent,
+    })
+
+    const apiKey = process.env.BREVO_API_KEY ?? ''
+    await ensureAttributes(apiKey)
+    const attributes: Record<string, string> = {
+      PACE_ASSESSMENT_LEVEL: LEVEL_NAMES[level] ?? String(level),
+      PACE_ASSESSMENT_DATE: formatDate(new Date()),
+    }
+    if (data.organisation) attributes.PACE_ASSESSMENT_ORGANISATION = data.organisation
+
+    await fetch(`${BASE}/contacts`, {
+      method: 'POST',
+      headers: { 'api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: data.email, attributes, updateEnabled: true }),
     })
 
     return NextResponse.json({ status: 'ok' })

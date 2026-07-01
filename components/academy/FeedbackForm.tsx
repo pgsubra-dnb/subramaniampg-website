@@ -1,9 +1,14 @@
 'use client'
 import { useState } from 'react'
 
-interface Props { courseId: string; onDone: () => void }
+interface Props {
+  courseId: string
+  courseSlug: string
+  showAdvancedInterest?: boolean
+  onDone: () => void
+}
 
-export default function FeedbackForm({ courseId, onDone }: Props) {
+export default function FeedbackForm({ courseId, courseSlug, showAdvancedInterest = true, onDone }: Props) {
   const [starRating, setStarRating] = useState(0)
   const [mostUseful, setMostUseful] = useState('')
   const [wouldRecommend, setWouldRecommend] = useState('')
@@ -11,13 +16,18 @@ export default function FeedbackForm({ courseId, onDone }: Props) {
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
 
+  const canSubmit = !!starRating && !!wouldRecommend && (!showAdvancedInterest || !!advancedInterest)
+
   async function handleSubmit() {
-    if (!starRating || !wouldRecommend || !advancedInterest) return
+    if (!canSubmit) return
     setSubmitting(true)
     await fetch('/api/academy/feedback', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ courseId, starRating, mostUseful, wouldRecommend, advancedInterest }),
+      body: JSON.stringify({
+        courseId, courseSlug, starRating, mostUseful, wouldRecommend,
+        advancedInterest: showAdvancedInterest ? advancedInterest : 'n/a',
+      }),
     })
     setDone(true)
     setSubmitting(false)
@@ -76,26 +86,27 @@ export default function FeedbackForm({ courseId, onDone }: Props) {
         </div>
       </div>
 
-      {/* Q4 — Advanced interest */}
-      <div className="mb-5">
-        <p className="text-xs mb-2" style={{ color: '#5F5E5A' }}>Would you like to know more about the OKR Mastery advanced course?</p>
-        <div className="flex gap-2">
-          {[{ label: 'Yes, tell me more', value: 'yes' }, { label: 'Not yet', value: 'not-yet' }].map(opt => (
-            <button key={opt.value} onClick={() => setAdvancedInterest(opt.value)}
-              className="px-4 py-1.5 rounded border text-xs"
-              style={{ borderColor: advancedInterest === opt.value ? '#1D9E75' : '#D3D1C7',
-                background: advancedInterest === opt.value ? '#E1F5EE' : '#FFFFFF', color: '#2C2C2A' }}>
-              {opt.label}
-            </button>
-          ))}
+      {/* Q4 — Advanced interest (OKR only) */}
+      {showAdvancedInterest && (
+        <div className="mb-5">
+          <p className="text-xs mb-2" style={{ color: '#5F5E5A' }}>Would you like to know more about the OKR Mastery advanced course?</p>
+          <div className="flex gap-2">
+            {[{ label: 'Yes, tell me more', value: 'yes' }, { label: 'Not yet', value: 'not-yet' }].map(opt => (
+              <button key={opt.value} onClick={() => setAdvancedInterest(opt.value)}
+                className="px-4 py-1.5 rounded border text-xs"
+                style={{ borderColor: advancedInterest === opt.value ? '#1D9E75' : '#D3D1C7',
+                  background: advancedInterest === opt.value ? '#E1F5EE' : '#FFFFFF', color: '#2C2C2A' }}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       <button onClick={handleSubmit}
-        disabled={!starRating || !wouldRecommend || !advancedInterest || submitting}
+        disabled={!canSubmit || submitting}
         className="w-full py-2.5 rounded text-sm font-medium"
-        style={{ background: '#633806', color: '#FAEEDA',
-          opacity: !starRating || !wouldRecommend || !advancedInterest ? 0.5 : 1 }}>
+        style={{ background: '#633806', color: '#FAEEDA', opacity: !canSubmit ? 0.5 : 1 }}>
         {submitting ? 'Submitting...' : 'Submit feedback'}
       </button>
     </div>

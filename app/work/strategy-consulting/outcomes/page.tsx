@@ -4,6 +4,7 @@ import { client } from '@/lib/sanity'
 export const metadata = {
   title: 'Strategy Consulting Outcomes | Subramaniam P G',
   description: 'Real outcomes from real strategy consulting engagements. No names. The patterns are not withheld.',
+  alternates: { canonical: 'https://www.subramaniampg.guru/work/strategy-consulting/outcomes' },
 }
 
 type CaseStudy = {

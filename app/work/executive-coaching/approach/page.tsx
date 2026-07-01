@@ -6,6 +6,7 @@ export const metadata = {
   title: 'The Coaching Approach | Executive Coaching | Subramaniam P G',
   description:
     'Structured, assessment-based executive coaching. 360-degree feedback, co-created goals, and outcome-verified results over six to eight months.',
+  alternates: { canonical: 'https://www.subramaniampg.guru/work/executive-coaching/approach' },
 }
 
 const stages = [

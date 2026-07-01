@@ -119,6 +119,10 @@ export default async function HomePage() {
     { value: siteSettings?.articlesWritten  || '182', label: 'Articles Written' },
     { value: siteSettings?.leadersCoached   || '100+',label: 'Leaders Coached' },
   ]
+
+  const WORDS = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven']
+  const rawCount = parseInt(siteSettings?.booksPublished ?? '7', 10)
+  const bookCountWord = rawCount >= 1 && rawCount <= 11 ? WORDS[rawCount] : 'multiple'
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--brand-bg)' }}>
       <NavBar />
@@ -154,12 +158,11 @@ export default async function HomePage() {
 
             <p className="text-sm italic mb-7" style={{ color: '#1D9E75' }}>Helping Leaders Grow. Helping Organisations Grow.</p>
 
-            <p className="text-lg text-[#5F5E5A] leading-relaxed max-w-xl mb-10">
-              Helping founders, CXOs and leadership teams align purpose with
-              performance through OKR, strategy, and coaching.
+            <p className="text-base text-[#5F5E5A] leading-relaxed max-w-xl mb-10">
+              Subramaniam P G (PGS) is a Growth Architect and Executive Coach based in Chennai, India. He works with founders, senior leaders, and leadership teams in BPO, KPO, FinTech, and management services companies to build execution capability, align strategy, and drive measurable growth. His practice covers OKR consulting, executive coaching, and strategy consulting, delivered through Embiggen Consulting LLP. He is also the author of {bookCountWord} books on leadership and execution.
             </p>
 
-            <div className="flex flex-wrap gap-4 mb-10">
+            <div className="flex flex-wrap gap-4 mb-4">
               <Link
                 href="#work"
                 className="inline-flex items-center gap-2 px-7 py-3.5 bg-[#633806] text-white font-medium rounded-lg hover:bg-[#633806]/90 transition-colors text-sm"
@@ -173,6 +176,12 @@ export default async function HomePage() {
                 Explore the Academy
               </Link>
             </div>
+            <p className="text-xs mb-6" style={{ color: '#888780' }}>
+              Have questions?{' '}
+              <Link href="/faq" className="font-medium underline underline-offset-2 hover:text-[#633806] transition-colors" style={{ color: '#633806' }}>
+                Read the FAQ
+              </Link>
+            </p>
 
             {/* Credential tags */}
             <div className="flex flex-wrap gap-2">
