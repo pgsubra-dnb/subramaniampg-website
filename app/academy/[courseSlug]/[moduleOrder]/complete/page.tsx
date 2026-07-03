@@ -190,6 +190,7 @@ export default function ModuleCompletePage() {
           <div className="mb-8">
             <a href={currentModule.infographicAsset.asset.url}
               download={currentModule.infographicAsset.asset.originalFilename || true}
+              target="_blank" rel="noopener noreferrer"
               className="inline-block px-6 py-2.5 rounded font-medium text-sm"
               style={{ background: '#633806', color: '#FAEEDA' }}>
               Download module infographic
