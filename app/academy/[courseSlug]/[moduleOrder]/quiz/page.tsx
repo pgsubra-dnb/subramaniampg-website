@@ -14,6 +14,8 @@ interface Question {
   optionOrder: readonly ('A' | 'B' | 'C' | 'D')[]
 }
 
+const DISPLAY_LETTERS = ['A', 'B', 'C', 'D'] as const
+
 function shuffleOptionOrder(): readonly ('A' | 'B' | 'C' | 'D')[] {
   const letters: ('A' | 'B' | 'C' | 'D')[] = ['A', 'B', 'C', 'D']
   for (let i = letters.length - 1; i > 0; i--) {
@@ -103,7 +105,7 @@ export default function QuizPage() {
             <p className="font-medium mb-4 text-sm" style={{ color: '#2C2C2A' }}>
               {idx + 1}. {q.questionText}
             </p>
-            {q.optionOrder.map(letter => (
+            {q.optionOrder.map((letter, i) => (
               <button key={letter}
                 onClick={() => !results && setAnswers(prev => ({ ...prev, [q._key]: letter }))}
                 className="w-full text-left px-4 py-2.5 rounded border text-sm mb-2"
@@ -112,14 +114,14 @@ export default function QuizPage() {
                   background: answers[q._key] === letter ? '#FAEEDA' : '#FFFFFF',
                   color: '#2C2C2A',
                 }}>
-                {letter}. {q[`option${letter}`]}
+                {DISPLAY_LETTERS[i]}. {q[`option${letter}`]}
               </button>
             ))}
             {results && (
               <div className="mt-3 p-3 rounded text-xs"
                 style={{ background: results.results?.[idx]?.correct ? '#E1F5EE' : '#FCEBEB',
                   color: results.results?.[idx]?.correct ? '#085041' : '#A32D2D' }}>
-                {results.results?.[idx]?.correct ? 'Correct' : `Incorrect — correct answer is ${results.results?.[idx]?.correctAnswer}`}
+                {results.results?.[idx]?.correct ? 'Correct' : `Incorrect — correct answer is ${DISPLAY_LETTERS[q.optionOrder.indexOf(results.results?.[idx]?.correctAnswer as 'A' | 'B' | 'C' | 'D')]}`}
                 {results.results?.[idx]?.explanation && (
                   <p className="mt-1">{results.results?.[idx]?.explanation}</p>
                 )}
