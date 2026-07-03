@@ -13,11 +13,11 @@ export async function POST(req: NextRequest) {
     const today = new Date().toISOString().split('T')[0]
 
     const coupon = await sanityClient.fetch(
-      `*[_type == 'coupon' && code == $code][0] {
-        discountPercent, active, expiryDate,
-        "courseSlug": applicableCourse->slug.current
+      `*[_type == 'coupon' && code == $code && applicableCourse->slug.current == $courseSlug][0] {
+        discountPercent, active, expiryDate
       }`,
-      { code: upperCode }
+      { code: upperCode, courseSlug },
+      { cache: 'no-store' }
     )
 
     if (!coupon) {
@@ -30,10 +30,6 @@ export async function POST(req: NextRequest) {
 
     if (coupon.expiryDate < today) {
       return NextResponse.json({ valid: false, reason: 'Coupon has expired' })
-    }
-
-    if (coupon.courseSlug !== courseSlug) {
-      return NextResponse.json({ valid: false, reason: 'Coupon not valid for this course' })
     }
 
     return NextResponse.json({ valid: true, discountPercent: coupon.discountPercent })
