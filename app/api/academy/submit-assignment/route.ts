@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { sanityClient, sendBrevoEmail } from '@/lib/academy'
+import { sanityClient, sendBrevoEmailToMany, renderAcademyEmail, escapeHtml } from '@/lib/academy'
 
 const ALLOWED_TYPES = ['xlsx', 'docx', 'pdf']
 const MAX_BYTES = 10 * 1024 * 1024
@@ -33,6 +33,8 @@ export async function POST(req: NextRequest) {
 
     // Validate and upload file if present
     let fileAssetRef: string | null = null
+    let fileBuffer: Buffer | null = null
+    let fileName: string | null = null
     if (fileUpload && fileUpload.size > 0) {
       const ext = fileUpload.name.split('.').pop()?.toLowerCase() || ''
       if (!ALLOWED_TYPES.includes(ext)) {
@@ -42,9 +44,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'File exceeds 10 MB limit.' }, { status: 400 })
       }
       const arrayBuffer = await fileUpload.arrayBuffer()
-      const buffer = Buffer.from(arrayBuffer)
-      const asset = await sanityClient.assets.upload('file', buffer, {
-        filename: fileUpload.name,
+      fileBuffer = Buffer.from(arrayBuffer)
+      fileName = fileUpload.name
+      const asset = await sanityClient.assets.upload('file', fileBuffer, {
+        filename: fileName,
         contentType: fileUpload.type || 'application/octet-stream',
       })
       fileAssetRef = asset._id
@@ -60,7 +63,7 @@ export async function POST(req: NextRequest) {
     )
 
     // Create assignment submission doc
-    const submission = await sanityClient.create({
+    await sanityClient.create({
       _type: 'assignmentSubmission',
       learnerEmail,
       course: course ? { _type: 'reference', _ref: course._id } : undefined,
@@ -83,34 +86,54 @@ export async function POST(req: NextRequest) {
       }])
       .commit()
 
-    // Email: confirmation to learner
-    await sendBrevoEmail(
-      learnerEmail,
-      `Assignment received — ${courseTitle}`,
-      `
-        <p>Your assignment for <strong>${moduleTitle}</strong> has been received.</p>
-        <p><strong>Assignment:</strong> ${assignmentTitle}</p>
-        <p>PGS will review your submission and send feedback within 3 business days.</p>
-        <p>In the meantime, the next module has already unlocked — you can continue learning.</p>
-        <p>Subramaniam P G<br>Growth Architect and Executive Coach<br>Embiggen Consulting LLP</p>
-      `
+    // Single combined email to both the learner and PGS
+    const learner = await sanityClient.fetch(
+      `*[_id == $id][0]{ name }`,
+      { id: sessionId }
     )
 
-    // Email: notification to PGS
-    await sendBrevoEmail(
-      'pgs@embiggen.co.in',
-      `New assignment submission — ${courseTitle}: ${moduleTitle}`,
-      `
-        <p>A new assignment submission has arrived.</p>
-        <p><strong>Course:</strong> ${courseTitle}<br>
-        <strong>Module:</strong> ${moduleTitle}<br>
-        <strong>Assignment:</strong> ${assignmentTitle}<br>
-        <strong>Learner:</strong> ${learnerEmail}<br>
-        <strong>Type:</strong> ${submissionType}<br>
-        <strong>Submission ID:</strong> ${submission._id}</p>
-        <p>Review it in Sanity Studio under Assignment Submissions.</p>
-      `,
-      true
+    const sections: string[] = []
+    if (textResponse) {
+      sections.push(`
+        <p style="margin:0 0 6px;font-size:12px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:#633806;">Written response</p>
+        <p style="margin:0 0 20px;white-space:pre-wrap;color:#5F5E5A;font-size:14px;line-height:1.6;">${escapeHtml(textResponse)}</p>
+      `)
+    }
+    if (linkUrl) {
+      sections.push(`
+        <p style="margin:0 0 6px;font-size:12px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:#633806;">Submitted link</p>
+        <p style="margin:0 0 20px;font-size:14px;"><a href="${escapeHtml(linkUrl)}" style="color:#633806;">${escapeHtml(linkUrl)}</a></p>
+      `)
+    }
+    if (fileName) {
+      sections.push(`
+        <p style="margin:0 0 6px;font-size:12px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:#633806;">File upload</p>
+        <p style="margin:0 0 20px;color:#5F5E5A;font-size:14px;">Attached: ${escapeHtml(fileName)}</p>
+      `)
+    }
+
+    const bodyHtml = `
+      <div style="margin:0 0 24px;padding:16px;background:#FAF8F5;border-radius:6px;">
+        <p style="margin:0 0 4px;font-size:13px;color:#2C2C2A;"><strong>Course:</strong> ${escapeHtml(courseTitle)}</p>
+        <p style="margin:0 0 4px;font-size:13px;color:#2C2C2A;"><strong>Module:</strong> ${escapeHtml(moduleTitle)}</p>
+        <p style="margin:0 0 4px;font-size:13px;color:#2C2C2A;"><strong>Assignment:</strong> ${escapeHtml(assignmentTitle)}</p>
+        <p style="margin:0;font-size:13px;color:#2C2C2A;"><strong>Learner:</strong> ${escapeHtml(learner?.name || '')} (${escapeHtml(learnerEmail)})</p>
+      </div>
+      ${sections.join('')}
+      <p style="margin:24px 0 0;color:#5F5E5A;font-size:13px;">PGS will review this submission and send feedback within 3 business days. The next module has already unlocked.</p>
+      <p style="margin:20px 0 0;color:#2C2C2A;font-size:13px;">Subramaniam P G<br>Growth Architect and Executive Coach<br>Embiggen Consulting LLP</p>
+    `
+
+    const recipients = Array.from(new Set([learnerEmail, 'pgs@embiggen.co.in'])).map(email => ({ email }))
+    const attachments = fileBuffer && fileName
+      ? [{ name: fileName, content: fileBuffer.toString('base64') }]
+      : undefined
+
+    await sendBrevoEmailToMany(
+      recipients,
+      `Assignment submitted — ${courseTitle}: ${moduleTitle}`,
+      renderAcademyEmail('Assignment submitted', bodyHtml),
+      attachments
     )
 
     return NextResponse.json({ success: true })

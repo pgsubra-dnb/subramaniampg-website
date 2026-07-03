@@ -124,6 +124,60 @@ export async function sendBrevoEmail(
   return response.ok
 }
 
+export async function sendBrevoEmailToMany(
+  to: { email: string }[],
+  subject: string,
+  htmlContent: string,
+  attachments?: { name: string; content: string }[]
+): Promise<boolean> {
+  const payload: Record<string, unknown> = {
+    sender: { name: 'Subramaniam P G', email: 'pgs@embiggen.co.in' },
+    to,
+    replyTo: { email: 'pgs@embiggen.co.in' },
+    subject,
+    htmlContent,
+  }
+  if (attachments?.length) {
+    payload.attachment = attachments
+  }
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'api-key': process.env.BREVO_API_KEY!,
+    },
+    body: JSON.stringify(payload),
+  })
+  return response.ok
+}
+
+// ─── Branded email template ───────────────────────────────────────
+
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+export function renderAcademyEmail(heading: string, bodyHtml: string): string {
+  return `
+    <div style="background:#FAF8F5;padding:32px 16px;font-family:Inter,Arial,sans-serif;">
+      <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border-radius:8px;overflow:hidden;border:1px solid #D3D1C7;">
+        <div style="background:#633806;padding:18px 32px;">
+          <p style="margin:0;color:#FAEEDA;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;">Embiggen Consulting LLP — Academy</p>
+        </div>
+        <div style="padding:32px;">
+          <h1 style="margin:0 0 20px;font-family:'Lora',Georgia,serif;color:#2C2C2A;font-size:22px;font-weight:600;">${heading}</h1>
+          ${bodyHtml}
+        </div>
+      </div>
+    </div>
+  `
+}
+
 export async function upsertBrevoContact(
   email: string,
   attributes: Record<string, string | boolean>
