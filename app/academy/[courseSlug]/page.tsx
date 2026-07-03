@@ -76,6 +76,28 @@ export default function CoursePage() {
 
   const isEnrolled = learner?.enrolledCourses?.some(c => c._id === course._id)
 
+  function getNextLessonUrl(): string | null {
+    const modules = [...(course!.modules || [])].sort((a, b) => a.order - b.order)
+    for (const mod of modules) {
+      const lessons = [...(mod.lessons || [])].sort((a, b) => a.order - b.order)
+      for (const lesson of lessons) {
+        if (!completedLessons.includes(lesson._id)) {
+          return `/academy/${params.courseSlug}/${mod.order}/${lesson.order}`
+        }
+      }
+    }
+    return null
+  }
+
+  function handleContinueClick() {
+    if (isEnrolled) {
+      const url = getNextLessonUrl()
+      router.push(url || '/academy/dashboard')
+      return
+    }
+    setShowEnrol(true)
+  }
+
   return (
     <main style={{ background: '#FAF8F5', minHeight: '100vh' }}>
       <div className="max-w-5xl mx-auto flex flex-col md:flex-row">
@@ -163,7 +185,7 @@ export default function CoursePage() {
           )}
           <p className="mb-6" style={{ color: '#5F5E5A' }}>{course.shortDescription}</p>
 
-          <button onClick={() => setShowEnrol(true)}
+          <button onClick={handleContinueClick}
             className="px-8 py-3 rounded font-medium"
             style={{ background: '#633806', color: '#FAEEDA' }}>
             {isEnrolled
