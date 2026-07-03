@@ -85,7 +85,7 @@ export default function LessonPage() {
     block: {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       normal: ({ children }: any) => (
-        <p className="mb-4 leading-relaxed" style={{ color: '#5F5E5A', fontSize: '0.95rem' }}>{children}</p>
+        <p className="mb-4" style={{ color: '#5F5E5A', fontSize: '0.95rem', lineHeight: 1.82 }}>{children}</p>
       ),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       h3: ({ children }: any) => (
@@ -97,7 +97,8 @@ export default function LessonPage() {
       ),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       blockquote: ({ children }: any) => (
-        <blockquote className="border-l-4 pl-4 my-4 italic" style={{ borderColor: '#1D9E75', color: '#5F5E5A' }}>{children}</blockquote>
+        <blockquote className="border-l-4 rounded-r-md px-5 py-4 my-6"
+          style={{ borderColor: '#1D9E75', background: '#FAEEDA', color: '#5F5E5A', lineHeight: 1.82 }}>{children}</blockquote>
       ),
     },
     marks: {
@@ -124,7 +125,7 @@ export default function LessonPage() {
     listItem: {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       bullet: ({ children }: any) => (
-        <li className="text-sm leading-relaxed" style={{ listStyleType: 'disc' }}>{children}</li>
+        <li className="text-sm" style={{ listStyleType: 'disc', lineHeight: 1.82 }}>{children}</li>
       ),
     },
   }
@@ -132,9 +133,25 @@ export default function LessonPage() {
   if (loading) return <div className="min-h-screen flex items-center justify-center"
     style={{ background: '#FAF8F5', color: '#5F5E5A' }}>Loading lesson...</div>
 
+  const orderedModules = [...(course?.modules || [])].sort((a, b) => a.order - b.order)
+  const allLessons = orderedModules.flatMap(m =>
+    [...(m.lessons || [])].sort((a, b) => a.order - b.order).map(l => ({ moduleOrder: m.order, lessonOrder: l.order }))
+  )
+  const currentIndex = allLessons.findIndex(
+    l => l.moduleOrder === Number(params.moduleOrder) && l.lessonOrder === Number(params.lessonOrder)
+  )
+  const progressPercent = allLessons.length > 0 && currentIndex >= 0
+    ? Math.round(((currentIndex + 1) / allLessons.length) * 100)
+    : 0
+
   return (
     <main style={{ background: '#FAF8F5', minHeight: '100vh' }}>
-      <div className="max-w-3xl mx-auto px-6 py-10">
+      <div className="max-w-2xl mx-auto px-6 py-10">
+
+        {/* Progress bar */}
+        <div className="h-1 rounded-full mb-6" style={{ background: '#F1EFE8' }}>
+          <div className="h-1 rounded-full" style={{ background: '#1D9E75', width: `${progressPercent}%` }} />
+        </div>
 
         {/* Breadcrumb */}
         <p className="text-xs mb-6" style={{ color: '#888780' }}>
