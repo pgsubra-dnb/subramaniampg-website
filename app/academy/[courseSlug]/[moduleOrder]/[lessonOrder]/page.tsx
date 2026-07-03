@@ -109,6 +109,11 @@ export default function LessonPage() {
       em: ({ children }: any) => (
         <em style={{ color: '#5F5E5A' }}>{children}</em>
       ),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      link: ({ children, value }: any) => (
+        <a href={value?.href} download={value?.href?.split('/').pop()}
+          className="underline" style={{ color: '#633806' }}>{children}</a>
+      ),
     },
     list: {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
