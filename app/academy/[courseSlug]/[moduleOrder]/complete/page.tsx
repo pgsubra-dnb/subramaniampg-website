@@ -34,12 +34,18 @@ export default function ModuleCompletePage() {
   const router = useRouter()
   const [course, setCourse] = useState<{
     _id: string; title: string; slug?: { current: string }
-    modules?: { _id: string; order: number; title: string; badgeName?: string; badgeImage?: { asset?: { url: string } } }[]
+    modules?: {
+      _id: string; order: number; title: string; badgeName?: string
+      badgeImage?: { asset?: { url: string } }
+      infographicAsset?: { asset?: { url: string; originalFilename?: string } }
+    }[]
     paidConsultation?: PaidConsultation
   } | null>(null)
   const [learnerEmail, setLearnerEmail] = useState('')
   const [currentModule, setCurrentModule] = useState<{
-    _id: string; order: number; title: string; badgeName?: string; badgeImage?: { asset?: { url: string } }
+    _id: string; order: number; title: string; badgeName?: string
+    badgeImage?: { asset?: { url: string } }
+    infographicAsset?: { asset?: { url: string; originalFilename?: string } }
   } | null>(null)
   const [certificate, setCertificate] = useState<CertData | null>(null)
   const [generating, setGenerating] = useState(false)
@@ -178,6 +184,18 @@ export default function ModuleCompletePage() {
             ? `You have completed ${course?.title}. Your certificate is ready.`
             : `Well done. You have completed ${currentModule?.title}.`}
         </p>
+
+        {/* Module infographic download */}
+        {currentModule?.infographicAsset?.asset?.url && (
+          <div className="mb-8">
+            <a href={currentModule.infographicAsset.asset.url}
+              download={currentModule.infographicAsset.asset.originalFilename || true}
+              className="inline-block px-6 py-2.5 rounded font-medium text-sm"
+              style={{ background: '#633806', color: '#FAEEDA' }}>
+              Download module infographic
+            </a>
+          </div>
+        )}
 
         {/* Certificate */}
         {isLastModule && certificate && (

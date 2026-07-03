@@ -28,6 +28,7 @@ export async function getCourseBySlug(slug: string) {
       modules[] -> {
         _id, title, order, badgeName,
         badgeImage { asset -> { url } },
+        infographicAsset { asset -> { url, originalFilename } },
         questionsToShow,
         "hasAssignments": count(assignmentBank) > 0,
         lessons[] -> {
