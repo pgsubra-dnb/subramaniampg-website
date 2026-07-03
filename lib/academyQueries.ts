@@ -36,7 +36,7 @@ export async function getCourseBySlug(slug: string) {
         }
       }
     }
-  `, { slug })
+  `, { slug }, { cache: 'no-store' })
 }
 
 export async function getModuleAssignmentBank(moduleId: string) {
