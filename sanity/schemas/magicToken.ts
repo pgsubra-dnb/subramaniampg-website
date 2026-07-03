@@ -18,6 +18,12 @@ export default defineType({
       validation: Rule => Rule.required(),
     }),
     defineField({
+      name: 'learnerId',
+      title: 'Learner ID',
+      type: 'string',
+      description: 'The learnerRecord _id resolved at token-creation time, so verify does not need to re-look-up the learner by email.',
+    }),
+    defineField({
       name: 'expiresAt',
       title: 'Expires At',
       type: 'datetime',

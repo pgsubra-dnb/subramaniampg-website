@@ -7,6 +7,9 @@ export const sanityClient = createClient({
   token: process.env.SANITY_API_TOKEN!,
   apiVersion: '2024-01-01',
   useCdn: false,
+  // Always resolve to the published version of a document, never an unpublished
+  // draft, even if a draft with the same slug/id exists (e.g. mid-edit in Studio).
+  perspective: 'published',
 })
 
 // ─── Certificate ID ──────────────────────────────────────────────
@@ -26,30 +29,32 @@ function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex')
 }
 
-export async function storeMagicToken(email: string, token: string): Promise<void> {
+export async function storeMagicToken(email: string, token: string, learnerId?: string): Promise<void> {
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString()
   await sanityClient.create({
     _type: 'magicToken',
     email,
+    learnerId,
     tokenHash: hashToken(token),
     expiresAt,
   })
 }
 
-export async function verifyMagicToken(token: string): Promise<string | null> {
+export async function verifyMagicToken(token: string): Promise<{ email: string; learnerId?: string } | null> {
   const tokenHash = hashToken(token)
   const now = new Date().toISOString()
 
   const doc = await sanityClient.fetch(
     `*[_type == 'magicToken' && tokenHash == $tokenHash && expiresAt > $now][0]`,
-    { tokenHash, now }
+    { tokenHash, now },
+    { cache: 'no-store' }
   )
 
   if (!doc) return null
 
   await sanityClient.delete(doc._id)
 
-  return doc.email
+  return { email: doc.email, learnerId: doc.learnerId }
 }
 
 export async function cleanExpiredTokens(): Promise<void> {
@@ -66,7 +71,8 @@ export async function cleanExpiredTokens(): Promise<void> {
 export async function getLearnerByEmail(email: string) {
   return await sanityClient.fetch(
     `*[_type == 'learnerRecord' && email == $email][0]`,
-    { email }
+    { email },
+    { cache: 'no-store' }
   )
 }
 

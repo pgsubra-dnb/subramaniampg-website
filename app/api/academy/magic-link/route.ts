@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     }
 
     const token = generateToken()
-    await storeMagicToken(email, token)
+    await storeMagicToken(email, token, learner._id)
 
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://subramaniampg.guru'
     const magicLink = `${siteUrl}/api/academy/verify?token=${token}`
