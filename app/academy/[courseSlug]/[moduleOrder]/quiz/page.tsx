@@ -11,6 +11,16 @@ interface Question {
   optionD: string
   correctAnswer: string
   explanation?: string
+  optionOrder: readonly ('A' | 'B' | 'C' | 'D')[]
+}
+
+function shuffleOptionOrder(): readonly ('A' | 'B' | 'C' | 'D')[] {
+  const letters: ('A' | 'B' | 'C' | 'D')[] = ['A', 'B', 'C', 'D']
+  for (let i = letters.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [letters[i], letters[j]] = [letters[j], letters[i]]
+  }
+  return letters
 }
 
 interface QuizResult {
@@ -48,6 +58,7 @@ export default function QuizPage() {
       const bank = [...(modRes.module?.quizQuestionBank || [])] as Question[]
       const toShow = modRes.module?.questionsToShow || 3
       const shuffled = bank.sort(() => Math.random() - 0.5).slice(0, toShow)
+        .map(q => ({ ...q, optionOrder: shuffleOptionOrder() }))
       setQuestions(shuffled)
       setLoading(false)
     }
@@ -92,7 +103,7 @@ export default function QuizPage() {
             <p className="font-medium mb-4 text-sm" style={{ color: '#2C2C2A' }}>
               {idx + 1}. {q.questionText}
             </p>
-            {(['A', 'B', 'C', 'D'] as const).map(letter => (
+            {q.optionOrder.map(letter => (
               <button key={letter}
                 onClick={() => !results && setAnswers(prev => ({ ...prev, [q._key]: letter }))}
                 className="w-full text-left px-4 py-2.5 rounded border text-sm mb-2"
@@ -137,7 +148,8 @@ export default function QuizPage() {
               setResults(null); setAnswers({})
               const bank = [...(academyModule?.quizQuestionBank || [])] as Question[]
               const toShow = academyModule?.questionsToShow || 3
-              setQuestions(bank.sort(() => Math.random() - 0.5).slice(0, toShow))
+              setQuestions(bank.sort(() => Math.random() - 0.5).slice(0, toShow)
+                .map(q => ({ ...q, optionOrder: shuffleOptionOrder() })))
             }}
               className="px-6 py-2 rounded text-sm"
               style={{ background: '#1D9E75', color: '#fff' }}>
