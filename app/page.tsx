@@ -106,17 +106,18 @@ const RESOURCES = [
 ]
 
 export default async function HomePage() {
-  const [latestPosts, videos, sanityTestimonials, siteSettings] = await Promise.all([
+  const [latestPosts, videos, sanityTestimonials, siteSettings, articlesCount] = await Promise.all([
     getLatestPosts(3),
     getPlaylistVideos(),
     getTestimonials(),
-    client.fetch(`*[_type == "siteSettings"][0]{yearsExperience,booksPublished,articlesWritten,leadersCoached}`),
+    client.fetch(`*[_type == "siteSettings"][0]{yearsExperience,booksPublished,leadersCoached}`),
+    client.fetch(`count(*[_type == "post"])`),
   ])
 
   const STATS = [
     { value: siteSettings?.yearsExperience || '40+', label: 'Years Experience' },
     { value: siteSettings?.booksPublished   || '7',   label: 'Books Published' },
-    { value: siteSettings?.articlesWritten  || '182', label: 'Articles Written' },
+    { value: String(articlesCount ?? 0),              label: 'Articles Written' },
     { value: siteSettings?.leadersCoached   || '100+',label: 'Leaders Coached' },
   ]
 

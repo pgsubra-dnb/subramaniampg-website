@@ -47,6 +47,17 @@ export default defineType({
       title: 'Categories',
       type: 'array',
       of: [defineArrayMember({ type: 'string' })],
+      options: {
+        list: [
+          { title: 'Ancient Wisdom', value: 'Ancient Wisdom' },
+          { title: "Author's Choice", value: "Author's Choice" },
+          { title: 'Enabling Growth', value: 'Enabling Growth' },
+          { title: 'Page Turners', value: 'Page Turners' },
+          { title: 'Videos', value: 'Videos' },
+          { title: 'leadership', value: 'leadership' },
+        ],
+      },
+      validation: (Rule) => Rule.unique(),
     }),
     defineField({
       name: 'author',
