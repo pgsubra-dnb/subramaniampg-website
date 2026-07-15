@@ -4,6 +4,7 @@ import { defineConfig } from 'sanity'
 import { structureTool } from 'sanity/structure'
 
 import post from './sanity/schemas/post'
+import category from './sanity/schemas/category'
 import book from './sanity/schemas/book'
 import resource from './sanity/schemas/resource'
 import testimonial from './sanity/schemas/testimonial'
@@ -39,6 +40,7 @@ export default defineConfig({
   schema: {
     types: [
       post,
+      category,
       book,
       resource,
       testimonial,

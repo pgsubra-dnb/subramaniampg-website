@@ -34,7 +34,7 @@ const POST_FIELDS = `
   title,
   excerpt,
   publishedAt,
-  categories,
+  "categories": categories[]->title,
   author,
   "mainImage": mainImage.asset->url
 `
@@ -68,6 +68,13 @@ export async function getAllSlugs(): Promise<string[]> {
     `*[_type == "post"] { "slug": slug.current }`
   )
   return results.map((r) => r.slug).filter(Boolean)
+}
+
+export async function getCategories(): Promise<string[]> {
+  const results: { title: string }[] = await client.fetch(
+    `*[_type == "category"] | order(title asc) { title }`
+  )
+  return results.map((c) => c.title).filter(Boolean)
 }
 
 export type SanityTestimonial = {

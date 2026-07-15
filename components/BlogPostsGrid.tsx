@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import type { SanityPost } from '@/lib/sanity'
 import { formatPostDate } from '@/lib/sanity'
 
@@ -70,14 +70,10 @@ function BlogCard({ post }: { post: SanityPost }) {
   )
 }
 
-export default function BlogPostsGrid({ posts }: { posts: SanityPost[] }) {
+export default function BlogPostsGrid({ posts, categories: categoryList }: { posts: SanityPost[]; categories: string[] }) {
   const [activeCategory, setActiveCategory] = useState('All')
 
-  const categories = useMemo(() => {
-    const seen = new Set<string>()
-    posts.forEach((p) => (p.categories ?? []).forEach((c) => seen.add(c)))
-    return ['All', ...Array.from(seen).sort()]
-  }, [posts])
+  const categories = ['All', ...categoryList]
 
   const filtered = activeCategory === 'All'
     ? posts

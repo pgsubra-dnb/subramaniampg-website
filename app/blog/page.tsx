@@ -1,7 +1,7 @@
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
 import BlogPostsGrid from '@/components/BlogPostsGrid'
-import { getPosts } from '@/lib/sanity'
+import { getPosts, getCategories } from '@/lib/sanity'
 
 export const revalidate = 3600
 
@@ -18,7 +18,7 @@ export const metadata = {
 }
 
 export default async function BlogPage() {
-  const posts = await getPosts()
+  const [posts, categories] = await Promise.all([getPosts(), getCategories()])
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#FAF8F5' }}>
@@ -37,7 +37,7 @@ export default async function BlogPage() {
       </section>
 
       {/* Category filter + grid (client component) */}
-      <BlogPostsGrid posts={posts} />
+      <BlogPostsGrid posts={posts} categories={categories} />
 
       <Footer />
     </div>
