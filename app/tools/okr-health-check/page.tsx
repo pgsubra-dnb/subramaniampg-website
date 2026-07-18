@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
 
@@ -119,6 +119,13 @@ const QUESTIONS: Question[] = [
 
 const CATEGORIES: Category[] = ['Objective Clarity', 'Key Result Quality', 'Review Cadence', 'Alignment and Ownership']
 
+const LABEL_LINES: Record<Category, string[]> = {
+  'Objective Clarity': ['Objective Clarity'],
+  'Key Result Quality': ['Key Result', 'Quality'],
+  'Review Cadence': ['Review Cadence'],
+  'Alignment and Ownership': ['Alignment and', 'Ownership'],
+}
+
 // ── Levels ─────────────────────────────────────────────────────────────────────
 
 type LevelKey = 'OKR Mirage' | 'OKR Patchwork' | 'OKR Routine' | 'OKR Discipline' | 'OKR Flywheel'
@@ -153,6 +160,8 @@ function RadarChart({ categories }: { categories: Record<Category, number> }) {
   const center = size / 2
   const maxRadius = 100
   const minRadius = 16 // score of 1 still shows a visible shape, not a dot
+  const labelRadius = maxRadius + 16
+  const labelMargin = 8 // breathing room between label text and the SVG edge
 
   const angleFor = (i: number) => (Math.PI * 2 * i) / CATEGORIES.length - Math.PI / 2
 
@@ -166,9 +175,48 @@ function RadarChart({ categories }: { categories: Record<Category, number> }) {
   const dataPath = dataPoints.map(p => `${p.x},${p.y}`).join(' ')
 
   const rings = [1, 2, 3, 4]
+  const lineHeight = 13
+
+  // Horizontal padding starts generous, then grows to fit the browser's own
+  // rendered label widths (via getBBox) so wrapping never clips regardless
+  // of device font metrics or fallback-font timing on first paint.
+  const [horizontalPadding, setHorizontalPadding] = useState(95)
+  const textRefs = useRef<Partial<Record<Category, SVGTextElement | null>>>({})
+
+  useEffect(() => {
+    const measure = () => {
+      let maxLeftWidth = 0
+      let maxRightWidth = 0
+      CATEGORIES.forEach((c, i) => {
+        const el = textRefs.current[c]
+        if (!el) return
+        const cos = Math.cos(angleFor(i))
+        const width = el.getBBox().width
+        if (cos > 0.3) maxRightWidth = Math.max(maxRightWidth, width)
+        else if (cos < -0.3) maxLeftWidth = Math.max(maxLeftWidth, width)
+      })
+      const rightLabelX = center + labelRadius
+      const leftLabelX = center - labelRadius
+      const neededRight = (rightLabelX + maxRightWidth + labelMargin) - size
+      const neededLeft = -(leftLabelX - maxLeftWidth - labelMargin)
+      const needed = Math.ceil(Math.max(neededRight, neededLeft))
+      if (needed > 0) setHorizontalPadding(p => Math.max(p, needed))
+    }
+    if (typeof document !== 'undefined' && document.fonts?.ready) {
+      document.fonts.ready.then(measure)
+    } else {
+      measure()
+    }
+  }, [categories])
+
+  const viewBoxWidth = size + horizontalPadding * 2
 
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} className="w-full max-w-xs mx-auto" style={{ background: 'transparent' }}>
+    <svg
+      viewBox={`${-horizontalPadding} 0 ${viewBoxWidth} ${size}`}
+      className="w-full max-w-md mx-auto"
+      style={{ background: 'transparent' }}
+    >
       {rings.map(ring => {
         const pts = CATEGORIES.map((_, i) => pointFor(i, ring))
         return (
@@ -200,20 +248,25 @@ function RadarChart({ categories }: { categories: Record<Category, number> }) {
       <polygon points={dataPath} fill="#1D9E75" fillOpacity={0.25} stroke="#1D9E75" strokeWidth={2} />
 
       {CATEGORIES.map((c, i) => {
-        const labelPoint = pointFor(i, 4.9)
-        const anchor = Math.abs(Math.cos(angleFor(i))) < 0.3 ? 'middle' : Math.cos(angleFor(i)) > 0 ? 'start' : 'end'
+        const angle = angleFor(i)
+        const labelPoint = { x: center + labelRadius * Math.cos(angle), y: center + labelRadius * Math.sin(angle) }
+        const anchor = Math.abs(Math.cos(angle)) < 0.3 ? 'middle' : Math.cos(angle) > 0 ? 'start' : 'end'
+        const lines = LABEL_LINES[c]
+        const firstLineY = labelPoint.y - ((lines.length - 1) * lineHeight) / 2
         return (
           <text
             key={c}
-            x={labelPoint.x}
-            y={labelPoint.y}
+            ref={el => { textRefs.current[c] = el }}
             textAnchor={anchor}
-            dominantBaseline="middle"
-            fontSize={10}
+            fontSize={11}
             fontWeight={600}
             fill="#888780"
           >
-            {c}
+            {lines.map((line, li) => (
+              <tspan key={li} x={labelPoint.x} y={firstLineY + li * lineHeight} dominantBaseline="middle">
+                {line}
+              </tspan>
+            ))}
           </text>
         )
       })}
