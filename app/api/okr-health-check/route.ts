@@ -64,6 +64,32 @@ const LEVEL_CONTENT: Record<LevelKey, {
 const CLOSING_NOTE =
   'This is the stage where most OKR systems either take root or quietly fade. I would be glad to walk through your result with you and figure out the fastest way forward. No pitch, just a real conversation about where you stand. Book a short call here: https://cal.id/pgs'
 
+function buildRadarChartUrl(categories: CategoryScores): string {
+  const config = {
+    type: 'radar',
+    data: {
+      labels: CATEGORY_ORDER,
+      datasets: [{
+        data: CATEGORY_ORDER.map(c => categories[c]),
+        backgroundColor: 'rgba(29, 158, 117, 0.25)',
+        borderColor: '#1D9E75',
+        pointBackgroundColor: '#1D9E75',
+        borderWidth: 2,
+      }],
+    },
+    options: {
+      legend: { display: false },
+      scale: {
+        ticks: { display: false, min: 1, max: 4 },
+        pointLabels: { fontSize: 11, fontColor: '#888780' },
+        gridLines: { color: '#E8E4DC' },
+        angleLines: { color: '#E8E4DC' },
+      },
+    },
+  }
+  return `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(config))}&backgroundColor=white&width=360&height=360`
+}
+
 function levelFromScore(score: number): LevelKey {
   if (score < 1.75) return 'OKR Mirage'
   if (score < 2.50) return 'OKR Patchwork'
@@ -78,9 +104,10 @@ function weakestCategory(categories: CategoryScores): keyof CategoryScores {
   , CATEGORY_ORDER[0])
 }
 
-function buildVisitorReport(name: string, level: LevelKey, categories: CategoryScores): { subject: string; text: string } {
+function buildVisitorReport(name: string, level: LevelKey, categories: CategoryScores): { subject: string; text: string; html: string } {
   const content = LEVEL_CONTENT[level]
   const weakest = weakestCategory(categories)
+  const chartUrl = buildRadarChartUrl(categories)
 
   const text = `Hi ${name},
 
@@ -106,7 +133,23 @@ Growth Architect and Executive Coach
 Embiggen Consulting LLP
 pgs@embiggen.co.in`
 
-  return { subject: 'Your OKR Health Check Report', text }
+  const html = `Hi ${name},<br><br>
+Your OKR system is ${level}.<br><br>
+${content.description}<br><br>
+<img src="${chartUrl}" alt="Your OKR category radar chart" width="360" height="360" style="display:block;margin:8px 0 16px;" /><br>
+What this means for your organisation:<br><br>
+${content.whatThisMeans}<br><br>
+Your biggest gap is in ${weakest}. This is usually the first place to fix, because it affects everything else.<br><br>
+Your highest-leverage next action:<br><br>
+${content.highestLeverageAction}<br><br>
+${CLOSING_NOTE}<br><br>
+Warm regards<br>
+Subramaniam P G<br>
+Growth Architect and Executive Coach<br>
+Embiggen Consulting LLP<br>
+pgs@embiggen.co.in`
+
+  return { subject: 'Your OKR Health Check Report', text, html }
 }
 
 async function sendLeadNotification(data: {
@@ -186,7 +229,7 @@ export async function POST(req: NextRequest) {
       to: data.email,
       toName: data.name,
       subject: report.subject,
-      htmlContent: report.text.replace(/\n/g, '<br>'),
+      htmlContent: report.html,
       textContent: report.text,
     })
 
