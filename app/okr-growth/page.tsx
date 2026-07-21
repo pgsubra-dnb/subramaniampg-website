@@ -38,6 +38,25 @@ const PROBLEMS = [
   'Leadership is not actually aligned. Meetings turn into debates about priorities. Execution slows down. You end up pulling the team in different directions instead of one.',
 ]
 
+const VALUES = [
+  {
+    title: 'Honesty over comfort',
+    text: 'We tell you the truth about what is working and what is not, even when it is not what you want to hear.',
+  },
+  {
+    title: 'Simplicity over complexity',
+    text: 'We keep goals few and clear, not scattered across twelve objectives and forty key results.',
+  },
+  {
+    title: 'Partnership over transactions',
+    text: "We stay invested in your long-term growth, not just the next quarter's targets.",
+  },
+  {
+    title: 'Founders stay in control',
+    text: 'We do not run execution behind your back. You stay involved, informed, and in charge.',
+  },
+]
+
 function PrimaryButton({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link
@@ -132,6 +151,58 @@ export default function OkrGrowthPage() {
             goals connect to the bigger picture. The system stays alive through a structured
             review cadence, not a folder that gets opened once a quarter.
           </p>
+        </div>
+      </section>
+
+      {/* 3.5 Vision, mission, values */}
+      <section className="px-6 py-20 sm:py-16" style={{ backgroundColor: '#FAEEDA' }}>
+        <div className="relative z-10 max-w-[640px] mx-auto">
+          <h2 className="font-lora text-2xl font-bold mb-6" style={{ color: '#2C2C2A' }}>
+            What this is built on
+          </h2>
+          <div className="flex flex-col gap-5 mb-10">
+            <div className="border-l-4 pl-5 py-1" style={{ borderColor: '#1D9E75' }}>
+              <p
+                className="text-xs font-medium uppercase tracking-wide mb-1"
+                style={{ color: '#633806' }}
+              >
+                Vision
+              </p>
+              <p className="text-base leading-relaxed italic" style={{ color: '#2C2C2A' }}>
+                &quot;A world where every founder and CXO executes with confidence and unstoppable
+                momentum.&quot;
+              </p>
+            </div>
+            <div className="border-l-4 pl-5 py-1" style={{ borderColor: '#1D9E75' }}>
+              <p
+                className="text-xs font-medium uppercase tracking-wide mb-1"
+                style={{ color: '#633806' }}
+              >
+                Mission
+              </p>
+              <p className="text-base leading-relaxed italic" style={{ color: '#2C2C2A' }}>
+                &quot;We help growth-stage founders and enterprise CXOs execute with clarity and
+                discipline, using OKRs, coaching, and technology to align teams and drive
+                growth.&quot;
+              </p>
+            </div>
+          </div>
+          <p
+            className="text-xs font-medium uppercase tracking-wide mb-4"
+            style={{ color: '#633806' }}
+          >
+            Values
+          </p>
+          <div className="flex flex-col gap-4">
+            {VALUES.map((value) => (
+              <div key={value.title} className="text-sm leading-relaxed">
+                <span className="font-medium" style={{ color: '#2C2C2A' }}>
+                  {value.title}
+                </span>
+                <span style={{ color: '#5F5E5A' }}> — {value.text}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
