@@ -138,7 +138,7 @@ The canonical, up-to-date table definition lives in `db/worklife-survey-schema.s
 
 ## 6. Source tagging
 
-The share links will carry ?src= values: linkedin, whatsapp, hr, alumni, other. Capture into the source column. Missing param stores as 'direct'.
+The share links will carry ?src= values: linkedin, whatsapp, facebook, hr, alumni, other. Capture into the source column. Missing param stores as 'direct'.
 
 ## 7. Analysis queries
 

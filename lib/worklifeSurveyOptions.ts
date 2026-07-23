@@ -65,7 +65,7 @@ export const WORTH_PAYING = [
   'Accountability to actually act',
 ] as const
 
-export const SOURCE_VALUES = ['linkedin', 'whatsapp', 'hr', 'alumni', 'other', 'direct'] as const
+export const SOURCE_VALUES = ['linkedin', 'whatsapp', 'facebook', 'hr', 'alumni', 'other', 'direct'] as const
 
 export const ONE_PROBLEM_MAX_LEN = 500
 export const OTHER_TEXT_MAX_LEN = 200
