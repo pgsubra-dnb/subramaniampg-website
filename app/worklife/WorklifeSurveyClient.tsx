@@ -297,10 +297,12 @@ export default function WorklifeSurveyClient({
   source,
   turnstileSiteKey,
   calendarUrl,
+  bookingConfirmed,
 }: {
   source: string
   turnstileSiteKey: string
   calendarUrl: string
+  bookingConfirmed: boolean
 }) {
   const [stage, setStage] = useState<Stage>(1)
   const [answers, setAnswers] = useState<Answers>(EMPTY_ANSWERS)
@@ -314,23 +316,40 @@ export default function WorklifeSurveyClient({
   const turnstileRendered = useRef(false)
   const loadTimeRef = useRef<number>(Date.now())
 
-  // Restore "already submitted" state on revisit
+  // Restore "already submitted" state on revisit, or jump straight to the
+  // thank-you screen if redirected back here from a completed calendar booking —
+  // this must work even when localStorage has no record of a prior submission.
   useEffect(() => {
+    let saved: { id?: number | null; interview_optin?: boolean | null; update_optin?: boolean | null; calendar_clicked?: boolean; submitted?: boolean } | null = null
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) {
-        const saved = JSON.parse(raw)
-        if (saved?.submitted) {
-          setSubmissionId(saved.id ?? null)
-          setAnswers((a) => ({ ...a, interview_optin: saved.interview_optin ?? null, update_optin: saved.update_optin ?? null }))
-          setCalendarClicked(!!saved.calendar_clicked)
-          setStage('thanks')
-        }
-      }
+      if (raw) saved = JSON.parse(raw)
     } catch {
       // localStorage unavailable — treat as first visit
     }
-  }, [])
+
+    if (bookingConfirmed) {
+      if (saved) {
+        setSubmissionId(saved.id ?? null)
+        setAnswers((a) => ({ ...a, interview_optin: saved!.interview_optin ?? null, update_optin: saved!.update_optin ?? null }))
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...saved, calendar_clicked: true }))
+        } catch {
+          // ignore
+        }
+      }
+      setCalendarClicked(true)
+      setStage('thanks')
+      return
+    }
+
+    if (saved?.submitted) {
+      setSubmissionId(saved.id ?? null)
+      setAnswers((a) => ({ ...a, interview_optin: saved!.interview_optin ?? null, update_optin: saved!.update_optin ?? null }))
+      setCalendarClicked(!!saved.calendar_clicked)
+      setStage('thanks')
+    }
+  }, [bookingConfirmed])
 
   // Turnstile invisible widget
   useEffect(() => {
@@ -799,6 +818,11 @@ export default function WorklifeSurveyClient({
               <p className="text-[#5F5E5A] leading-relaxed max-w-md mx-auto mb-2">
                 Your response has been recorded anonymously.
               </p>
+              {bookingConfirmed && (
+                <p className="text-[#0D6E4E] font-semibold leading-relaxed max-w-md mx-auto mb-2">
+                  Thank you, your conversation is booked. We look forward to speaking with you.
+                </p>
+              )}
               {answers.update_optin && (
                 <p className="text-[#5F5E5A] leading-relaxed max-w-md mx-auto mb-2">
                   We will write to you when the findings are ready.
