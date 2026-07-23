@@ -298,11 +298,13 @@ export default function WorklifeSurveyClient({
   turnstileSiteKey,
   calendarUrl,
   bookingConfirmed,
+  resetRequested,
 }: {
   source: string
   turnstileSiteKey: string
   calendarUrl: string
   bookingConfirmed: boolean
+  resetRequested: boolean
 }) {
   const [stage, setStage] = useState<Stage>(1)
   const [answers, setAnswers] = useState<Answers>(EMPTY_ANSWERS)
@@ -320,6 +322,17 @@ export default function WorklifeSurveyClient({
   // thank-you screen if redirected back here from a completed calendar booking —
   // this must work even when localStorage has no record of a prior submission.
   useEffect(() => {
+    // TESTING ONLY — see the resetRequested prop definition in page.tsx.
+    if (resetRequested) {
+      try {
+        localStorage.removeItem(STORAGE_KEY)
+      } catch {
+        // ignore
+      }
+      setStage(1)
+      return
+    }
+
     let saved: { id?: number | null; interview_optin?: boolean | null; update_optin?: boolean | null; calendar_clicked?: boolean; submitted?: boolean } | null = null
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
@@ -349,7 +362,7 @@ export default function WorklifeSurveyClient({
       setCalendarClicked(!!saved.calendar_clicked)
       setStage('thanks')
     }
-  }, [bookingConfirmed])
+  }, [bookingConfirmed, resetRequested])
 
   // Turnstile invisible widget
   useEffect(() => {
