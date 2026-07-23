@@ -20,10 +20,10 @@ Companion to `survey-build-spec.md` (Definition of Done, item 9). Written after 
 2. **Signature-based duplicate flagging only looks back 1 hour**, not indefinitely as the original spec described (see `survey-build-spec.md`, section 4 deviation note). Email-based duplicate flagging has no such limit.
 3. **`role_type` column rename.** `current_role` was renamed to `role_type` in the schema, the API insert, and the analysis queries after a reserved-PostgreSQL-keyword collision blocked the original schema from running. Nothing downstream referenced the old name. Full detail in `survey-build-spec.md`.
 
-## Before the survey link goes out publicly
+## Go-live cleanup (done)
 
-- **Remove the `?reset=1` testing escape hatch.** `app/worklife/page.tsx` reads a `reset` query param and, when `resetRequested` is true, `WorklifeSurveyClient.tsx` clears the `worklife_survey_v1` localStorage key and forces the form back to stage 1 — added purely so the site owner could re-test the form on a device that had already submitted (localStorage otherwise permanently shows the thank-you screen on that device, by design). Both `resetRequested` occurrences are marked `TESTING ONLY` in code comments. Delete the prop, the query-param read, and the `useEffect` branch before the real link is shared, so no one can replay the form on a device that already submitted.
-- **Re-check the table is empty of test data** (`select count(*) from worklife_survey_responses`) right before go-live — test rows were already found and deleted once (real owner test submissions using `pgsubra@gmail.com`), and further testing via `?reset=1` will likely add more.
+- **`?reset=1` testing escape hatch removed.** It temporarily let the site owner clear the `worklife_survey_v1` localStorage key and re-test the form on a device that had already submitted. Removed from `app/worklife/page.tsx` and `app/worklife/WorklifeSurveyClient.tsx` once testing was confirmed complete, so no one can replay the form on a device that already submitted.
+- **Table re-checked and confirmed empty of test data** (`select count(*) from worklife_survey_responses`) immediately before go-live.
 
 ## What's confirmed working as of this build
 
