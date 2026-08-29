@@ -142,6 +142,25 @@ with real credentials:
 
 ## 8. Deploy
 
+### Standing deployment process (do not deviate)
+
+1. **Merge to `main` first.** All work lands via a PR into `main`. Never push
+   feature-branch code straight to production.
+2. **Deploy only from `main`.** `git checkout main && git pull`, clean install
+   (`npm ci`), `npm run build` to confirm green, then `vercel --prod` from that
+   checkout.
+3. **Never run `vercel --prod` from a feature branch or an unmerged working
+   tree.** Doing so twice put code live that `main` didn't contain, and left
+   `main` and production out of sync until PR #2 reconciled them (2026-08-29).
+
+Vercel's git integration is **not** wired to auto-deploy `main` for this project —
+every production deploy is a manual `vercel --prod` upload from local. So the
+"deploy from `main`" discipline is entirely on the operator.
+
+**Reconciled + deployed 2026-08-29:** PR #2 merged everything (UX fixes,
+logo/radar, admin screen) into `main` (`e886a29`); `vercel --prod` run from a
+fresh `main` checkout → `subramaniampg.guru`. `main` = production from here.
+
 - [ ] Deploy to production, **unlinked from main navigation** (marketed separately; page lives at `/okr-ally`).
 - [ ] Confirm `NEXT_PUBLIC_SITE_URL` points at the production domain (magic-link URLs are built from it).
 - [ ] Confirm `NEXT_PUBLIC_OKR_ALLY_SANITY_DATASET=okr-ally` and `OKR_ALLY_FREE_REVIEW_COUPON=OKRALLY-FIRST-FREE` are set on the target environment (§1).
