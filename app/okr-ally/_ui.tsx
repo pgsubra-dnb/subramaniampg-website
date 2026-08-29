@@ -216,6 +216,12 @@ export const TONE_COLOR: Record<ScoreTone, string> = {
   high: T.emerald,
 }
 
+// Score-radar treatment — a punchy emerald fill + a warm-grey grid, shared
+// verbatim with the PDF (RADAR_FILL / RADAR_GRID in lib/okrAllyReport.ts) so
+// the two surfaces don't drift.
+export const RADAR_FILL = '#9FD9C7'
+export const RADAR_GRID = '#B8B1A3'
+
 /** Rubric criteria in canonical order — kept in sync with RUBRIC in lib/okrAllyReview.ts. */
 export const CRITERIA_ORDER = [
   'Outcome vs Output',
@@ -328,17 +334,23 @@ export function ScoreInfographic({
             key={lvl}
             points={poly(ordered.map((_, i) => pt(i, (R * lvl) / 10)))}
             fill="none"
-            stroke={T.hairline}
-            strokeWidth={1}
+            stroke={RADAR_GRID}
+            strokeWidth={lvl === 10 ? 1.6 : 1}
           />
         ))}
         {ordered.map((_, i) => {
           const [x, y] = pt(i, R)
-          return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke={T.hairline} strokeWidth={1} />
+          return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke={RADAR_GRID} strokeWidth={1} />
         })}
-        <polygon points={poly(dataPts)} fill={T.emerald} fillOpacity={0.18} stroke={T.emerald} strokeWidth={1.6} />
+        <polygon
+          points={poly(dataPts)}
+          fill={RADAR_FILL}
+          stroke={T.emeraldDark}
+          strokeWidth={2.6}
+          strokeLinejoin="round"
+        />
         {dataPts.map(([x, y], i) => (
-          <circle key={i} cx={x} cy={y} r={2.6} fill={T.emerald} />
+          <circle key={i} cx={x} cy={y} r={3.4} fill={T.emeraldDark} />
         ))}
         {ordered.map((c, i) => {
           const [x, y] = pt(i, R + 14)
@@ -347,7 +359,7 @@ export function ScoreInfographic({
           const words = c.criterion.split(' ')
           const lines = words.length > 2 ? [words.slice(0, Math.ceil(words.length / 2)).join(' '), words.slice(Math.ceil(words.length / 2)).join(' ')] : [c.criterion]
           return (
-            <text key={i} x={x} y={y} textAnchor={anchor} fontSize={10} fill={T.muted}>
+            <text key={i} x={x} y={y} textAnchor={anchor} fontSize={10.5} fontWeight={600} fill={T.charcoal}>
               {lines.map((ln, k) => (
                 <tspan key={k} x={x} dy={k === 0 ? 0 : 11}>
                   {ln}

@@ -2,7 +2,7 @@ import type { ReviewOutput, ReviewContextSnapshot, SubmittedKR, ScoreTone } from
 import type { OkrAllySiteSettings } from '@/lib/okrAlly'
 import { RUBRIC, scoreTone } from '@/lib/okrAllyReview'
 import { getSiteSettings } from '@/lib/okrAlly'
-import { REPORT_BANNER_JPEG, REPORT_BANNER_W, REPORT_BANNER_H } from '@/lib/okrAllyReportAssets'
+import { REPORT_LOGO_JPEG, REPORT_LOGO_W, REPORT_LOGO_H } from '@/lib/okrAllyReportAssets'
 import { putPdf } from '@/lib/okrAllyBlob'
 import { markReviewDelivered } from '@/lib/okrAllySubmission'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
@@ -35,7 +35,11 @@ const CHARCOAL: [number, number, number] = [44, 44, 42]
 const BODY: [number, number, number] = [95, 94, 90]
 const MUTE: [number, number, number] = [150, 140, 130]
 const EMERALD: [number, number, number] = [29, 158, 117]
-const EMERALD_TINT: [number, number, number] = [225, 245, 238]
+const EMERALD_DARK: [number, number, number] = [15, 110, 86]
+// Score-radar fill + grid — deliberately punchy (see <ScoreInfographic> on the
+// web, which uses the identical values so the two surfaces stay in step).
+const RADAR_FILL: [number, number, number] = [159, 217, 199]
+const RADAR_GRID: [number, number, number] = [184, 177, 163]
 const BROWN: [number, number, number] = [99, 56, 6]
 const RULE: [number, number, number] = [232, 228, 220]
 const CREAM: [number, number, number] = [250, 248, 245]
@@ -171,16 +175,17 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
     const ang = (i: number) => (-90 + i * 72) * (Math.PI / 180)
     const ptAt = (i: number, rad: number): [number, number] => [cx + rad * Math.cos(ang(i)), cy + rad * Math.sin(ang(i))]
 
-    doc.setDrawColor(...RULE)
-    doc.setLineWidth(0.25)
+    doc.setDrawColor(...RADAR_GRID)
     for (const level of [2, 4, 6, 8, 10]) {
       const rr = R * (level / 10)
+      doc.setLineWidth(level === 10 ? 0.5 : 0.35)
       for (let i = 0; i < 5; i++) {
         const a = ptAt(i, rr)
         const b = ptAt((i + 1) % 5, rr)
         doc.line(a[0], a[1], b[0], b[1])
       }
     }
+    doc.setLineWidth(0.35)
     for (let i = 0; i < 5; i++) {
       const o = ptAt(i, R)
       doc.line(cx, cy, o[0], o[1])
@@ -191,16 +196,17 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
     for (let i = 1; i < dataPts.length; i++) {
       rel.push([dataPts[i][0] - dataPts[i - 1][0], dataPts[i][1] - dataPts[i - 1][1]])
     }
-    doc.setFillColor(...EMERALD_TINT)
-    doc.setDrawColor(...EMERALD)
-    doc.setLineWidth(0.7)
+    doc.setFillColor(...RADAR_FILL)
+    doc.setDrawColor(...EMERALD_DARK)
+    doc.setLineWidth(1.4)
+    doc.setLineJoin('round')
     doc.lines(rel, dataPts[0][0], dataPts[0][1], [1, 1], 'FD', true)
-    doc.setFillColor(...EMERALD)
-    for (const p of dataPts) doc.circle(p[0], p[1], 0.9, 'F')
+    doc.setFillColor(...EMERALD_DARK)
+    for (const p of dataPts) doc.circle(p[0], p[1], 1.3, 'F')
 
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7)
-    doc.setTextColor(...BODY)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7.5)
+    doc.setTextColor(...CHARCOAL)
     scores.forEach((s, i) => {
       const lp = ptAt(i, R + 7)
       const cos = Math.cos(ang(i))
@@ -208,6 +214,8 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
       const parts = doc.splitTextToSize(s.criterion, 30) as string[]
       parts.forEach((ln, k) => doc.text(ln, lp[0], lp[1] + k * 3, { align }))
     })
+    doc.setFont('helvetica', 'normal')
+    doc.setLineJoin('miter')
     yy = cy + R + 12
 
     // Value legend
@@ -232,12 +240,12 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
     return yy + 2
   }
 
-  // ── Banner ─────────────────────────────────────────────────
+  // ── Logo ───────────────────────────────────────────────────
   {
-    const bw = 112
-    const bh = (bw * REPORT_BANNER_H) / REPORT_BANNER_W
-    doc.addImage(REPORT_BANNER_JPEG, 'JPEG', (PW - bw) / 2, y, bw, bh)
-    y += bh + 12
+    const lw = 64
+    const lh = (lw * REPORT_LOGO_H) / REPORT_LOGO_W
+    doc.addImage(REPORT_LOGO_JPEG, 'JPEG', (PW - lw) / 2, y, lw, lh)
+    y += lh + 12
   }
 
   // ── Cover ───────────────────────────────────────────────────
