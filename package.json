@@ -6,11 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@portabletext/react": "^6.2.0",
     "@sanity/image-url": "^2.1.1",
+    "@vercel/blob": "^2.8.0",
     "jspdf": "^4.2.1",
     "next": "14.2.35",
     "next-sanity": "^9.12.3",
@@ -21,6 +24,7 @@
     "styled-components": "^6.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/node": "^20",
     "@types/pg": "^8.20.0",
     "@types/react": "^18",

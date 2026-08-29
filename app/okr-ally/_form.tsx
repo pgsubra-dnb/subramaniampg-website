@@ -1,0 +1,743 @@
+'use client'
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { AllyRow, UserRow, Btn, Field, CharCount, T } from './_ui'
+import {
+  FormState,
+  StepId,
+  STEP_ORDER,
+  LIMITS,
+  CTX_KIND,
+  CTX_PROMPT,
+  ctxSnapshot,
+  emptyForm,
+  isCtxStep,
+  CtxFieldState,
+  ParaphraseAction,
+} from './_formState'
+
+interface Props {
+  initialForm: FormState | null
+  onSubmitted: (result: ReviewResult) => void
+}
+
+export interface ReviewResult {
+  submissionId: string
+  reviewId: string | null
+  overallScore: number
+  review: unknown
+}
+
+const STEP_LABEL: Record<StepId, string> = {
+  name: 'Your name',
+  phone: 'Phone (optional)',
+  company_name: 'Company name',
+  ctx_company: 'Company context',
+  ctx_business: 'Business context',
+  ctx_role: 'Your role',
+  objective: 'Objective',
+  krs: 'Key Results',
+  confirm: 'Review & submit',
+}
+
+export default function StepForm({ initialForm, onSubmitted }: Props) {
+  const [form, setForm] = useState<FormState>(initialForm ?? emptyForm())
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [submitState, setSubmitState] = useState<'idle' | 'running' | 'failed'>('idle')
+  const bottomRef = useRef<HTMLDivElement>(null)
+
+  // ── autosave (debounced) ────────────────────────────────
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>()
+  const persist = useCallback((next: FormState) => {
+    clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      fetch('/api/okr-ally/draft', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ formState: next }),
+      }).catch(() => {})
+    }, 700)
+  }, [])
+
+  const update = useCallback(
+    (patch: Partial<FormState> | ((f: FormState) => FormState)) => {
+      setForm((f) => {
+        const next = typeof patch === 'function' ? patch(f) : { ...f, ...patch }
+        persist(next)
+        return next
+      })
+    },
+    [persist]
+  )
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [form.step, busy, submitState])
+
+  const idx = STEP_ORDER.indexOf(form.step)
+  const goStep = (s: StepId) => {
+    setError(null)
+    update({ step: s })
+  }
+  const next = () => goStep(STEP_ORDER[Math.min(idx + 1, STEP_ORDER.length - 1)])
+
+  // ── context field pipeline ──────────────────────────────
+  async function runAssess(kind: 'company' | 'business' | 'role') {
+    const cs = form.ctx[kind]
+    const text = cs.raw.trim()
+    if (!text) {
+      setError('Please add a few words, or leave it blank if you truly have nothing to add.')
+      return
+    }
+    if (text.length > LIMITS.context) return
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await fetch('/api/okr-ally/context/assess', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ field: kind, text, lastCheckedText: cs.lastCheckedText || undefined }),
+      })
+      const j = await r.json()
+      if (j.skipped) {
+        finishCtx(kind, text, 'not_offered', null)
+        return
+      }
+      const patchField = (p: Partial<CtxFieldState>) =>
+        update((f) => ({ ...f, ctx: { ...f.ctx, [kind]: { ...f.ctx[kind], lastCheckedText: text, ...p } } }))
+
+      if (j.thin && j.question) {
+        patchField({ phase: 'clarify', clarifyingQuestion: j.question })
+        return
+      }
+      if (j.needsParaphrase) {
+        await runParaphrase(kind, text, null)
+        return
+      }
+      finishCtx(kind, text, 'not_offered', null)
+    } catch {
+      // degraded — proceed with the raw text
+      finishCtx(kind, text, 'not_offered', null)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function answerClarify(kind: 'company' | 'business' | 'role', answer: string) {
+    const cs = form.ctx[kind]
+    const finalized = answer.trim() ? `${cs.raw.trim()}\n\n${answer.trim()}` : cs.raw.trim()
+    update((f) => ({
+      ...f,
+      ctx: { ...f.ctx, [kind]: { ...f.ctx[kind], clarifyingAnswer: answer.trim() || null } },
+    }))
+    setBusy(true)
+    try {
+      await runParaphrase(kind, finalized, answer.trim() || null)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function runParaphrase(kind: 'company' | 'business' | 'role', text: string, answer: string | null) {
+    try {
+      const r = await fetch('/api/okr-ally/context/paraphrase', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ field: kind, text }),
+      })
+      const j = await r.json()
+      if (j.paraphrase) {
+        update((f) => ({
+          ...f,
+          ctx: {
+            ...f.ctx,
+            [kind]: {
+              ...f.ctx[kind],
+              phase: 'paraphrase',
+              clarifyingAnswer: answer,
+              paraphraseSuggested: j.paraphrase,
+            },
+          },
+        }))
+        return
+      }
+      // degraded — keep the finalized original
+      finishCtx(kind, text, answer ? 'ignored' : 'not_offered', answer)
+    } catch {
+      finishCtx(kind, text, answer ? 'ignored' : 'not_offered', answer)
+    }
+  }
+
+  function finishCtx(
+    kind: 'company' | 'business' | 'role',
+    finalText: string,
+    action: ParaphraseAction,
+    answer: string | null
+  ) {
+    update((f) => ({
+      ...f,
+      step: STEP_ORDER[Math.min(STEP_ORDER.indexOf(f.step) + 1, STEP_ORDER.length - 1)],
+      ctx: {
+        ...f.ctx,
+        [kind]: {
+          ...f.ctx[kind],
+          phase: 'done',
+          finalText,
+          paraphraseAction: action,
+          clarifyingAnswer: answer ?? f.ctx[kind].clarifyingAnswer,
+        },
+      },
+    }))
+  }
+
+  // ── submit ──────────────────────────────────────────────
+  async function submit() {
+    setSubmitState('running')
+    setError(null)
+    const idempotencyKey =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `okr-${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+    // persist name/phone/company + (optionally) profile before the long call
+    await fetch('/api/okr-ally/profile', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: form.name.trim(),
+        phone: form.phone.trim() || null,
+        ...(form.saveProfile
+          ? {
+              companyName: form.companyName.trim() || null,
+              companyContext: form.ctx.company.finalText || null,
+              businessContext: form.ctx.business.finalText || null,
+              roleContext: form.ctx.role.finalText || null,
+            }
+          : {}),
+      }),
+    }).catch(() => {})
+
+    let statusRes: { freeReviewCode?: string | null } = {}
+    try {
+      statusRes = await (await fetch('/api/okr-ally/status')).json()
+    } catch {
+      /* ignore */
+    }
+
+    try {
+      const r = await fetch('/api/okr-ally/review', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          idempotencyKey,
+          objective: form.objective.trim(),
+          krs: form.krs
+            .filter((k) => k.text.trim())
+            .map((k) => ({
+              text: k.text.trim(),
+              initiatives: k.initiatives.map((i) => i.trim()).filter(Boolean),
+            })),
+          context_snapshot: {
+            company_context: ctxSnapshot(form.ctx.company),
+            business_context: ctxSnapshot(form.ctx.business),
+            role_context: ctxSnapshot(form.ctx.role),
+          },
+          ...(statusRes.freeReviewCode ? { couponCode: statusRes.freeReviewCode } : {}),
+        }),
+      })
+      const j = await r.json()
+      if (r.ok && j.status === 'complete') {
+        await fetch('/api/okr-ally/draft', { method: 'DELETE' }).catch(() => {})
+        onSubmitted({
+          submissionId: j.submissionId,
+          reviewId: j.reviewId ?? null,
+          overallScore: j.overallScore,
+          review: j.review,
+        })
+        return
+      }
+      setSubmitState('failed')
+      setError(
+        j.error ||
+          (j.status === 'failed_refunded'
+            ? 'The review could not be generated. Your credit has been refunded — try again.'
+            : 'Something went wrong. Please try again.')
+      )
+    } catch {
+      setSubmitState('failed')
+      setError('Network problem reaching Ally. Your credit is safe — try again.')
+    }
+  }
+
+  // ══ RENDER ══════════════════════════════════════════════
+  const ctxKind = isCtxStep(form.step) ? CTX_KIND[form.step] : null
+  const c = ctxKind ? form.ctx[ctxKind] : null
+
+  return (
+    <div>
+      <Transcript form={form} onEdit={goStep} />
+
+      {error && (
+        <div
+          className="mb-4 text-sm rounded-lg px-4 py-3"
+          style={{ background: '#FEF2F2', color: '#991B1B', border: '1px solid #FECACA' }}
+        >
+          {error}
+        </div>
+      )}
+
+      {submitState === 'running' ? (
+        <AllyRow>
+          <span>
+            Reviewing your OKR now — scoring it, writing feedback, and drafting two rewrites. This takes
+            about a minute. You&apos;ll get it here and by email.
+          </span>
+        </AllyRow>
+      ) : form.step === 'confirm' ? (
+        <ConfirmStep
+          form={form}
+          busy={false}
+          onEdit={goStep}
+          onToggleSave={(v) => update({ saveProfile: v })}
+          onSubmit={submit}
+          failed={submitState === 'failed'}
+        />
+      ) : form.step === 'krs' ? (
+        <KrStep
+          krs={form.krs}
+          onChange={(krs) => update({ krs })}
+          onNext={() => {
+            const clean = form.krs.map((k) => ({ text: k.text.trim(), initiatives: k.initiatives.map((i) => i.trim()).filter(Boolean) })).filter((k) => k.text)
+            if (clean.length < LIMITS.krsMin) return setError('Add at least one Key Result.')
+            if (clean.some((k) => k.text.length > LIMITS.kr)) return setError(`Each Key Result must be ${LIMITS.kr} characters or fewer.`)
+            update({ krs: clean.length ? clean : form.krs, step: 'confirm' })
+          }}
+        />
+      ) : c && ctxKind ? (
+        <CtxStep
+          kind={ctxKind}
+          state={c}
+          busy={busy}
+          onRawChange={(v) =>
+            update((f) => ({ ...f, ctx: { ...f.ctx, [ctxKind]: { ...f.ctx[ctxKind], raw: v } } }))
+          }
+          onSubmitRaw={() => runAssess(ctxKind)}
+          onAnswer={(a) => answerClarify(ctxKind, a)}
+          onSkipClarify={() => answerClarify(ctxKind, '')}
+          onParaphrase={(action, text) => {
+            const finalText = action === 'confirmed' ? c.paraphraseSuggested ?? text : text
+            finishCtx(ctxKind, finalText, action, c.clarifyingAnswer)
+          }}
+        />
+      ) : (
+        <SimpleStep
+          key={form.step}
+          label={STEP_LABEL[form.step]}
+          prompt={
+            form.step === 'name'
+              ? "First, what should I call you?"
+              : form.step === 'phone'
+              ? "A phone number, in case we need to reach you about a payment. You can skip this."
+              : form.step === 'company_name'
+              ? "What's the name of your company or team?"
+              : form.step === 'objective'
+              ? "Here's the important one — your Objective for this cycle. One sentence, just the outcome you want."
+              : ''
+          }
+          value={
+            form.step === 'name'
+              ? form.name
+              : form.step === 'phone'
+              ? form.phone
+              : form.step === 'company_name'
+              ? form.companyName
+              : form.objective
+          }
+          onChange={(v) =>
+            update(
+              form.step === 'name'
+                ? { name: v }
+                : form.step === 'phone'
+                ? { phone: v }
+                : form.step === 'company_name'
+                ? { companyName: v }
+                : { objective: v }
+            )
+          }
+          multiline={form.step === 'objective'}
+          max={form.step === 'objective' ? LIMITS.objective : undefined}
+          optional={form.step === 'phone'}
+          onNext={() => {
+            if (form.step === 'name' && !form.name.trim()) return setError('I need a name to address you by.')
+            if (form.step === 'company_name' && !form.companyName.trim()) return setError('A company or team name, please.')
+            if (form.step === 'objective') {
+              if (!form.objective.trim()) return setError('The Objective is required.')
+              if (form.objective.length > LIMITS.objective) return setError(`The Objective must be ${LIMITS.objective} characters or fewer.`)
+            }
+            next()
+          }}
+        />
+      )}
+
+      <div ref={bottomRef} />
+    </div>
+  )
+}
+
+// ── transcript of committed answers ───────────────────────
+function Transcript({ form, onEdit }: { form: FormState; onEdit: (s: StepId) => void }) {
+  const rows: { q: string; a: string; step: StepId }[] = []
+  const at = STEP_ORDER.indexOf(form.step)
+  const done = (s: StepId) => STEP_ORDER.indexOf(s) < at
+
+  if (done('name')) rows.push({ q: 'What should I call you?', a: form.name, step: 'name' })
+  if (done('phone')) rows.push({ q: 'Phone number?', a: form.phone || '(skipped)', step: 'phone' })
+  if (done('company_name')) rows.push({ q: 'Company or team name?', a: form.companyName, step: 'company_name' })
+  ;(['ctx_company', 'ctx_business', 'ctx_role'] as const).forEach((s) => {
+    if (done(s)) {
+      const cs = form.ctx[CTX_KIND[s]]
+      rows.push({ q: CTX_PROMPT[CTX_KIND[s]], a: cs.finalText || cs.raw, step: s })
+    }
+  })
+  if (done('objective')) rows.push({ q: 'Your Objective?', a: form.objective, step: 'objective' })
+  if (done('krs'))
+    rows.push({
+      q: 'Your Key Results?',
+      a: form.krs.map((k, i) => `${i + 1}. ${k.text}`).join('\n'),
+      step: 'krs',
+    })
+
+  return (
+    <>
+      {rows.map((r, i) => (
+        <div key={i}>
+          <AllyRow>{r.q}</AllyRow>
+          <UserRow>
+            {r.a}
+            <button
+              onClick={() => onEdit(r.step)}
+              style={{
+                display: 'block',
+                marginTop: 6,
+                fontSize: 11,
+                color: 'rgba(255,255,255,.75)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              edit
+            </button>
+          </UserRow>
+        </div>
+      ))}
+    </>
+  )
+}
+
+// ── simple text step ──────────────────────────────────────
+function SimpleStep({
+  label,
+  prompt,
+  value,
+  onChange,
+  onNext,
+  multiline,
+  max,
+  optional,
+}: {
+  label: string
+  prompt: string
+  value: string
+  onChange: (v: string) => void
+  onNext: () => void
+  multiline?: boolean
+  max?: number
+  optional?: boolean
+}) {
+  return (
+    <>
+      <AllyRow>{prompt}</AllyRow>
+      <div className="mb-2">
+        <Field value={value} onChange={onChange} multiline={multiline} max={max} autoFocus placeholder={optional ? 'Optional' : ''} />
+      </div>
+      <div className="flex items-center justify-between">
+        {max ? <CharCount value={value} max={max} /> : <span style={{ fontSize: 11.5, color: T.muted }}>{label}</span>}
+        <Btn onClick={onNext}>{optional ? 'Continue' : 'Next'}</Btn>
+      </div>
+    </>
+  )
+}
+
+// ── context step ──────────────────────────────────────────
+function CtxStep({
+  kind,
+  state,
+  busy,
+  onRawChange,
+  onSubmitRaw,
+  onAnswer,
+  onSkipClarify,
+  onParaphrase,
+}: {
+  kind: 'company' | 'business' | 'role'
+  state: CtxFieldState
+  busy: boolean
+  onRawChange: (v: string) => void
+  onSubmitRaw: () => void
+  onAnswer: (a: string) => void
+  onSkipClarify: () => void
+  onParaphrase: (action: ParaphraseAction, text: string) => void
+}) {
+  const [answer, setAnswer] = useState('')
+  const [editText, setEditText] = useState('')
+  useEffect(() => {
+    if (state.phase === 'paraphrase') setEditText(state.paraphraseSuggested ?? '')
+  }, [state.phase, state.paraphraseSuggested])
+
+  if (state.phase === 'clarify' && state.clarifyingQuestion) {
+    return (
+      <>
+        <AllyRow>{CTX_PROMPT[kind]}</AllyRow>
+        <UserRow>{state.raw}</UserRow>
+        <AllyRow>{state.clarifyingQuestion}</AllyRow>
+        <div className="mb-2">
+          <Field value={answer} onChange={setAnswer} autoFocus placeholder="Type your answer, or skip" />
+        </div>
+        <div className="flex justify-end gap-2">
+          <Btn variant="ghost" small onClick={onSkipClarify} disabled={busy}>
+            Skip
+          </Btn>
+          <Btn small onClick={() => onAnswer(answer)} disabled={busy}>
+            {busy ? '…' : 'Send'}
+          </Btn>
+        </div>
+      </>
+    )
+  }
+
+  if (state.phase === 'paraphrase' && state.paraphraseSuggested) {
+    return (
+      <>
+        <AllyRow>Here&apos;s how I&apos;d put that, for clarity. Same meaning — nothing added.</AllyRow>
+        <div
+          className="mb-3 rounded-lg p-4 text-sm"
+          style={{ background: T.card, border: `1px solid ${T.hairline}`, color: T.charcoal, lineHeight: 1.6 }}
+        >
+          <textarea
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            rows={4}
+            style={{ width: '100%', border: 'none', outline: 'none', font: 'inherit', color: 'inherit', resize: 'vertical', background: 'transparent' }}
+          />
+        </div>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Btn variant="ghost" small onClick={() => onParaphrase('ignored', state.raw)}>
+            Keep mine
+          </Btn>
+          <Btn variant="ghost" small onClick={() => onParaphrase('modified', editText)}>
+            Use my edit
+          </Btn>
+          <Btn small onClick={() => onParaphrase('confirmed', state.paraphraseSuggested!)}>
+            Use Ally&apos;s
+          </Btn>
+        </div>
+      </>
+    )
+  }
+
+  // input phase
+  const prefilled = !!state.lastCheckedText && state.lastCheckedText.trim() === state.raw.trim() && !!state.raw.trim()
+  return (
+    <>
+      <AllyRow>
+        {CTX_PROMPT[kind]}
+        {prefilled && (
+          <span style={{ display: 'block', marginTop: 6, fontSize: 12.5, opacity: 0.8 }}>
+            I&apos;ve filled this from your profile — leave it as is if nothing&apos;s changed, or edit it.
+          </span>
+        )}
+      </AllyRow>
+      <div className="mb-2">
+        <Field value={state.raw} onChange={onRawChange} multiline max={LIMITS.context} autoFocus />
+      </div>
+      <div className="flex items-center justify-between">
+        <CharCount value={state.raw} max={LIMITS.context} />
+        <Btn onClick={onSubmitRaw} disabled={busy}>
+          {busy ? 'Thinking…' : 'Continue'}
+        </Btn>
+      </div>
+    </>
+  )
+}
+
+// ── KR builder ────────────────────────────────────────────
+function KrStep({
+  krs,
+  onChange,
+  onNext,
+}: {
+  krs: { text: string; initiatives: string[] }[]
+  onChange: (krs: { text: string; initiatives: string[] }[]) => void
+  onNext: () => void
+}) {
+  const setKr = (i: number, patch: Partial<{ text: string; initiatives: string[] }>) =>
+    onChange(krs.map((k, j) => (j === i ? { ...k, ...patch } : k)))
+
+  return (
+    <>
+      <AllyRow>
+        Now your Key Results — one to six of them. Each should be a measurable result, in baseline-and-target
+        form. Add up to three initiatives under any KR if you want to.
+      </AllyRow>
+      {krs.map((kr, i) => (
+        <div key={i} className="mb-4 rounded-lg p-4" style={{ background: T.card, border: `1px solid ${T.hairline}` }}>
+          <div className="flex items-start gap-2">
+            <span style={{ fontWeight: 700, color: T.emeraldDark, fontSize: 14, marginTop: 10 }}>KR{i + 1}</span>
+            <div className="flex-1">
+              <Field
+                value={kr.text}
+                onChange={(v) => setKr(i, { text: v.slice(0, LIMITS.kr + 20) })}
+                max={LIMITS.kr}
+                placeholder="e.g. Raise activation rate from 34% to 60%"
+              />
+              <div className="mt-1 flex justify-between">
+                <CharCount value={kr.text} max={LIMITS.kr} />
+                {krs.length > 1 && (
+                  <button
+                    onClick={() => onChange(krs.filter((_, j) => j !== i))}
+                    style={{ fontSize: 11.5, color: '#9A3412', background: 'none', border: 'none', cursor: 'pointer' }}
+                  >
+                    remove KR
+                  </button>
+                )}
+              </div>
+              {kr.initiatives.map((init, k) => (
+                <div key={k} className="mt-2 flex items-center gap-2">
+                  <span style={{ color: T.muted, fontSize: 13 }}>–</span>
+                  <div className="flex-1">
+                    <Field
+                      value={init}
+                      onChange={(v) =>
+                        setKr(i, { initiatives: kr.initiatives.map((x, m) => (m === k ? v.slice(0, LIMITS.initiative + 20) : x)) })
+                      }
+                      max={LIMITS.initiative}
+                      placeholder="Optional initiative"
+                    />
+                  </div>
+                  <button
+                    onClick={() => setKr(i, { initiatives: kr.initiatives.filter((_, m) => m !== k) })}
+                    style={{ fontSize: 11.5, color: T.muted, background: 'none', border: 'none', cursor: 'pointer' }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {kr.initiatives.length < LIMITS.initiativesPerKr && (
+                <button
+                  onClick={() => setKr(i, { initiatives: [...kr.initiatives, ''] })}
+                  style={{ marginTop: 8, fontSize: 12, color: T.emeraldDark, background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  + add initiative
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+      <div className="flex items-center justify-between">
+        {krs.length < LIMITS.krsMax ? (
+          <button
+            onClick={() => onChange([...krs, { text: '', initiatives: [] }])}
+            style={{ fontSize: 13, color: T.emeraldDark, fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}
+          >
+            + add Key Result
+          </button>
+        ) : (
+          <span style={{ fontSize: 11.5, color: T.muted }}>6 is the maximum</span>
+        )}
+        <Btn onClick={onNext}>Review everything</Btn>
+      </div>
+    </>
+  )
+}
+
+// ── confirm step ──────────────────────────────────────────
+function ConfirmStep({
+  form,
+  onEdit,
+  onToggleSave,
+  onSubmit,
+  failed,
+  busy,
+}: {
+  form: FormState
+  onEdit: (s: StepId) => void
+  onToggleSave: (v: boolean) => void
+  onSubmit: () => void
+  failed: boolean
+  busy: boolean
+}) {
+  const row = (label: string, value: string, step: StepId) => (
+    <div className="py-2.5" style={{ borderBottom: `1px solid ${T.hairline}` }}>
+      <div className="flex justify-between items-baseline">
+        <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: T.gold }}>
+          {label}
+        </span>
+        <button onClick={() => onEdit(step)} style={{ fontSize: 11.5, color: T.emeraldDark, background: 'none', border: 'none', cursor: 'pointer' }}>
+          edit
+        </button>
+      </div>
+      <div style={{ fontSize: 14, color: T.charcoal, marginTop: 4, whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{value || '—'}</div>
+    </div>
+  )
+
+  return (
+    <>
+      <AllyRow>Here&apos;s everything I have. Check it over — this is what I&apos;ll review.</AllyRow>
+      <div className="rounded-lg p-4 mb-4" style={{ background: T.card, border: `1px solid ${T.hairline}` }}>
+        {row('Name', form.name, 'name')}
+        {row('Phone', form.phone || '(skipped)', 'phone')}
+        {row('Company', form.companyName, 'company_name')}
+        {row('Company context', form.ctx.company.finalText, 'ctx_company')}
+        {row('Business context', form.ctx.business.finalText, 'ctx_business')}
+        {row('Your role', form.ctx.role.finalText, 'ctx_role')}
+        {row('Objective', form.objective, 'objective')}
+        {row(
+          'Key Results',
+          form.krs
+            .map(
+              (k, i) =>
+                `${i + 1}. ${k.text}` + (k.initiatives.filter(Boolean).length ? '\n   ' + k.initiatives.filter(Boolean).map((x) => `– ${x}`).join('\n   ') : '')
+            )
+            .join('\n'),
+          'krs'
+        )}
+      </div>
+
+      <label className="flex items-start gap-2 mb-4 text-sm" style={{ color: T.muted }}>
+        <input type="checkbox" checked={form.saveProfile} onChange={(e) => onToggleSave(e.target.checked)} style={{ marginTop: 3 }} />
+        <span>Save this company, business and role context to my profile, so next time it&apos;s prefilled.</span>
+      </label>
+
+      <div
+        className="rounded-lg p-4 mb-3 text-sm"
+        style={{ background: T.goldTint, color: T.gold, lineHeight: 1.55 }}
+      >
+        <strong>One review, one credit. No undo.</strong> Once you submit, a credit is used and the review runs.
+        There&apos;s no edit or self-serve refund after that (a failed generation refunds automatically).
+      </div>
+      <p className="text-xs italic mb-5" style={{ color: T.muted }}>
+        The review reflects the quality of the context you gave me — thin context means a thinner review.
+      </p>
+
+      <div className="flex justify-end gap-2">
+        <Btn type="button" onClick={onSubmit} disabled={busy}>
+          {failed ? 'Try again' : 'Submit for review'}
+        </Btn>
+      </div>
+    </>
+  )
+}

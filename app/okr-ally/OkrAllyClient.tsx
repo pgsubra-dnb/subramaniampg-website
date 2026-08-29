@@ -1,0 +1,350 @@
+'use client'
+
+import { useCallback, useEffect, useState } from 'react'
+import Image from 'next/image'
+import { Page, TopBar, AllyRow, Btn, Field, T, AVATAR, keyframes } from './_ui'
+import StepForm from './_form'
+import ReportScreen, { FullReport } from './_report'
+import PricingTab from './_pricing'
+import HistoryTab from './_history'
+import { FormState, emptyForm, CtxFieldState } from './_formState'
+
+type Phase = 'loading' | 'intro' | 'email' | 'app'
+type Tab = 'ally' | 'pricing' | 'history'
+
+interface Me {
+  authenticated: boolean
+  user?: { id: string; name: string; email: string; isAdmin: boolean }
+}
+interface Status {
+  creditsRemaining: number
+  freeReviewAvailable: boolean
+  links: { booking: string | null; substack: string | null; linkedin: string | null }
+}
+
+const VERIFY_ERROR: Record<string, string> = {
+  'invalid-link': 'That sign-in link isn’t valid. Enter your email below for a new one.',
+  'link-expired': 'That link has expired — they last 15 minutes. Enter your email for a new one.',
+  'server-error': 'Something went wrong signing you in. Try again below.',
+}
+
+export default function OkrAllyClient() {
+  const [phase, setPhase] = useState<Phase>('loading')
+  const [tab, setTab] = useState<Tab>('ally')
+  const [me, setMe] = useState<Me | null>(null)
+  const [status, setStatus] = useState<Status | null>(null)
+  const [draft, setDraft] = useState<FormState | null>(null)
+  const [resumeOffer, setResumeOffer] = useState<FormState | null>(null)
+  const [reportId, setReportId] = useState<string | null>(null)
+  const [report, setReport] = useState<FullReport | null>(null)
+  const [verifyError, setVerifyError] = useState<string | null>(null)
+
+  const refreshStatus = useCallback(() => {
+    fetch('/api/okr-ally/status')
+      .then((r) => r.json())
+      .then((s: Status) => setStatus(s))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const err = params.get('error')
+    if (err) {
+      setVerifyError(VERIFY_ERROR[err] || VERIFY_ERROR['invalid-link'])
+      window.history.replaceState({}, '', '/okr-ally')
+    }
+    ;(async () => {
+      try {
+        const m: Me = await (await fetch('/api/okr-ally/me')).json()
+        setMe(m)
+        if (!m.authenticated) {
+          setPhase(err ? 'email' : 'intro')
+          return
+        }
+        refreshStatus()
+        const [d, prof] = await Promise.all([
+          (await fetch('/api/okr-ally/draft')).json(),
+          (await fetch('/api/okr-ally/profile')).json().catch(() => null),
+        ])
+        if (d.formState && d.formState.step && d.formState.step !== 'name') {
+          setResumeOffer(d.formState as FormState)
+        } else if (prof) {
+          setDraft(prefillFromProfile(prof, m))
+        }
+        setPhase('app')
+      } catch {
+        setPhase('intro')
+      }
+    })()
+  }, [refreshStatus])
+
+  // load the full report when reportId is set
+  useEffect(() => {
+    if (!reportId) return
+    setReport(null)
+    fetch(`/api/okr-ally/submission/${reportId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((rep: FullReport | null) => setReport(rep))
+      .catch(() => setReport(null))
+  }, [reportId])
+
+  const startForm = useCallback((f: FormState | null) => {
+    setDraft(f)
+    setResumeOffer(null)
+    setReportId(null)
+    setTab('ally')
+  }, [])
+
+  function prefillFromProfile(
+    prof: {
+      name?: string
+      phone?: string | null
+      companyName?: string | null
+      companyContext?: string | null
+      businessContext?: string | null
+      roleContext?: string | null
+    },
+    m: Me
+  ): FormState | null {
+    const hasContext = prof.companyContext || prof.businessContext || prof.roleContext
+    if (!prof.companyName && !hasContext && !prof.phone) return null
+    const f = emptyForm()
+    f.name = prof.name || m.user?.name || ''
+    f.phone = prof.phone || ''
+    f.companyName = prof.companyName || ''
+    const seed = (text: string | null | undefined): CtxFieldState => {
+      const t = (text || '').trim()
+      return {
+        raw: t,
+        lastCheckedText: t,
+        clarifyingQuestion: null,
+        clarifyingAnswer: null,
+        paraphraseSuggested: null,
+        finalText: t,
+        paraphraseAction: t ? 'not_offered' : '',
+        phase: 'input',
+      }
+    }
+    f.ctx = { company: seed(prof.companyContext), business: seed(prof.businessContext), role: seed(prof.roleContext) }
+    return f
+  }
+
+  if (phase === 'loading') {
+    return (
+      <Page>
+        <style>{keyframes}</style>
+        <TopBar />
+        <p style={{ color: T.muted, fontSize: 14 }}>Loading…</p>
+      </Page>
+    )
+  }
+
+  const showingReport = phase === 'app' && reportId !== null
+
+  return (
+    <Page>
+      <style>{keyframes}</style>
+      <TopBar
+        right={
+          me?.authenticated ? (
+            <>
+              <span style={{ color: T.muted }}>
+                {status?.creditsRemaining ?? 0} credit{(status?.creditsRemaining ?? 0) === 1 ? '' : 's'}
+              </span>
+              <a href="/api/okr-ally/logout" style={{ color: T.emeraldDark, fontWeight: 600 }}>
+                Sign out
+              </a>
+            </>
+          ) : null
+        }
+      />
+
+      {me?.authenticated && !showingReport && (
+        <TabBar tab={tab} onChange={setTab} />
+      )}
+
+      {phase === 'intro' && <Intro onStart={() => setPhase('email')} />}
+      {phase === 'email' && <EmailGate error={verifyError} />}
+
+      {phase === 'app' && showingReport && (
+        <>
+          <button
+            onClick={() => {
+              setReportId(null)
+              setTab('ally')
+            }}
+            style={{ background: 'none', border: 'none', color: T.emeraldDark, fontWeight: 600, cursor: 'pointer', fontSize: 13, marginBottom: 12, padding: 0 }}
+          >
+            ← Back
+          </button>
+          {report ? (
+            <ReportScreen
+              report={report}
+              onStartAnother={() => startForm(null)}
+              bookingUrl={status?.links.booking ?? null}
+              substackUrl={status?.links.substack ?? null}
+              linkedinUrl={status?.links.linkedin ?? null}
+            />
+          ) : (
+            <p style={{ color: T.muted, fontSize: 14 }}>Loading your report…</p>
+          )}
+        </>
+      )}
+
+      {phase === 'app' && !showingReport && tab === 'ally' && resumeOffer && (
+        <>
+          <AllyRow>You have a review in progress. Pick up where you left off, or start fresh?</AllyRow>
+          <div className="flex gap-2 mb-4">
+            <Btn onClick={() => startForm(resumeOffer)}>Resume</Btn>
+            <Btn variant="ghost" onClick={() => startForm(null)}>
+              Start fresh
+            </Btn>
+          </div>
+        </>
+      )}
+
+      {phase === 'app' && !showingReport && tab === 'ally' && !resumeOffer && (
+        <StepForm
+          initialForm={draft}
+          onSubmitted={(r) => {
+            setReportId(r.submissionId)
+            refreshStatus()
+          }}
+        />
+      )}
+
+      {phase === 'app' && !showingReport && tab === 'pricing' && (
+        <PricingTab onBalanceChange={(n) => setStatus((s) => (s ? { ...s, creditsRemaining: n } : s))} />
+      )}
+
+      {phase === 'app' && !showingReport && tab === 'history' && (
+        <HistoryTab onOpen={(id) => setReportId(id)} />
+      )}
+    </Page>
+  )
+}
+
+function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
+  const tabs: [Tab, string][] = [
+    ['ally', 'Ally'],
+    ['pricing', 'Pricing & Plans'],
+    ['history', 'History'],
+  ]
+  return (
+    <div className="flex gap-1 mb-6" style={{ borderBottom: `1px solid ${T.hairline}` }}>
+      {tabs.map(([id, label]) => (
+        <button
+          key={id}
+          onClick={() => onChange(id)}
+          style={{
+            fontSize: 12.5,
+            fontWeight: 600,
+            letterSpacing: '.03em',
+            textTransform: 'uppercase',
+            color: tab === id ? T.charcoal : T.muted,
+            background: 'none',
+            border: 'none',
+            padding: '10px 8px',
+            cursor: 'pointer',
+            borderBottom: `2px solid ${tab === id ? T.emerald : 'transparent'}`,
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function Intro({ onStart }: { onStart: () => void }) {
+  return (
+    <div style={{ textAlign: 'center', padding: '8px 0 24px' }}>
+      <div style={{ width: 84, height: 84, borderRadius: '50%', overflow: 'hidden', margin: '0 auto 16px', border: `3px solid ${T.emerald}` }}>
+        <Image src={AVATAR} alt="OKR Ally" width={84} height={84} />
+      </div>
+      <h1 style={{ fontFamily: 'var(--font-lora), serif', fontSize: 24, fontWeight: 600, color: T.charcoal, margin: 0 }}>
+        Hi, I&apos;m Ally.
+      </h1>
+      <p style={{ color: T.muted, marginTop: 12, lineHeight: 1.6, maxWidth: 460, marginLeft: 'auto', marginRight: 'auto' }}>
+        Send me the Objective and Key Results you wrote, and I&apos;ll tell you honestly where they&apos;re strong,
+        where they&apos;re not, score them against a clear rubric, and rewrite them two ways.
+      </p>
+      <p style={{ color: T.muted, marginTop: 14, fontSize: 13.5, maxWidth: 460, marginLeft: 'auto', marginRight: 'auto' }}>
+        Subramaniam P G has spent over 40 years working with leadership teams on strategic clarity and execution.
+        He&apos;s authored 7 books, including <em>The Language of OKRs</em>, and is a certified OKR coach and executive
+        coach who has guided over 100 companies in building sustainable, well-aligned goals.
+      </p>
+      <div style={{ marginTop: 22 }}>
+        <Btn onClick={onStart}>Say hi to Ally</Btn>
+      </div>
+      <p style={{ marginTop: 12, fontSize: 12.5, color: T.muted }}>Your first review is free.</p>
+      <div style={{ marginTop: 18, fontSize: 14, display: 'flex', gap: 16, justifyContent: 'center' }}>
+        <a href="/work/okr-consulting" style={{ color: T.emeraldDark, fontWeight: 600, textDecoration: 'none' }}>
+          OKR consulting →
+        </a>
+        <a href="/assessment" style={{ color: T.emeraldDark, fontWeight: 600, textDecoration: 'none' }}>
+          Leadership Execution Assessment →
+        </a>
+      </div>
+    </div>
+  )
+}
+
+function EmailGate({ error }: { error: string | null }) {
+  const [email, setEmail] = useState('')
+  const [sent, setSent] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [localErr, setLocalErr] = useState<string | null>(null)
+
+  async function send() {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setLocalErr('That doesn’t look like an email address.')
+      return
+    }
+    setBusy(true)
+    setLocalErr(null)
+    try {
+      await fetch('/api/okr-ally/magic-link', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      setSent(true)
+    } catch {
+      setLocalErr('Could not send the link. Try again in a moment.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (sent) {
+    return (
+      <AllyRow>
+        Check your inbox — I&apos;ve sent a sign-in link to <strong>{email}</strong>. It works once and expires in 15
+        minutes. Come back here after you click it.
+      </AllyRow>
+    )
+  }
+
+  return (
+    <>
+      <AllyRow>
+        Before we start, what&apos;s your email? I&apos;ll send a one-time sign-in link — no password. It&apos;s how
+        your reviews and credits stay with you.
+      </AllyRow>
+      {(error || localErr) && (
+        <div className="mb-3 text-sm rounded-lg px-4 py-3" style={{ background: '#FEF2F2', color: '#991B1B', border: '1px solid #FECACA' }}>
+          {localErr || error}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <div className="flex-1">
+          <Field value={email} onChange={setEmail} placeholder="you@company.com" autoFocus />
+        </div>
+        <Btn onClick={send} disabled={busy}>
+          {busy ? 'Sending…' : 'Send link'}
+        </Btn>
+      </div>
+    </>
+  )
+}
