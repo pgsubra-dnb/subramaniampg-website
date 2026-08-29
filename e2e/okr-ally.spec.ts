@@ -1,8 +1,10 @@
 import { test, expect, Page } from '@playwright/test'
 import { FAIL_BASE_URL } from '../playwright.config'
+import { validateReviewOutput } from '../lib/okrAllyReview'
 import {
   signIn,
   seedCredits,
+  setAdmin,
   getBalance,
   getLatestSubmission,
   getContextSnapshot,
@@ -59,6 +61,38 @@ async function fillContext(page: Page, text: string, nextPrompt: RegExp) {
 }
 
 // ══════════════════════════════════════════════════════════
+// 0. validateReviewOutput enforces 2-3 initiatives per KR (no browser)
+// ══════════════════════════════════════════════════════════
+test('validateReviewOutput: KR initiative count must be 2-3 in both options', () => {
+  const kr = (n: number) => ({
+    text: 'Move X from 10 to 20',
+    status: 'new' as const,
+    initiatives: Array.from({ length: n }, (_, i) => ({ action: `Do thing ${i}`, owning_team: 'Product' })),
+  })
+  const build = (freshInitiatives: number) => ({
+    criteria_scores: [
+      { criterion: 'Outcome vs Output', score: 7, weight: 0.25, rationale: 'x' },
+      { criterion: 'Alignment', score: 7, weight: 0.25, rationale: 'x' },
+      { criterion: 'Measurability', score: 7, weight: 0.2, rationale: 'x' },
+      { criterion: 'Specificity', score: 7, weight: 0.15, rationale: 'x' },
+      { criterion: 'Ambition vs Realism', score: 7, weight: 0.15, rationale: 'x' },
+    ],
+    overall_score: 7,
+    objective_feedback: { what_works: 'x', what_to_improve: 'x' },
+    key_result_feedback: [],
+    suggested_okr_options: [
+      { label: 'Refined Original', objective: 'o', key_results: [kr(2)], rationale: 'r' },
+      { label: 'Fresh Rewrite', objective: 'o', key_results: [kr(freshInitiatives)], rationale: 'r' },
+    ],
+  })
+
+  expect(validateReviewOutput(build(2)).ok).toBe(true)
+  expect(validateReviewOutput(build(3)).ok).toBe(true)
+  expect(validateReviewOutput(build(1)).ok).toBe(false)
+  expect(validateReviewOutput(build(4)).ok).toBe(false)
+})
+
+// ══════════════════════════════════════════════════════════
 // 1. Happy path: magic link → completed report (live Claude call)
 // ══════════════════════════════════════════════════════════
 test('happy path: sign in, submit an OKR, get a scored report', async ({ page, context }) => {
@@ -110,11 +144,13 @@ test('happy path: sign in, submit an OKR, get a scored report', async ({ page, c
   // confirm → submit
   await expect(page.getByText(/One review, one credit. No undo/i)).toBeVisible()
   await page.getByRole('button', { name: 'Submit for review' }).click()
-  await expect(page.getByText(/Reviewing your OKR now/i)).toBeVisible()
+  // the generating indicator shows its first timed caption
+  await expect(page.getByText(/Reading your objective and the context/i)).toBeVisible()
 
-  // report screen
+  // report screen — shared score infographic (ring + radar + legend)
   await expect(page.getByText(/Your OKR scored/i)).toBeVisible({ timeout: 200_000 })
-  await expect(page.getByText('Score breakdown')).toBeVisible()
+  await expect(page.getByText('Weighted across the five criteria')).toBeVisible()
+  await expect(page.getByText('Why each criterion scored the way it did')).toBeVisible()
   await expect(page.getByText('Refined Original')).toBeVisible()
   await expect(page.getByText('Fresh Rewrite')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Download PDF' })).toBeVisible()
@@ -125,7 +161,26 @@ test('happy path: sign in, submit an OKR, get a scored report', async ({ page, c
   expect(await getBalance(user.userId)).toBe(0)
   const txns = await getCreditTransactions(user.userId)
   expect(txns).toEqual([{ type: 'usage', amount: -1 }])
+
+  // every rewritten KR in both options carries 2-3 initiatives (validation gate)
+  const r = await pool.query<{ suggested_okr_options: OkrOption[] }>(
+    `SELECT suggested_okr_options FROM reviews WHERE submission_id = $1`,
+    [sub!.id]
+  )
+  const options = r.rows[0].suggested_okr_options
+  expect(options).toHaveLength(2)
+  for (const opt of options) {
+    for (const kr of opt.key_results) {
+      expect(kr.initiatives.length).toBeGreaterThanOrEqual(2)
+      expect(kr.initiatives.length).toBeLessThanOrEqual(3)
+    }
+  }
 })
+
+interface OkrOption {
+  label: string
+  key_results: { text: string; initiatives: { action: string; owning_team: string }[] }[]
+}
 
 // ══════════════════════════════════════════════════════════
 // 2. Forced-failure refund path (server :3201 has no ANTHROPIC_API_KEY)
@@ -295,7 +350,7 @@ test.describe(() => {
     await page.getByPlaceholder(/Raise activation rate/i).fill('Increase top-tier member monthly visits from 6 to 7.3')
     await page.getByRole('button', { name: 'Review everything' }).click()
     await page.getByRole('button', { name: 'Submit for review' }).click()
-    await expect(page.getByText(/Reviewing your OKR now/i)).toBeVisible()
+    await expect(page.getByText(/Reading your objective and the context/i)).toBeVisible()
     await expect(page.getByText(/Your OKR scored/i)).toBeVisible({ timeout: 200_000 })
 
     // ── the snapshot records the clarify + paraphrase ──
@@ -315,4 +370,93 @@ test.describe(() => {
     // business/role went straight through
     expect(snap.business_context.paraphrase_action).toMatch(/not_offered|confirmed|ignored/)
   })
+})
+
+// ══════════════════════════════════════════════════════════
+// 6. Admin (expert) review screen — gate, feedback, improvement email
+// ══════════════════════════════════════════════════════════
+test('admin: expert feedback on both options, then a grounded improvement-email draft', async ({ page, context }) => {
+  test.setTimeout(120_000)
+
+  const user = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(user.userId)
+  const hdr = { cookie: user.cookieHeader }
+
+  // ── not an admin: routes 403, no Admin tab ──
+  expect((await context.request.get('/api/okr-ally/admin/reviews', { headers: hdr })).status()).toBe(403)
+  await page.goto('/okr-ally')
+  await expect(page.getByRole('button', { name: 'History' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Admin' })).toHaveCount(0)
+
+  // ── promote + seed a completed review ──
+  await setAdmin(user.userId, true)
+  const { submissionId, reviewId } = await seedCompletedReview(user.userId, 'E2E admin objective')
+
+  await page.reload()
+  await page.getByRole('button', { name: 'Admin' }).click()
+  await expect(page.getByText('E2E admin objective')).toBeVisible()
+
+  // ── full review payload ──
+  const full = await (await context.request.get(`/api/okr-ally/admin/review/${submissionId}`, { headers: hdr })).json()
+  expect(full.objective).toBe('E2E admin objective')
+  expect(full.review.suggestedOkrOptions.map((o: { label: string }) => o.label).sort()).toEqual([
+    'Fresh Rewrite',
+    'Refined Original',
+  ])
+  expect(full.rubricCriteria).toContain('Outcome vs Output')
+
+  const savePanel = (label: string) =>
+    context.request.post('/api/okr-ally/admin/expert-review', {
+      headers: hdr,
+      data: {
+        reviewId,
+        okrOptionLabel: label,
+        rubricFeedback: { 'Outcome vs Output': `note for ${label}` },
+        generalFeedback: `general for ${label}`,
+        expertRating: 4,
+      },
+    })
+
+  // one panel saved → improvement email refused
+  expect((await savePanel('Refined Original')).status()).toBe(200)
+  expect((await savePanel('Refined Original')).status()).toBe(200) // upsert, still fine
+  expect(
+    (await pool.query(`SELECT count(*) FROM expert_reviews WHERE review_id = $1`, [reviewId])).rows[0].count
+  ).toBe('1')
+
+  let gen = await context.request.post('/api/okr-ally/admin/improvement-email', {
+    headers: hdr,
+    data: { action: 'generate', reviewId },
+  })
+  expect(gen.status()).toBe(400)
+
+  // both panels saved → draft generates
+  expect((await savePanel('Fresh Rewrite')).status()).toBe(200)
+  gen = await context.request.post('/api/okr-ally/admin/improvement-email', {
+    headers: hdr,
+    data: { action: 'generate', reviewId },
+  })
+  expect(gen.status()).toBe(200)
+  const draft: string = (await gen.json()).draft
+  expect(draft.trim().length).toBeGreaterThan(60)
+  // grounding rule: no score / rating language
+  expect(draft).not.toMatch(/\b\d\s*\/\s*10\b/)
+  expect(draft.toLowerCase()).not.toContain('rating')
+  expect(draft.toLowerCase()).not.toMatch(/\bscored?\b/)
+
+  // edit + save
+  const edited = draft + '\n\nPS: added by PGS.'
+  expect(
+    (
+      await context.request.post('/api/okr-ally/admin/improvement-email', {
+        headers: hdr,
+        data: { action: 'save', reviewId, finalText: edited },
+      })
+    ).status()
+  ).toBe(200)
+  expect(
+    (await pool.query(`SELECT final_text FROM improvement_emails WHERE review_id = $1`, [reviewId])).rows[0].final_text
+  ).toBe(edited)
+
+  await setAdmin(user.userId, false)
 })

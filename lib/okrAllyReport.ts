@@ -1,7 +1,8 @@
-import type { ReviewOutput, ReviewContextSnapshot, SubmittedKR } from '@/lib/okrAllyReview'
+import type { ReviewOutput, ReviewContextSnapshot, SubmittedKR, ScoreTone } from '@/lib/okrAllyReview'
 import type { OkrAllySiteSettings } from '@/lib/okrAlly'
-import { RUBRIC } from '@/lib/okrAllyReview'
+import { RUBRIC, scoreTone } from '@/lib/okrAllyReview'
 import { getSiteSettings } from '@/lib/okrAlly'
+import { REPORT_LOGO_JPEG, REPORT_LOGO_W, REPORT_LOGO_H } from '@/lib/okrAllyReportAssets'
 import { putPdf } from '@/lib/okrAllyBlob'
 import { markReviewDelivered } from '@/lib/okrAllySubmission'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
@@ -34,9 +35,20 @@ const CHARCOAL: [number, number, number] = [44, 44, 42]
 const BODY: [number, number, number] = [95, 94, 90]
 const MUTE: [number, number, number] = [150, 140, 130]
 const EMERALD: [number, number, number] = [29, 158, 117]
+const EMERALD_DARK: [number, number, number] = [15, 110, 86]
+// Score-radar fill + grid — deliberately punchy (see <ScoreInfographic> on the
+// web, which uses the identical values so the two surfaces stay in step).
+const RADAR_FILL: [number, number, number] = [159, 217, 199]
+const RADAR_GRID: [number, number, number] = [184, 177, 163]
 const BROWN: [number, number, number] = [99, 56, 6]
 const RULE: [number, number, number] = [232, 228, 220]
 const CREAM: [number, number, number] = [250, 248, 245]
+const TONE_RED: [number, number, number] = [185, 28, 28]
+
+/** Band colour for a 0-10 score — mirrors the web report (`scoreTone` is shared). */
+function toneRgb(tone: ScoreTone): [number, number, number] {
+  return tone === 'low' ? TONE_RED : tone === 'mid' ? BROWN : EMERALD
+}
 
 function ctxText(f: ReviewContextSnapshot[keyof ReviewContextSnapshot] | undefined): string {
   const t = (f?.final_text || f?.raw_input || '').trim()
@@ -105,6 +117,137 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
     y += 5
   }
 
+  /**
+   * The shared score infographic: overall ring (band-coloured) + a 5-axis
+   * radar over the rubric criteria + a value legend. Visually matched to the
+   * web report's <ScoreInfographic> (colours via the shared scoreTone()).
+   * Returns the y after the block.
+   */
+  const drawScoreInfographic = (startY: number): number => {
+    let yy = startY
+    const overall = data.review.overall_score
+    const oTone = toneRgb(scoreTone(overall))
+    const scores = RUBRIC.map((r) => {
+      const c = data.review.criteria_scores.find((x) => x.criterion === r.criterion)
+      return { criterion: r.criterion, score: c ? c.score : 0, weight: r.weight }
+    })
+
+    guard(118)
+
+    // Overall ring + label
+    const ringR = 13
+    const ringCx = M + ringR
+    const ringCy = yy + ringR
+    doc.setLineWidth(3.4)
+    doc.setLineCap('round')
+    doc.setDrawColor(...RULE)
+    doc.circle(ringCx, ringCy, ringR, 'S')
+    const frac = Math.max(0, Math.min(1, overall / 10))
+    if (frac > 0) {
+      doc.setDrawColor(...oTone)
+      const segs = Math.max(2, Math.round(64 * frac))
+      const pts: [number, number][] = []
+      for (let i = 0; i <= segs; i++) {
+        const a = (-90 + (i / segs) * frac * 360) * (Math.PI / 180)
+        pts.push([ringCx + ringR * Math.cos(a), ringCy + ringR * Math.sin(a)])
+      }
+      for (let i = 1; i < pts.length; i++) doc.line(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1])
+    }
+    doc.setLineWidth(0.2)
+    doc.setLineCap('butt')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(13)
+    doc.setTextColor(...oTone)
+    doc.text(overall.toFixed(1), ringCx, ringCy + 1.6, { align: 'center' })
+    doc.setFontSize(11)
+    doc.setTextColor(...CHARCOAL)
+    doc.text('Overall score', ringCx + ringR + 6, ringCy - 1)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8.5)
+    doc.setTextColor(...MUTE)
+    doc.text('Weighted across the five criteria', ringCx + ringR + 6, ringCy + 4)
+    yy += ringR * 2 + 10
+
+    // Radar
+    const R = 21
+    const cx = PW / 2
+    const cy = yy + R + 4
+    const ang = (i: number) => (-90 + i * 72) * (Math.PI / 180)
+    const ptAt = (i: number, rad: number): [number, number] => [cx + rad * Math.cos(ang(i)), cy + rad * Math.sin(ang(i))]
+
+    doc.setDrawColor(...RADAR_GRID)
+    for (const level of [2, 4, 6, 8, 10]) {
+      const rr = R * (level / 10)
+      doc.setLineWidth(level === 10 ? 0.5 : 0.35)
+      for (let i = 0; i < 5; i++) {
+        const a = ptAt(i, rr)
+        const b = ptAt((i + 1) % 5, rr)
+        doc.line(a[0], a[1], b[0], b[1])
+      }
+    }
+    doc.setLineWidth(0.35)
+    for (let i = 0; i < 5; i++) {
+      const o = ptAt(i, R)
+      doc.line(cx, cy, o[0], o[1])
+    }
+
+    const dataPts = scores.map((s, i) => ptAt(i, R * Math.max(0, Math.min(1, s.score / 10))))
+    const rel: [number, number][] = []
+    for (let i = 1; i < dataPts.length; i++) {
+      rel.push([dataPts[i][0] - dataPts[i - 1][0], dataPts[i][1] - dataPts[i - 1][1]])
+    }
+    doc.setFillColor(...RADAR_FILL)
+    doc.setDrawColor(...EMERALD_DARK)
+    doc.setLineWidth(1.4)
+    doc.setLineJoin('round')
+    doc.lines(rel, dataPts[0][0], dataPts[0][1], [1, 1], 'FD', true)
+    doc.setFillColor(...EMERALD_DARK)
+    for (const p of dataPts) doc.circle(p[0], p[1], 1.3, 'F')
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7.5)
+    doc.setTextColor(...CHARCOAL)
+    scores.forEach((s, i) => {
+      const lp = ptAt(i, R + 7)
+      const cos = Math.cos(ang(i))
+      const align: 'left' | 'center' | 'right' = cos > 0.3 ? 'left' : cos < -0.3 ? 'right' : 'center'
+      const parts = doc.splitTextToSize(s.criterion, 30) as string[]
+      parts.forEach((ln, k) => doc.text(ln, lp[0], lp[1] + k * 3, { align }))
+    })
+    doc.setFont('helvetica', 'normal')
+    doc.setLineJoin('miter')
+    yy = cy + R + 12
+
+    // Value legend
+    guard(6 + scores.length * 6)
+    doc.setFontSize(8.5)
+    scores.forEach((s) => {
+      const tone = toneRgb(scoreTone(s.score))
+      doc.setFillColor(...tone)
+      doc.circle(M + 1.4, yy - 1.4, 1.4, 'F')
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(...CHARCOAL)
+      doc.text(s.criterion, M + 6, yy)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(...tone)
+      doc.text(`${s.score}/10`, PW - M - 20, yy, { align: 'right' })
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(...MUTE)
+      doc.text(`${Math.round(s.weight * 100)}%`, PW - M, yy, { align: 'right' })
+      yy += 6
+    })
+    doc.setLineWidth(0.2)
+    return yy + 2
+  }
+
+  // ── Logo ───────────────────────────────────────────────────
+  {
+    const lw = 64
+    const lh = (lw * REPORT_LOGO_H) / REPORT_LOGO_W
+    doc.addImage(REPORT_LOGO_JPEG, 'JPEG', (PW - lw) / 2, y, lw, lh)
+    y += lh + 12
+  }
+
   // ── Cover ───────────────────────────────────────────────────
   doc.setFontSize(9)
   doc.setFont('helvetica', 'normal')
@@ -123,18 +266,11 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
   doc.text(data.userName, M, y)
   y += 6
   doc.text(data.dateText, M, y)
-  y += 12
+  y += 14
 
-  doc.setFillColor(...EMERALD)
-  doc.roundedRect(M, y, 74, 20, 3, 3, 'F')
-  doc.setFontSize(9)
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(255, 255, 255)
-  doc.text('OVERALL SCORE', M + 6, y + 8)
-  doc.setFontSize(16)
-  doc.text(`${data.review.overall_score.toFixed(1)} / 10`, M + 6, y + 16)
-  doc.setTextColor(...CHARCOAL)
-  y += 30
+  // ── Score infographic (ring + radar + legend) ───────────────
+  y = drawScoreInfographic(y)
+  y += 4
 
   // ── Submitted OKR (verbatim) ────────────────────────────────
   heading('Your OKR, as submitted')
@@ -159,15 +295,16 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
   subLabel('Your role')
   body(ctxText(data.contextSnapshot.role_context))
 
-  // ── Score breakdown ─────────────────────────────────────────
-  heading('Score breakdown')
-  for (const c of data.review.criteria_scores) {
-    const weight = RUBRIC.find((r) => r.criterion === c.criterion)?.weight ?? c.weight
+  // ── Score breakdown (scores + weights are in the infographic legend above) ──
+  heading('Why each criterion scored the way it did')
+  for (const r of RUBRIC) {
+    const c = data.review.criteria_scores.find((x) => x.criterion === r.criterion)
+    if (!c) continue
     guard(12)
     doc.setFontSize(10.5)
     doc.setFont('helvetica', 'bold')
-    doc.setTextColor(...CHARCOAL)
-    doc.text(`${c.criterion} — ${c.score}/10  (${Math.round(weight * 100)}%)`, M, y)
+    doc.setTextColor(...toneRgb(scoreTone(c.score)))
+    doc.text(`${c.criterion}  ${c.score}/10`, M, y)
     y += 5.5
     body(c.rationale)
     y += 3

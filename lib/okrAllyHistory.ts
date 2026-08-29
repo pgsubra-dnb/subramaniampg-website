@@ -129,6 +129,67 @@ export async function getFullReport(userId: string, submissionId: string): Promi
   }
 }
 
+// ─── Account activity (History tab → Purchases + Invoices sections) ──────
+
+export interface PurchaseItem {
+  /** Credits bought — `credit_transactions.amount` is the credit count for purchase rows. */
+  credits: number
+  date: string
+  razorpayPaymentId: string | null
+}
+
+export interface InvoiceItem {
+  id: string
+  invoiceNumber: string
+  total: number
+  placeOfSupply: string
+  date: string
+}
+
+/**
+ * A user's money history for the dashboard: pack purchases and their GST
+ * invoices. Per-review credit usage / refunds are deliberately not surfaced
+ * here — the credit counter and the Reviews list already cover that.
+ */
+export async function getAccountActivity(
+  userId: string
+): Promise<{ purchases: PurchaseItem[]; invoices: InvoiceItem[] }> {
+  const p = await query<{ amount: string; created_at: string; razorpay_payment_id: string | null }>(
+    `SELECT amount, created_at, razorpay_payment_id
+       FROM credit_transactions
+      WHERE user_id = $1 AND type = 'purchase'
+      ORDER BY created_at DESC`,
+    [userId]
+  )
+  const inv = await query<{
+    id: string
+    invoice_number: string
+    total_amount: string
+    place_of_supply: string
+    created_at: string
+  }>(
+    `SELECT id, invoice_number, total_amount, place_of_supply, created_at
+       FROM invoices
+      WHERE user_id = $1
+      ORDER BY created_at DESC`,
+    [userId]
+  )
+  return {
+    purchases: p.rows.map((r) => ({
+      credits: Number(r.amount),
+      date: r.created_at,
+      razorpayPaymentId: r.razorpay_payment_id,
+    })),
+    invoices: inv.rows.map((r) => ({
+      id: r.id,
+      invoiceNumber: r.invoice_number,
+      total: Number(r.total_amount),
+      placeOfSupply: r.place_of_supply,
+      date: r.created_at,
+    })),
+  }
+}
+
 /** Upsert the user's rating (required) + optional feedback text for a review. */
 export async function saveOutcomeFeedback(args: {
   reviewId: string

@@ -84,6 +84,10 @@ export async function signIn(
   return { email, userId: session.value, cookieHeader: `okr_ally_session=${session.value}` }
 }
 
+export async function setAdmin(userId: string, isAdmin: boolean): Promise<void> {
+  await pool.query(`UPDATE users SET is_admin = $2 WHERE id = $1`, [userId, isAdmin])
+}
+
 export async function seedCredits(userId: string, n: number): Promise<void> {
   await pool.query(
     `INSERT INTO user_credit_balance (user_id, credits_remaining) VALUES ($1, $2)

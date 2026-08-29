@@ -2,15 +2,16 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Image from 'next/image'
-import { Page, TopBar, AllyRow, Btn, Field, T, AVATAR, keyframes } from './_ui'
+import { Page, TopBar, AllyRow, Btn, Field, ShareCard, T, AVATAR, keyframes } from './_ui'
 import StepForm from './_form'
 import ReportScreen, { FullReport } from './_report'
 import PricingTab from './_pricing'
 import HistoryTab from './_history'
+import { AdminList, AdminReviewScreen } from './_admin'
 import { FormState, emptyForm, CtxFieldState } from './_formState'
 
-type Phase = 'loading' | 'intro' | 'email' | 'app'
-type Tab = 'ally' | 'pricing' | 'history'
+type Phase = 'loading' | 'intro' | 'email' | 'app' | 'signedout'
+type Tab = 'ally' | 'pricing' | 'history' | 'admin'
 
 interface Me {
   authenticated: boolean
@@ -37,7 +38,10 @@ export default function OkrAllyClient() {
   const [resumeOffer, setResumeOffer] = useState<FormState | null>(null)
   const [reportId, setReportId] = useState<string | null>(null)
   const [report, setReport] = useState<FullReport | null>(null)
+  const [adminId, setAdminId] = useState<string | null>(null)
   const [verifyError, setVerifyError] = useState<string | null>(null)
+
+  const isAdmin = !!me?.user?.isAdmin
 
   const refreshStatus = useCallback(() => {
     fetch('/api/okr-ally/status')
@@ -48,6 +52,13 @@ export default function OkrAllyClient() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
+    // Leave ?signedout=1 in the URL until the user leaves the screen — stripping
+    // it here would make a StrictMode re-run of this effect fall through to the
+    // normal load and skip the signed-out screen.
+    if (params.get('signedout') === '1') {
+      setPhase('signedout')
+      return
+    }
     const err = params.get('error')
     if (err) {
       setVerifyError(VERIFY_ERROR[err] || VERIFY_ERROR['invalid-link'])
@@ -140,6 +151,9 @@ export default function OkrAllyClient() {
   }
 
   const showingReport = phase === 'app' && reportId !== null
+  const showingAdmin = phase === 'app' && adminId !== null
+  // Admin tab only makes sense for admins; fall back if the flag isn't (or is no longer) set.
+  const activeTab: Tab = tab === 'admin' && !isAdmin ? 'ally' : tab
 
   return (
     <Page>
@@ -159,10 +173,18 @@ export default function OkrAllyClient() {
         }
       />
 
-      {me?.authenticated && !showingReport && (
-        <TabBar tab={tab} onChange={setTab} />
+      {me?.authenticated && !showingReport && !showingAdmin && (
+        <TabBar tab={activeTab} onChange={setTab} isAdmin={isAdmin} />
       )}
 
+      {phase === 'signedout' && (
+        <SignedOut
+          onContinue={() => {
+            window.history.replaceState({}, '', '/okr-ally')
+            setPhase('intro')
+          }}
+        />
+      )}
       {phase === 'intro' && <Intro onStart={() => setPhase('email')} />}
       {phase === 'email' && <EmailGate error={verifyError} />}
 
@@ -191,7 +213,7 @@ export default function OkrAllyClient() {
         </>
       )}
 
-      {phase === 'app' && !showingReport && tab === 'ally' && resumeOffer && (
+      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'ally' && resumeOffer && (
         <>
           <AllyRow>You have a review in progress. Pick up where you left off, or start fresh?</AllyRow>
           <div className="flex gap-2 mb-4">
@@ -203,7 +225,7 @@ export default function OkrAllyClient() {
         </>
       )}
 
-      {phase === 'app' && !showingReport && tab === 'ally' && !resumeOffer && (
+      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'ally' && !resumeOffer && (
         <StepForm
           initialForm={draft}
           onSubmitted={(r) => {
@@ -213,22 +235,37 @@ export default function OkrAllyClient() {
         />
       )}
 
-      {phase === 'app' && !showingReport && tab === 'pricing' && (
+      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'pricing' && (
         <PricingTab onBalanceChange={(n) => setStatus((s) => (s ? { ...s, creditsRemaining: n } : s))} />
       )}
 
-      {phase === 'app' && !showingReport && tab === 'history' && (
+      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'history' && (
         <HistoryTab onOpen={(id) => setReportId(id)} />
+      )}
+
+      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'admin' && isAdmin && (
+        <AdminList onOpen={(id) => setAdminId(id)} />
+      )}
+
+      {phase === 'app' && showingAdmin && (
+        <AdminReviewScreen
+          submissionId={adminId!}
+          onBack={() => {
+            setAdminId(null)
+            setTab('admin')
+          }}
+        />
       )}
     </Page>
   )
 }
 
-function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
+function TabBar({ tab, onChange, isAdmin }: { tab: Tab; onChange: (t: Tab) => void; isAdmin: boolean }) {
   const tabs: [Tab, string][] = [
     ['ally', 'Ally'],
     ['pricing', 'Pricing & Plans'],
     ['history', 'History'],
+    ...(isAdmin ? ([['admin', 'Admin']] as [Tab, string][]) : []),
   ]
   return (
     <div className="flex gap-1 mb-6" style={{ borderBottom: `1px solid ${T.hairline}` }}>
@@ -270,21 +307,71 @@ function Intro({ onStart }: { onStart: () => void }) {
         where they&apos;re not, score them against a clear rubric, and rewrite them two ways.
       </p>
       <p style={{ color: T.muted, marginTop: 14, fontSize: 13.5, maxWidth: 460, marginLeft: 'auto', marginRight: 'auto' }}>
-        Subramaniam P G has spent over 40 years working with leadership teams on strategic clarity and execution.
-        He&apos;s authored 7 books, including <em>The Language of OKRs</em>, and is a certified OKR coach and executive
-        coach who has guided over 100 companies in building sustainable, well-aligned goals.
+        I&apos;m built by Subramaniam P G, who has spent over 40 years helping leadership teams turn strategy into
+        goals their people can actually execute. He&apos;s authored 7 books, including <em>The Language of OKRs</em>,
+        and is a certified OKR and executive coach who has guided over 100 companies. I bring his rubric and his ear
+        for a sharp goal to whatever you send me.
       </p>
       <div style={{ marginTop: 22 }}>
         <Btn onClick={onStart}>Say hi to Ally</Btn>
       </div>
       <p style={{ marginTop: 12, fontSize: 12.5, color: T.muted }}>Your first review is free.</p>
-      <div style={{ marginTop: 18, fontSize: 14, display: 'flex', gap: 16, justifyContent: 'center' }}>
-        <a href="/work/okr-consulting" style={{ color: T.emeraldDark, fontWeight: 600, textDecoration: 'none' }}>
-          OKR consulting →
+      <div
+        style={{
+          marginTop: 28,
+          paddingTop: 12,
+          borderTop: `1px solid ${T.hairline}`,
+          fontSize: 11.5,
+          color: T.muted,
+          display: 'flex',
+          gap: 14,
+          justifyContent: 'center',
+          flexWrap: 'wrap',
+        }}
+      >
+        <span>More from PGS:</span>
+        <a href="/work/okr-consulting" style={{ color: T.muted, textDecoration: 'underline' }}>
+          OKR consulting
         </a>
-        <a href="/assessment" style={{ color: T.emeraldDark, fontWeight: 600, textDecoration: 'none' }}>
-          Leadership Execution Assessment →
+        <a href="/assessment" style={{ color: T.muted, textDecoration: 'underline' }}>
+          Leadership Execution Assessment
         </a>
+      </div>
+    </div>
+  )
+}
+
+function SignedOut({ onContinue }: { onContinue: () => void }) {
+  return (
+    <div style={{ textAlign: 'center', padding: '8px 0 24px' }}>
+      <div style={{ width: 72, height: 72, borderRadius: '50%', overflow: 'hidden', margin: '0 auto 14px', border: `3px solid ${T.emerald}` }}>
+        <Image src={AVATAR} alt="OKR Ally" width={72} height={72} />
+      </div>
+      <h1 style={{ fontFamily: 'var(--font-lora), serif', fontSize: 22, fontWeight: 600, color: T.charcoal, margin: 0 }}>
+        You&apos;re signed out.
+      </h1>
+      <p style={{ color: T.muted, marginTop: 10, fontSize: 13.5, maxWidth: 420, marginLeft: 'auto', marginRight: 'auto' }}>
+        Your reviews and credits are saved — sign back in any time with your email.
+      </p>
+      <div
+        style={{
+          marginTop: 20,
+          textAlign: 'left',
+          maxWidth: 420,
+          marginLeft: 'auto',
+          marginRight: 'auto',
+          border: `1px solid ${T.hairline}`,
+          borderRadius: 14,
+          padding: 18,
+          background: T.card,
+        }}
+      >
+        <ShareCard />
+      </div>
+      <div style={{ marginTop: 20 }}>
+        <Btn variant="ghost" onClick={onContinue}>
+          Back to the start
+        </Btn>
       </div>
     </div>
   )

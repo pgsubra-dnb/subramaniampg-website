@@ -167,6 +167,8 @@ const REVIEW_TOOL = {
                   status: { type: 'string', enum: ['modified', 'unchanged', 'new'] },
                   initiatives: {
                     type: 'array',
+                    minItems: 2,
+                    maxItems: 3,
                     items: {
                       type: 'object',
                       additionalProperties: false,
@@ -205,7 +207,7 @@ Report each criterion's weight as the fraction shown (e.g. 0.25). The app comput
 SUGGESTED OKR OPTIONS. Return exactly two, labelled "Refined Original" and "Fresh Rewrite".
 - Refined Original: edit the submitted OKR toward the flaws found in scoring. Mark each KR status "unchanged", "modified", or "new". You may add at most 2 new KRs, only where scoring found a genuine gap, never exceeding 6 KRs total.
 - Fresh Rewrite: regenerate fully from the Objective and context, independent of the original KR wording. Mark every KR status "new".
-- Both options: include initiatives per KR with generic owning-team labels (e.g. "Product", "Sales", "Engineering").
+- Both options: include 2 to 3 initiatives for EVERY Key Result — never fewer than 2, never more than 3 — each with a generic owning-team label (e.g. "Product", "Sales", "Engineering"). This applies to every KR regardless of its status, including "unchanged" ones.
 
 LANGUAGE OF OKRs (apply to every rewritten line and to KR feedback text):
 - Imperative verbs, not infinitive phrasing.
@@ -309,11 +311,41 @@ export function validateReviewOutput(raw: unknown): { ok: true; review: ReviewOu
         return { ok: false, reason: `${opt.label} KR bad status` }
       }
       if (!Array.isArray(kr.initiatives)) return { ok: false, reason: `${opt.label} KR initiatives not array` }
+      // Every rewritten KR must carry 2-3 initiatives (design intent, confirmed).
+      // Too few OR too many is a generation defect — fail here so runReview()
+      // retries once, then the route auto-refunds like any other failure.
+      if (kr.initiatives.length < 2 || kr.initiatives.length > 3) {
+        return {
+          ok: false,
+          reason: `${opt.label} KR "${kr.text.slice(0, 40)}" has ${kr.initiatives.length} initiatives (need 2-3)`,
+        }
+      }
+      for (const it of kr.initiatives) {
+        if (!it || typeof it.action !== 'string' || !it.action.trim()) {
+          return { ok: false, reason: `${opt.label} KR "${kr.text.slice(0, 40)}" has an initiative with no action` }
+        }
+        if (typeof it.owning_team !== 'string' || !it.owning_team.trim()) {
+          return { ok: false, reason: `${opt.label} KR "${kr.text.slice(0, 40)}" has an initiative with no owning_team` }
+        }
+      }
     }
     if (!opt.rationale || typeof opt.rationale !== 'string') return { ok: false, reason: `${opt.label} missing rationale` }
   }
 
   return { ok: true, review: o }
+}
+
+/**
+ * Score band for the shared score infographic (ring colour + radar/legend
+ * accents). Kept here so the web report screen and the server-rendered PDF
+ * can't drift — both import this. Each surface maps the band to its own colour
+ * space (CSS tokens vs jsPDF RGB).
+ */
+export type ScoreTone = 'low' | 'mid' | 'high'
+export function scoreTone(score: number): ScoreTone {
+  if (score < 4) return 'low'
+  if (score < 7) return 'mid'
+  return 'high'
 }
 
 /** Authoritative weighted overall score (design doc section 7 — the app computes it, not Claude). */
