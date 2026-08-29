@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AllyRow, UserRow, Btn, Field, CharCount, T } from './_ui'
+import { AllyRow, UserRow, Btn, Field, CharCount, GeneratingIndicator, T } from './_ui'
 import {
   FormState,
   StepId,
@@ -288,12 +288,7 @@ export default function StepForm({ initialForm, onSubmitted }: Props) {
       )}
 
       {submitState === 'running' ? (
-        <AllyRow>
-          <span>
-            Reviewing your OKR now — scoring it, writing feedback, and drafting two rewrites. This takes
-            about a minute. You&apos;ll get it here and by email.
-          </span>
-        </AllyRow>
+        <GeneratingIndicator />
       ) : form.step === 'confirm' ? (
         <ConfirmStep
           form={form}

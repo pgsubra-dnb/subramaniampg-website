@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { AllyRow, Btn, ScoreRing, Stars, T } from './_ui'
+import { AllyRow, Btn, ScoreInfographic, ShareCard, Stars, T, TONE_COLOR, CRITERIA_ORDER, scoreTone } from './_ui'
 
 interface OkrOption {
   label: string
@@ -127,32 +127,26 @@ export default function ReportScreen({
         the feedback, and two ways to tighten it.
       </AllyRow>
 
-      {/* score bubble */}
+      {/* score infographic — ring + radar + legend (shared with the PDF) */}
       <div style={{ ...card, marginBottom: 18 }}>
-        <div className="flex items-center gap-4">
-          <ScoreRing score={r.overall_score} />
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 14.5, color: T.charcoal }}>Overall score</div>
-            <div style={{ fontSize: 12.5, color: T.muted }}>Weighted across five criteria</div>
-          </div>
-        </div>
+        <ScoreInfographic overallScore={r.overall_score} criteria={r.criteria_scores} />
         <p style={{ fontSize: 12.5, color: T.muted, fontStyle: 'italic', marginTop: 12 }}>
           Based only on what you gave me — thin context means a thinner review.
         </p>
       </div>
 
       <div style={{ ...card, marginBottom: 18 }}>
-        <Section title="Score breakdown">
-          {r.criteria_scores.map((c) => (
-            <div key={c.criterion} style={{ marginBottom: 12 }}>
-              <div style={{ fontWeight: 700, fontSize: 13.5, color: T.charcoal }}>
-                {c.criterion} &nbsp;
-                <span style={{ color: T.emeraldDark }}>{c.score}/10</span>
-                <span style={{ color: T.muted, fontWeight: 400 }}> · {Math.round(c.weight * 100)}%</span>
+        <Section title="Why each criterion scored the way it did">
+          {CRITERIA_ORDER.map((name) => r.criteria_scores.find((c) => c.criterion === name))
+            .filter((c): c is NonNullable<typeof c> => !!c)
+            .map((c) => (
+              <div key={c.criterion} style={{ marginBottom: 12 }}>
+                <div style={{ fontWeight: 700, fontSize: 13.5, color: TONE_COLOR[scoreTone(c.score)] }}>
+                  {c.criterion} &nbsp;<span>{c.score}/10</span>
+                </div>
+                <p style={{ fontSize: 13, color: T.muted, lineHeight: 1.55, margin: '2px 0 0' }}>{c.rationale}</p>
               </div>
-              <p style={{ fontSize: 13, color: T.muted, lineHeight: 1.55, margin: '2px 0 0' }}>{c.rationale}</p>
-            </div>
-          ))}
+            ))}
         </Section>
 
         <Section title="Objective">
@@ -297,7 +291,8 @@ function ExitLinks({
   )
   return (
     <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.hairline}`, fontSize: 13.5, lineHeight: 2 }}>
-      <div style={{ color: T.muted, marginBottom: 4 }}>If you want to go further:</div>
+      <ShareCard />
+      <div style={{ color: T.muted, margin: '14px 0 4px' }}>If you want to go further:</div>
       <div className="flex flex-col">
         {bookingUrl && link(bookingUrl, 'Book a conversation with PGS →')}
         {link('/work/okr-consulting', 'OKR consulting →')}

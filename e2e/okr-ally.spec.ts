@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test'
 import { FAIL_BASE_URL } from '../playwright.config'
+import { validateReviewOutput } from '../lib/okrAllyReview'
 import {
   signIn,
   seedCredits,
@@ -59,6 +60,38 @@ async function fillContext(page: Page, text: string, nextPrompt: RegExp) {
 }
 
 // ══════════════════════════════════════════════════════════
+// 0. validateReviewOutput enforces 2-3 initiatives per KR (no browser)
+// ══════════════════════════════════════════════════════════
+test('validateReviewOutput: KR initiative count must be 2-3 in both options', () => {
+  const kr = (n: number) => ({
+    text: 'Move X from 10 to 20',
+    status: 'new' as const,
+    initiatives: Array.from({ length: n }, (_, i) => ({ action: `Do thing ${i}`, owning_team: 'Product' })),
+  })
+  const build = (freshInitiatives: number) => ({
+    criteria_scores: [
+      { criterion: 'Outcome vs Output', score: 7, weight: 0.25, rationale: 'x' },
+      { criterion: 'Alignment', score: 7, weight: 0.25, rationale: 'x' },
+      { criterion: 'Measurability', score: 7, weight: 0.2, rationale: 'x' },
+      { criterion: 'Specificity', score: 7, weight: 0.15, rationale: 'x' },
+      { criterion: 'Ambition vs Realism', score: 7, weight: 0.15, rationale: 'x' },
+    ],
+    overall_score: 7,
+    objective_feedback: { what_works: 'x', what_to_improve: 'x' },
+    key_result_feedback: [],
+    suggested_okr_options: [
+      { label: 'Refined Original', objective: 'o', key_results: [kr(2)], rationale: 'r' },
+      { label: 'Fresh Rewrite', objective: 'o', key_results: [kr(freshInitiatives)], rationale: 'r' },
+    ],
+  })
+
+  expect(validateReviewOutput(build(2)).ok).toBe(true)
+  expect(validateReviewOutput(build(3)).ok).toBe(true)
+  expect(validateReviewOutput(build(1)).ok).toBe(false)
+  expect(validateReviewOutput(build(4)).ok).toBe(false)
+})
+
+// ══════════════════════════════════════════════════════════
 // 1. Happy path: magic link → completed report (live Claude call)
 // ══════════════════════════════════════════════════════════
 test('happy path: sign in, submit an OKR, get a scored report', async ({ page, context }) => {
@@ -110,11 +143,13 @@ test('happy path: sign in, submit an OKR, get a scored report', async ({ page, c
   // confirm → submit
   await expect(page.getByText(/One review, one credit. No undo/i)).toBeVisible()
   await page.getByRole('button', { name: 'Submit for review' }).click()
-  await expect(page.getByText(/Reviewing your OKR now/i)).toBeVisible()
+  // the generating indicator shows its first timed caption
+  await expect(page.getByText(/Reading your objective and the context/i)).toBeVisible()
 
-  // report screen
+  // report screen — shared score infographic (ring + radar + legend)
   await expect(page.getByText(/Your OKR scored/i)).toBeVisible({ timeout: 200_000 })
-  await expect(page.getByText('Score breakdown')).toBeVisible()
+  await expect(page.getByText('Weighted across the five criteria')).toBeVisible()
+  await expect(page.getByText('Why each criterion scored the way it did')).toBeVisible()
   await expect(page.getByText('Refined Original')).toBeVisible()
   await expect(page.getByText('Fresh Rewrite')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Download PDF' })).toBeVisible()
@@ -125,7 +160,26 @@ test('happy path: sign in, submit an OKR, get a scored report', async ({ page, c
   expect(await getBalance(user.userId)).toBe(0)
   const txns = await getCreditTransactions(user.userId)
   expect(txns).toEqual([{ type: 'usage', amount: -1 }])
+
+  // every rewritten KR in both options carries 2-3 initiatives (validation gate)
+  const r = await pool.query<{ suggested_okr_options: OkrOption[] }>(
+    `SELECT suggested_okr_options FROM reviews WHERE submission_id = $1`,
+    [sub!.id]
+  )
+  const options = r.rows[0].suggested_okr_options
+  expect(options).toHaveLength(2)
+  for (const opt of options) {
+    for (const kr of opt.key_results) {
+      expect(kr.initiatives.length).toBeGreaterThanOrEqual(2)
+      expect(kr.initiatives.length).toBeLessThanOrEqual(3)
+    }
+  }
 })
+
+interface OkrOption {
+  label: string
+  key_results: { text: string; initiatives: { action: string; owning_team: string }[] }[]
+}
 
 // ══════════════════════════════════════════════════════════
 // 2. Forced-failure refund path (server :3201 has no ANTHROPIC_API_KEY)
@@ -295,7 +349,7 @@ test.describe(() => {
     await page.getByPlaceholder(/Raise activation rate/i).fill('Increase top-tier member monthly visits from 6 to 7.3')
     await page.getByRole('button', { name: 'Review everything' }).click()
     await page.getByRole('button', { name: 'Submit for review' }).click()
-    await expect(page.getByText(/Reviewing your OKR now/i)).toBeVisible()
+    await expect(page.getByText(/Reading your objective and the context/i)).toBeVisible()
     await expect(page.getByText(/Your OKR scored/i)).toBeVisible({ timeout: 200_000 })
 
     // ── the snapshot records the clarify + paraphrase ──
