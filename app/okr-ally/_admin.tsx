@@ -172,14 +172,22 @@ export function AdminReviewScreen({
 }) {
   const [data, setData] = useState<AdminReview | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const [savedLabels, setSavedLabels] = useState<Set<string>>(new Set())
+  // per-option: 'unsaved' (never saved) | 'dirty' (saved, then edited) | 'saved'
+  const [panelStatus, setPanelStatus] = useState<Record<string, 'unsaved' | 'dirty' | 'saved'>>({})
 
   const load = useCallback(() => {
     fetch(`/api/okr-ally/admin/review/${submissionId}`)
       .then(async (r) => (r.ok ? r.json() : Promise.reject(new Error((await r.json()).error || r.statusText))))
       .then((d: AdminReview) => {
         setData(d)
-        setSavedLabels(new Set(d.expertReviews.map((e) => e.okrOptionLabel)))
+        setPanelStatus(
+          Object.fromEntries(
+            d.review.suggestedOkrOptions.map((o) => [
+              o.label,
+              d.expertReviews.some((e) => e.okrOptionLabel === o.label) ? 'saved' : 'unsaved',
+            ])
+          )
+        )
       })
       .catch((e) => setErr(String(e.message || e)))
   }, [submissionId])
@@ -189,7 +197,10 @@ export function AdminReviewScreen({
   if (err) return <AllyRow>Couldn&apos;t load this review: {err}</AllyRow>
   if (!data) return <p style={{ color: T.muted, fontSize: 14 }}>Loading…</p>
 
-  const bothSaved = savedLabels.has('Refined Original') && savedLabels.has('Fresh Rewrite')
+  const labels = data.review.suggestedOkrOptions.map((o) => o.label)
+  const savedCount = labels.filter((l) => panelStatus[l] === 'saved').length
+  const bothSaved = savedCount === labels.length
+  const unsavedLabels = labels.filter((l) => panelStatus[l] !== 'saved')
   const ctx = data.contextSnapshot
 
   const ctxBlock = (label: string, f?: CtxField) => {
@@ -285,6 +296,28 @@ export function AdminReviewScreen({
         </Section>
       </div>
 
+      {/* progress banner — each panel saves on its own */}
+      <div
+        style={{
+          border: `1px solid ${bothSaved ? T.emeraldBorder : '#EAD9B0'}`,
+          background: bothSaved ? T.emeraldTint : T.goldTint,
+          borderRadius: 12,
+          padding: '10px 14px',
+          marginBottom: 14,
+          fontSize: 12.5,
+          color: bothSaved ? T.emeraldDark : T.gold,
+          lineHeight: 1.5,
+        }}
+      >
+        Each option below has its own <strong>Save</strong> button. <strong>{savedCount} of {labels.length} saved.</strong>
+        {!bothSaved && unsavedLabels.length > 0 && (
+          <>
+            {' '}
+            Still to save: <strong>{unsavedLabels.join(' and ')}</strong>.
+          </>
+        )}
+      </div>
+
       {/* per-option panels */}
       {data.review.suggestedOkrOptions.map((opt) => (
         <div key={opt.label} style={{ marginBottom: 18 }}>
@@ -294,7 +327,8 @@ export function AdminReviewScreen({
             label={opt.label}
             criteria={data.rubricCriteria}
             existing={data.expertReviews.find((e) => e.okrOptionLabel === opt.label) ?? null}
-            onSaved={() => setSavedLabels((s) => new Set(s).add(opt.label))}
+            status={panelStatus[opt.label] ?? 'unsaved'}
+            onStatusChange={(s) => setPanelStatus((prev) => ({ ...prev, [opt.label]: s }))}
           />
         </div>
       ))}
@@ -303,6 +337,7 @@ export function AdminReviewScreen({
         reviewId={data.reviewId}
         userEmail={data.userEmail}
         enabled={bothSaved}
+        missingLabels={unsavedLabels}
         initial={data.email}
         onChanged={load}
       />
@@ -331,29 +366,56 @@ function RawToggle({ raw }: { raw: string }) {
 
 // ─── one option's feedback form ────────────────────────────────────────
 
+function StatusPill({ status }: { status: 'unsaved' | 'dirty' | 'saved' }) {
+  const map = {
+    saved: { text: '✓ Saved', color: T.emeraldDark, bg: T.emeraldTint },
+    dirty: { text: '● Unsaved edits', color: T.gold, bg: T.goldTint },
+    unsaved: { text: '● Not saved yet', color: T.gold, bg: T.goldTint },
+  } as const
+  const s = map[status]
+  return (
+    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, color: s.color, background: s.bg }}>
+      {s.text}
+    </span>
+  )
+}
+
 function ExpertPanel({
   reviewId,
   label,
   criteria,
   existing,
-  onSaved,
+  status,
+  onStatusChange,
 }: {
   reviewId: string
   label: string
   criteria: string[]
   existing: ExpertReview | null
-  onSaved: () => void
+  status: 'unsaved' | 'dirty' | 'saved'
+  onStatusChange: (s: 'unsaved' | 'dirty' | 'saved') => void
 }) {
   const [notes, setNotes] = useState<Record<string, string>>(existing?.rubricFeedback ?? {})
   const [general, setGeneral] = useState(existing?.generalFeedback ?? '')
   const [rating, setRating] = useState(existing?.expertRating ?? 0)
   const [busy, setBusy] = useState(false)
-  const [state, setState] = useState<'idle' | 'saved' | 'error'>(existing ? 'saved' : 'idle')
   const [err, setErr] = useState<string | null>(null)
+
+  // Any edit after a save flips the parent's badge to "unsaved edits".
+  const touch = () => {
+    if (status === 'saved') onStatusChange('dirty')
+  }
+
+  const hasWrittenFeedback =
+    Object.values(notes).some((v) => v.trim()) || general.trim().length > 0
 
   async function save() {
     if (rating < 1) {
-      setErr('Pick an expert rating (1–5).')
+      setErr('Pick an expert rating (1–5) for this option.')
+      return
+    }
+    if (!hasWrittenFeedback) {
+      setErr('Write at least one note (a criterion note or the general field) before saving this option.')
       return
     }
     setBusy(true)
@@ -371,24 +433,23 @@ function ExpertPanel({
         }),
       })
       if (res.ok) {
-        setState('saved')
-        onSaved()
+        onStatusChange('saved')
       } else {
-        setState('error')
-        setErr((await res.json()).error || 'Save failed')
+        setErr((await res.json().catch(() => ({}))).error || `Save failed (${res.status}).`)
       }
     } catch {
-      setState('error')
-      setErr('Network problem saving.')
+      setErr('Network problem saving — nothing was saved. Try again.')
     } finally {
       setBusy(false)
     }
   }
 
+  const unsaved = status !== 'saved'
+
   return (
     <div
       style={{
-        border: `1px solid ${T.hairline}`,
+        border: `1px solid ${unsaved ? '#EAD9B0' : T.hairline}`,
         borderTop: 'none',
         borderRadius: '0 0 14px 14px',
         padding: 16,
@@ -396,8 +457,11 @@ function ExpertPanel({
         background: T.card,
       }}
     >
-      <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: T.gold, marginBottom: 8 }}>
-        Your feedback on “{label}”
+      <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: T.gold }}>
+          Your feedback on “{label}”
+        </span>
+        <StatusPill status={status} />
       </div>
       {criteria.map((c) => (
         <div key={c} style={{ marginBottom: 8 }}>
@@ -405,25 +469,43 @@ function ExpertPanel({
           <textarea
             rows={2}
             value={notes[c] ?? ''}
-            onChange={(e) => setNotes((n) => ({ ...n, [c]: e.target.value.slice(0, 1500) }))}
+            onChange={(e) => {
+              setNotes((n) => ({ ...n, [c]: e.target.value.slice(0, 1500) }))
+              touch()
+            }}
             style={{ ...areaStyle, marginTop: 2 }}
           />
         </div>
       ))}
       <div style={{ marginBottom: 8 }}>
         <label style={{ fontSize: 12, fontWeight: 600, color: T.charcoal }}>General feedback on this option</label>
-        <textarea rows={3} value={general} onChange={(e) => setGeneral(e.target.value.slice(0, 4500))} style={{ ...areaStyle, marginTop: 2 }} />
+        <textarea
+          rows={3}
+          value={general}
+          onChange={(e) => {
+            setGeneral(e.target.value.slice(0, 4500))
+            touch()
+          }}
+          style={{ ...areaStyle, marginTop: 2 }}
+        />
       </div>
       <div className="flex items-center gap-3" style={{ marginBottom: 8 }}>
         <span style={{ fontSize: 12, fontWeight: 600, color: T.charcoal }}>Expert rating</span>
-        <Stars value={rating} onChange={setRating} />
+        <Stars
+          value={rating}
+          onChange={(v) => {
+            setRating(v)
+            touch()
+          }}
+        />
       </div>
       {err && <p style={{ fontSize: 12, color: '#B91C1C', margin: '0 0 6px' }}>{err}</p>}
       <div className="flex items-center gap-3">
         <Btn small onClick={save} disabled={busy}>
-          {busy ? 'Saving…' : state === 'saved' ? 'Update' : 'Save'}
+          {busy ? 'Saving…' : status === 'saved' ? `Update “${label}”` : `Save “${label}”`}
         </Btn>
-        {state === 'saved' && !busy && <span style={{ fontSize: 12, color: T.emeraldDark }}>Saved ✓</span>}
+        {status === 'saved' && !busy && <span style={{ fontSize: 12, color: T.emeraldDark }}>Saved ✓</span>}
+        {status === 'dirty' && !busy && <span style={{ fontSize: 12, color: T.gold }}>Edited — save again</span>}
       </div>
     </div>
   )
@@ -435,12 +517,14 @@ function ImprovementEmailPanel({
   reviewId,
   userEmail,
   enabled,
+  missingLabels,
   initial,
   onChanged,
 }: {
   reviewId: string
   userEmail: string
   enabled: boolean
+  missingLabels: string[]
   initial: { draftText: string; finalText: string | null; sentAt: string | null } | null
   onChanged: () => void
 }) {
@@ -493,7 +577,13 @@ function ImprovementEmailPanel({
           Sent to {userEmail} on {fmtDate(sentAt)}.
         </p>
       ) : !enabled ? (
-        <p style={{ fontSize: 13, color: T.muted }}>Save your feedback on both options to draft the follow-up note.</p>
+        <p style={{ fontSize: 13, color: T.gold }}>
+          {missingLabels.length >= 2
+            ? 'Save your feedback on both options above to draft the follow-up note.'
+            : missingLabels.length === 1
+              ? `Still need your saved feedback on “${missingLabels[0]}” — scroll up and press its Save button.`
+              : 'Save your feedback on both options above to draft the follow-up note.'}
+        </p>
       ) : (
         <>
           <p style={{ fontSize: 12.5, color: T.muted, margin: '0 0 10px' }}>
