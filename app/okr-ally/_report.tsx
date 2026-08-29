@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { AllyRow, Btn, ScoreInfographic, ShareCard, Stars, T, TONE_COLOR, CRITERIA_ORDER, scoreTone } from './_ui'
 
-interface OkrOption {
+export interface OkrOption {
   label: string
   objective: string
   key_results: { text: string; status: string; initiatives: { action: string; owning_team: string }[] }[]
@@ -36,7 +36,7 @@ const card: React.CSSProperties = {
   padding: 22,
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+export function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mb-5">
       <div
@@ -234,7 +234,7 @@ export default function ReportScreen({
   )
 }
 
-function OptionCard({ option, featured }: { option: OkrOption; featured?: boolean }) {
+export function OptionCard({ option, featured }: { option: OkrOption; featured?: boolean }) {
   const bg = featured ? T.emerald : T.cream
   const fg = featured ? '#fff' : T.charcoal
   const sub = featured ? 'rgba(255,255,255,.85)' : T.muted

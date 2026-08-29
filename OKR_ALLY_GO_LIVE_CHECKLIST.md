@@ -89,16 +89,28 @@ accountant/footer fields.
 
 ## 6. Not yet built (not in the numbered build sequence)
 
-- [ ] **Admin review screen** (`is_admin` users) — sections 4/9/12 describe it (per-option expert feedback panels, one note per rubric criterion, expert rating, "Draft improvement email" action → `expert_reviews` + `improvement_emails` tables, both already migrated). The build sequence (§10) numbers steps 1–11 and does **not** include this screen; treat as a follow-on after go-live.
+- [x] **Admin review screen** (`is_admin` users) — **BUILT 2026-08-29** (§4/§9/§12).
+  Admin-only 4th tab in `/okr-ally` → `AdminList` (every completed review across
+  users) → `AdminReviewScreen`: verbatim submission + the automated review + two
+  option panels (one note per rubric criterion + general + 1–5 rating, stored in
+  `expert_reviews`) + the improvement-email panel (Claude drafts from PGS's
+  notes in his voice as added commentary — never a score/rating — then edit and
+  "Send to <user email>", which Brevo-sends and stamps `improvement_emails.sent_at`
+  only on a confirmed send). Migration 006 (`UNIQUE(review_id)` on
+  `improvement_emails`) applied to Neon; the `.sql` lives in the design-package
+  folder with 002–005 (untracked there, like the others). Routes under
+  `/api/okr-ally/admin/*` (403 for non-admins). e2e spec 6 covers it.
 
 ## 7. Manual end-to-end pass (before go-live)
 
-The automated Playwright suite (`npm run test:e2e`, `e2e/okr-ally.spec.ts`, 5 specs)
+The automated Playwright suite (`npm run test:e2e`, `e2e/okr-ally.spec.ts`, 7 specs)
 covers the happy path, the refund-on-failure path, ownership scoping, the required
-rating, and — as of 2026-08-28 — thin-context handling: a spec submits deliberately
-vague company context, asserts a clarifying question renders, answers it, and
-verifies the persisted `context_snapshot` (raw input, clarifying question/answer,
-`paraphrase_action: confirmed`, `final_text` = the accepted paraphrase). What it
+rating, thin-context handling (a spec submits deliberately vague company context,
+asserts a clarifying question renders, answers it, and verifies the persisted
+`context_snapshot`), the `validateReviewOutput` 2–3-initiative gate, and — as of
+2026-08-29 — the admin review screen (403 gate for non-admins, expert feedback on
+both options, and a grounded improvement-email draft with no score/rating language).
+What it
 **can't** cover and must be done by hand once, against a preview/production deploy
 with real credentials:
 

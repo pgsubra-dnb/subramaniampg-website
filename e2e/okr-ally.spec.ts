@@ -4,6 +4,7 @@ import { validateReviewOutput } from '../lib/okrAllyReview'
 import {
   signIn,
   seedCredits,
+  setAdmin,
   getBalance,
   getLatestSubmission,
   getContextSnapshot,
@@ -369,4 +370,93 @@ test.describe(() => {
     // business/role went straight through
     expect(snap.business_context.paraphrase_action).toMatch(/not_offered|confirmed|ignored/)
   })
+})
+
+// ══════════════════════════════════════════════════════════
+// 6. Admin (expert) review screen — gate, feedback, improvement email
+// ══════════════════════════════════════════════════════════
+test('admin: expert feedback on both options, then a grounded improvement-email draft', async ({ page, context }) => {
+  test.setTimeout(120_000)
+
+  const user = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(user.userId)
+  const hdr = { cookie: user.cookieHeader }
+
+  // ── not an admin: routes 403, no Admin tab ──
+  expect((await context.request.get('/api/okr-ally/admin/reviews', { headers: hdr })).status()).toBe(403)
+  await page.goto('/okr-ally')
+  await expect(page.getByRole('button', { name: 'History' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Admin' })).toHaveCount(0)
+
+  // ── promote + seed a completed review ──
+  await setAdmin(user.userId, true)
+  const { submissionId, reviewId } = await seedCompletedReview(user.userId, 'E2E admin objective')
+
+  await page.reload()
+  await page.getByRole('button', { name: 'Admin' }).click()
+  await expect(page.getByText('E2E admin objective')).toBeVisible()
+
+  // ── full review payload ──
+  const full = await (await context.request.get(`/api/okr-ally/admin/review/${submissionId}`, { headers: hdr })).json()
+  expect(full.objective).toBe('E2E admin objective')
+  expect(full.review.suggestedOkrOptions.map((o: { label: string }) => o.label).sort()).toEqual([
+    'Fresh Rewrite',
+    'Refined Original',
+  ])
+  expect(full.rubricCriteria).toContain('Outcome vs Output')
+
+  const savePanel = (label: string) =>
+    context.request.post('/api/okr-ally/admin/expert-review', {
+      headers: hdr,
+      data: {
+        reviewId,
+        okrOptionLabel: label,
+        rubricFeedback: { 'Outcome vs Output': `note for ${label}` },
+        generalFeedback: `general for ${label}`,
+        expertRating: 4,
+      },
+    })
+
+  // one panel saved → improvement email refused
+  expect((await savePanel('Refined Original')).status()).toBe(200)
+  expect((await savePanel('Refined Original')).status()).toBe(200) // upsert, still fine
+  expect(
+    (await pool.query(`SELECT count(*) FROM expert_reviews WHERE review_id = $1`, [reviewId])).rows[0].count
+  ).toBe('1')
+
+  let gen = await context.request.post('/api/okr-ally/admin/improvement-email', {
+    headers: hdr,
+    data: { action: 'generate', reviewId },
+  })
+  expect(gen.status()).toBe(400)
+
+  // both panels saved → draft generates
+  expect((await savePanel('Fresh Rewrite')).status()).toBe(200)
+  gen = await context.request.post('/api/okr-ally/admin/improvement-email', {
+    headers: hdr,
+    data: { action: 'generate', reviewId },
+  })
+  expect(gen.status()).toBe(200)
+  const draft: string = (await gen.json()).draft
+  expect(draft.trim().length).toBeGreaterThan(60)
+  // grounding rule: no score / rating language
+  expect(draft).not.toMatch(/\b\d\s*\/\s*10\b/)
+  expect(draft.toLowerCase()).not.toContain('rating')
+  expect(draft.toLowerCase()).not.toMatch(/\bscored?\b/)
+
+  // edit + save
+  const edited = draft + '\n\nPS: added by PGS.'
+  expect(
+    (
+      await context.request.post('/api/okr-ally/admin/improvement-email', {
+        headers: hdr,
+        data: { action: 'save', reviewId, finalText: edited },
+      })
+    ).status()
+  ).toBe(200)
+  expect(
+    (await pool.query(`SELECT final_text FROM improvement_emails WHERE review_id = $1`, [reviewId])).rows[0].final_text
+  ).toBe(edited)
+
+  await setAdmin(user.userId, false)
 })

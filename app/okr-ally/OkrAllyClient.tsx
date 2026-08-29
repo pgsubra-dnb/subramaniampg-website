@@ -7,10 +7,11 @@ import StepForm from './_form'
 import ReportScreen, { FullReport } from './_report'
 import PricingTab from './_pricing'
 import HistoryTab from './_history'
+import { AdminList, AdminReviewScreen } from './_admin'
 import { FormState, emptyForm, CtxFieldState } from './_formState'
 
 type Phase = 'loading' | 'intro' | 'email' | 'app' | 'signedout'
-type Tab = 'ally' | 'pricing' | 'history'
+type Tab = 'ally' | 'pricing' | 'history' | 'admin'
 
 interface Me {
   authenticated: boolean
@@ -37,7 +38,10 @@ export default function OkrAllyClient() {
   const [resumeOffer, setResumeOffer] = useState<FormState | null>(null)
   const [reportId, setReportId] = useState<string | null>(null)
   const [report, setReport] = useState<FullReport | null>(null)
+  const [adminId, setAdminId] = useState<string | null>(null)
   const [verifyError, setVerifyError] = useState<string | null>(null)
+
+  const isAdmin = !!me?.user?.isAdmin
 
   const refreshStatus = useCallback(() => {
     fetch('/api/okr-ally/status')
@@ -147,6 +151,9 @@ export default function OkrAllyClient() {
   }
 
   const showingReport = phase === 'app' && reportId !== null
+  const showingAdmin = phase === 'app' && adminId !== null
+  // Admin tab only makes sense for admins; fall back if the flag isn't (or is no longer) set.
+  const activeTab: Tab = tab === 'admin' && !isAdmin ? 'ally' : tab
 
   return (
     <Page>
@@ -166,8 +173,8 @@ export default function OkrAllyClient() {
         }
       />
 
-      {me?.authenticated && !showingReport && (
-        <TabBar tab={tab} onChange={setTab} />
+      {me?.authenticated && !showingReport && !showingAdmin && (
+        <TabBar tab={activeTab} onChange={setTab} isAdmin={isAdmin} />
       )}
 
       {phase === 'signedout' && (
@@ -206,7 +213,7 @@ export default function OkrAllyClient() {
         </>
       )}
 
-      {phase === 'app' && !showingReport && tab === 'ally' && resumeOffer && (
+      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'ally' && resumeOffer && (
         <>
           <AllyRow>You have a review in progress. Pick up where you left off, or start fresh?</AllyRow>
           <div className="flex gap-2 mb-4">
@@ -218,7 +225,7 @@ export default function OkrAllyClient() {
         </>
       )}
 
-      {phase === 'app' && !showingReport && tab === 'ally' && !resumeOffer && (
+      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'ally' && !resumeOffer && (
         <StepForm
           initialForm={draft}
           onSubmitted={(r) => {
@@ -228,22 +235,37 @@ export default function OkrAllyClient() {
         />
       )}
 
-      {phase === 'app' && !showingReport && tab === 'pricing' && (
+      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'pricing' && (
         <PricingTab onBalanceChange={(n) => setStatus((s) => (s ? { ...s, creditsRemaining: n } : s))} />
       )}
 
-      {phase === 'app' && !showingReport && tab === 'history' && (
+      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'history' && (
         <HistoryTab onOpen={(id) => setReportId(id)} />
+      )}
+
+      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'admin' && isAdmin && (
+        <AdminList onOpen={(id) => setAdminId(id)} />
+      )}
+
+      {phase === 'app' && showingAdmin && (
+        <AdminReviewScreen
+          submissionId={adminId!}
+          onBack={() => {
+            setAdminId(null)
+            setTab('admin')
+          }}
+        />
       )}
     </Page>
   )
 }
 
-function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
+function TabBar({ tab, onChange, isAdmin }: { tab: Tab; onChange: (t: Tab) => void; isAdmin: boolean }) {
   const tabs: [Tab, string][] = [
     ['ally', 'Ally'],
     ['pricing', 'Pricing & Plans'],
     ['history', 'History'],
+    ...(isAdmin ? ([['admin', 'Admin']] as [Tab, string][]) : []),
   ]
   return (
     <div className="flex gap-1 mb-6" style={{ borderBottom: `1px solid ${T.hairline}` }}>
