@@ -1,0 +1,227 @@
+import crypto from 'node:crypto'
+import { Pool } from 'pg'
+import type { BrowserContext, APIRequestContext } from '@playwright/test'
+
+/**
+ * Shared E2E helpers: direct DB access for setup/teardown and magic-token
+ * minting, so specs can drive the real magic-link sign-in without an inbox.
+ */
+
+const {
+  DATABASE_URL,
+  NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT,
+  SANITY_API_TOKEN,
+  BLOB_READ_WRITE_TOKEN,
+} = process.env
+
+// OKR Ally's Sanity content (magicToken auth included) lives in its own
+// isolated dataset, never `production`. Keep this in sync with
+// lib/okrAllySanity.ts / NEXT_PUBLIC_OKR_ALLY_SANITY_DATASET.
+const SANITY_DATASET = process.env.NEXT_PUBLIC_OKR_ALLY_SANITY_DATASET || 'okr-ally'
+
+if (!DATABASE_URL) throw new Error('e2e: DATABASE_URL not set (need .env.local)')
+if (!SANITY_API_TOKEN) throw new Error('e2e: SANITY_API_TOKEN not set (need .env.local)')
+
+export const pool = new Pool({ connectionString: DATABASE_URL })
+
+export const TEST_EMAIL_PREFIX = 'okr-e2e-'
+
+/** A unique test email for one spec run. */
+export function testEmail(tag = ''): string {
+  return `${TEST_EMAIL_PREFIX}${tag}${Date.now()}-${Math.random().toString(36).slice(2, 7)}@example.com`
+}
+
+async function sanityMutate(mutations: unknown[]): Promise<void> {
+  const res = await fetch(
+    `https://${SANITY_PROJECT}.api.sanity.io/v2021-06-07/data/mutate/${SANITY_DATASET}`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${SANITY_API_TOKEN}` },
+      body: JSON.stringify({ mutations }),
+    }
+  )
+  if (!res.ok) throw new Error('sanity mutate failed: ' + (await res.text()))
+}
+
+export interface SignedInUser {
+  email: string
+  userId: string
+  /** Cookie header value, e.g. "okr_ally_session=<uuid>" — for APIRequestContext calls. */
+  cookieHeader: string
+}
+
+/**
+ * Full magic-link sign-in against `baseURL`: mint a magicToken in Sanity, hit
+ * /api/okr-ally/verify (which creates/loads the Neon user and sets the session
+ * cookie in `context`), and return the user id + cookie header.
+ */
+export async function signIn(
+  context: BrowserContext,
+  baseURL: string,
+  email = testEmail()
+): Promise<SignedInUser> {
+  const token = crypto.randomBytes(32).toString('hex')
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
+  await sanityMutate([
+    {
+      create: {
+        _type: 'magicToken',
+        email,
+        tokenHash,
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      },
+    },
+  ])
+
+  const page = await context.newPage()
+  await page.goto(`${baseURL}/api/okr-ally/verify?token=${token}`)
+  await page.close()
+
+  const cookies = await context.cookies()
+  const session = cookies.find((c) => c.name === 'okr_ally_session')
+  if (!session) throw new Error('signIn: no okr_ally_session cookie after /verify')
+
+  return { email, userId: session.value, cookieHeader: `okr_ally_session=${session.value}` }
+}
+
+export async function seedCredits(userId: string, n: number): Promise<void> {
+  await pool.query(
+    `INSERT INTO user_credit_balance (user_id, credits_remaining) VALUES ($1, $2)
+     ON CONFLICT (user_id) DO UPDATE SET credits_remaining = $2`,
+    [userId, n]
+  )
+}
+
+export async function getBalance(userId: string): Promise<number> {
+  const r = await pool.query<{ credits_remaining: number }>(
+    `SELECT credits_remaining FROM user_credit_balance WHERE user_id = $1`,
+    [userId]
+  )
+  return r.rows[0]?.credits_remaining ?? 0
+}
+
+export async function getLatestSubmission(userId: string): Promise<{ id: string; status: string } | null> {
+  const r = await pool.query<{ id: string; status: string }>(
+    `SELECT id, status FROM submissions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+    [userId]
+  )
+  return r.rows[0] ?? null
+}
+
+export interface CtxSnapshotField {
+  raw_input: string
+  clarifying_question: string | null
+  clarifying_answer: string | null
+  paraphrase_suggested: string | null
+  final_text: string
+  paraphrase_action: string
+}
+
+export async function getContextSnapshot(
+  submissionId: string
+): Promise<Record<'company_context' | 'business_context' | 'role_context', CtxSnapshotField>> {
+  const r = await pool.query<{ context_snapshot: Record<string, CtxSnapshotField> }>(
+    `SELECT context_snapshot FROM submissions WHERE id = $1`,
+    [submissionId]
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return r.rows[0].context_snapshot as any
+}
+
+export async function getCreditTransactions(userId: string): Promise<{ type: string; amount: number }[]> {
+  const r = await pool.query<{ type: string; amount: number }>(
+    `SELECT type, amount FROM credit_transactions WHERE user_id = $1 ORDER BY created_at`,
+    [userId]
+  )
+  return r.rows
+}
+
+export async function getFeedback(userId: string): Promise<{ rating: number; feedback_text: string | null } | null> {
+  const r = await pool.query<{ rating: number; feedback_text: string | null }>(
+    `SELECT rating, feedback_text FROM outcome_feedback WHERE user_id = $1`,
+    [userId]
+  )
+  return r.rows[0] ?? null
+}
+
+/** Insert a completed submission + review directly (for tests that don't need a live Claude call). */
+export async function seedCompletedReview(userId: string, objective = 'Seeded E2E objective'): Promise<{ submissionId: string; reviewId: string }> {
+  const sub = await pool.query<{ id: string }>(
+    `INSERT INTO submissions (user_id, objective, krs, context_snapshot, idempotency_key, status)
+     VALUES ($1, $2, $3::jsonb, '{}'::jsonb, $4, 'complete') RETURNING id`,
+    [userId, objective, JSON.stringify([{ text: 'Seed KR from 10 to 20' }]), 'e2e-seed-' + crypto.randomUUID()]
+  )
+  const submissionId = sub.rows[0].id
+  const rev = await pool.query<{ id: string }>(
+    `INSERT INTO reviews (submission_id, criteria_scores, overall_score, objective_feedback, key_result_feedback, suggested_okr_options, rubric_version, model_version)
+     VALUES ($1, $2::jsonb, $3, $4::jsonb, $5::jsonb, $6::jsonb, 'okr-ally-rubric-v1', 'claude-sonnet-5') RETURNING id`,
+    [
+      submissionId,
+      JSON.stringify([
+        { criterion: 'Outcome vs Output', score: 7, weight: 0.25, rationale: 'seed' },
+        { criterion: 'Alignment', score: 7, weight: 0.25, rationale: 'seed' },
+        { criterion: 'Measurability', score: 7, weight: 0.2, rationale: 'seed' },
+        { criterion: 'Specificity', score: 6, weight: 0.15, rationale: 'seed' },
+        { criterion: 'Ambition vs Realism', score: 6, weight: 0.15, rationale: 'seed' },
+      ]),
+      6.6,
+      JSON.stringify({ what_works: 'seed works', what_to_improve: 'seed improve' }),
+      JSON.stringify([{ kr_reference: 'KR1', what_works: 'a', what_to_improve: 'b' }]),
+      JSON.stringify([
+        { label: 'Refined Original', objective: 'Refined seed', key_results: [{ text: 'k', status: 'modified', initiatives: [] }], rationale: 'r' },
+        { label: 'Fresh Rewrite', objective: 'Fresh seed', key_results: [{ text: 'k', status: 'new', initiatives: [{ action: 'do', owning_team: 'Team' }] }], rationale: 'r' },
+      ]),
+    ]
+  )
+  return { submissionId, reviewId: rev.rows[0].id }
+}
+
+/** Insert a minimal valid invoice row for ownership tests. */
+export async function seedInvoice(userId: string): Promise<{ invoiceId: string }> {
+  const r = await pool.query<{ id: string }>(
+    `INSERT INTO invoices (
+       user_id, razorpay_payment_id, invoice_number, base_amount, gst_amount, total_amount,
+       place_of_supply, igst_amount, supplier_name, supplier_gstin, supplier_pan, supplier_address
+     ) VALUES ($1, $2, $3, 50, 9, 59, 'Maharashtra', 9, 'Test LLP', '29ABCDE1234F1Z5', 'ABCDE1234F', 'Test address')
+     RETURNING id`,
+    [userId, 'e2e-pay-' + crypto.randomUUID(), 'OKR/E2E/' + Math.floor(Math.random() * 1e6)]
+  )
+  return { invoiceId: r.rows[0].id }
+}
+
+/** Delete every row belonging to the given users + any blobs, and their Sanity magic tokens. */
+export async function cleanupUsers(userIds: string[]): Promise<void> {
+  for (const uid of userIds) {
+    if (!uid) continue
+    await pool.query(`DELETE FROM outcome_feedback WHERE user_id = $1`, [uid])
+    await pool.query(`DELETE FROM reviews WHERE submission_id IN (SELECT id FROM submissions WHERE user_id = $1)`, [uid])
+    await pool.query(`DELETE FROM invoices WHERE user_id = $1`, [uid])
+    await pool.query(`DELETE FROM credit_transactions WHERE user_id = $1`, [uid])
+    await pool.query(`DELETE FROM coupon_redemptions WHERE user_id = $1`, [uid])
+    await pool.query(`DELETE FROM submissions WHERE user_id = $1`, [uid])
+    await pool.query(`DELETE FROM okr_ally_daily_usage WHERE user_id = $1`, [uid])
+    await pool.query(`DELETE FROM user_credit_balance WHERE user_id = $1`, [uid])
+    await pool.query(`DELETE FROM user_profile WHERE user_id = $1`, [uid])
+    await pool.query(`DELETE FROM drafts WHERE user_id = $1`, [uid])
+    await pool.query(`DELETE FROM users WHERE id = $1`, [uid])
+  }
+  try {
+    await sanityMutate([{ delete: { query: `*[_type=="magicToken" && email match "${TEST_EMAIL_PREFIX}*"]` } }])
+  } catch {
+    /* best effort */
+  }
+  if (BLOB_READ_WRITE_TOKEN) {
+    try {
+      const { list, del } = await import('@vercel/blob')
+      const b = await list({ token: BLOB_READ_WRITE_TOKEN })
+      for (const x of b.blobs) await del(x.url, { token: BLOB_READ_WRITE_TOKEN })
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+/** Convenience: an APIRequestContext-style GET with a session cookie. */
+export async function apiGet(request: APIRequestContext, url: string, cookieHeader: string) {
+  return request.get(url, { headers: { cookie: cookieHeader } })
+}
