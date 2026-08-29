@@ -81,8 +81,10 @@ accountant/footer fields.
 
 ## 5. Neon — one-time manual
 
-- [ ] **Admin flag** — once PGS's own OKR Ally user row exists (after first magic-link sign-in):
+- [x] **Admin flag** — **DONE 2026-08-29.** PGS signed in (Neon `users` row
+  `12050af9-5fdf-443e-89b1-76d3ee265099`, created 2026-08-29 08:44 UTC); ran
   `UPDATE users SET is_admin = true WHERE email = 'pgs@embiggen.co.in';`
+  (1 row), verified `is_admin = true` and that it is the only admin row.
   Gates the admin review screen (step 9 / section 9).
 
 ## 6. Not yet built (not in the numbered build sequence)
