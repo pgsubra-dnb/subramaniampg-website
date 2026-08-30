@@ -145,10 +145,21 @@ with real credentials:
 - [ ] **Confirmation emails actually arrive** — after a completed review: the
   "your OKR Ally review" email with the PDF attached. After a purchase: the
   "credits ready" email and the numbered GST invoice PDF.
+- [ ] **The self-BCC actually lands — check `pgs@embiggen.co.in` directly.**
+  `lib/sendBrevoEmail.ts` sends FROM and BCCs `pgs@embiggen.co.in`. As of 2026-08-30
+  this has only been **code-verified** (payload always carries the BCC), never
+  physically confirmed: the M365 mailbox reachable via the assistant's connector is
+  `pgs@embiggen.co` (a *different* address), and none of the 4 OKR Ally emails sent
+  to `.co.in` during the 2026-08-29 testing (sign-in, review, credits, invoice
+  `OKR/26-08/0001`) appeared in the `.co` mailbox. PGS to open the `.co.in` inbox
+  and confirm the invoice `OKR/26-08/0001` email + the review/credits emails +
+  their BCC copies are actually there (and not in spam). If they are not, the
+  sender/BCC address needs revisiting before go-live.
 - [ ] **The ₹0 first-review invoice arrives** — after the free first review, a
   "Tax invoice OKR/YY-MM/XXXX — OKR Ally" email with a ₹0 Tax Invoice PDF attached
-  (List price ₹50 → 100% discount → Total ₹0), to the user **and** BCC to PGS.
-  Confirm the invoice number increments the shared `invoice_counters` sequence.
+  (List price ₹50 → 100% discount → Total ₹0), to the user **and** BCC to
+  `pgs@embiggen.co.in`. Confirm the invoice number increments the shared
+  `invoice_counters` sequence.
 - [ ] **A manual admin credit grant** — from the Admin tab, grant a few credits to
   a test account by email; confirm the balance updates and the recipient (and PGS,
   by BCC) get the "credits added" email.
@@ -218,8 +229,10 @@ fresh `main` checkout → `subramaniampg.guru`. `main` = production from here.
   - **Not backfilled:** the 3 pre-2026-08-30 ₹0 redemptions in prod (PGS's own testing) have no
     invoice. Going-forward only — PGS's call.
 - **Every invoice is copied to PGS via BCC** — `lib/sendBrevoEmail.ts` BCCs `pgs@embiggen.co.in`
-  whenever `skipBcc` is not passed; `createAndSendInvoice` never passes it. Verified 2026-08-30
-  (payload inspection). Do not add `skipBcc` to the invoice send.
+  whenever `skipBcc` is not passed; `createAndSendInvoice` never passes it. **Code-verified only**
+  (2026-08-30 payload inspection) — the BCC to `pgs@embiggen.co.in` has NOT been physically
+  confirmed in an inbox (see §7; the connector mailbox is `pgs@embiggen.co`, a different address).
+  PGS is checking `.co.in` directly. Do not add `skipBcc` to the invoice send.
 - **`credit_transactions.type` now has four values** — `purchase`, `usage`,
   `refund_failed_generation`, `admin_grant`. `admin_grant` rows are deliberately **not** surfaced in
   the user-facing History dashboard (which shows only `purchase`); they just land in the balance.
