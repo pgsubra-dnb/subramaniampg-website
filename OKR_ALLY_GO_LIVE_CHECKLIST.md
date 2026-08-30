@@ -202,7 +202,6 @@ fresh `main` checkout → `subramaniampg.guru`. `main` = production from here.
 - [ ] Confirm `NEXT_PUBLIC_OKR_ALLY_SANITY_DATASET=okr-ally` and `OKR_ALLY_FREE_REVIEW_COUPON=OKRALLY-FIRST-FREE` are set on the target environment (§1).
 - [x] **Hosted Studio deployed** — `sanity deploy` run 2026-08-28; https://subramaniampg.sanity.studio/ now serves the two-workspace picker ("Website" + "OKR Ally"). Verified via the Sanity user-applications manifest.
 - [ ] **Redeploy the Next.js app to Vercel** — needed for the *embedded* Studio route `subramaniampg.guru/studio` to pick up the two-workspace config (it currently serves the old single-workspace one). This is the same redeploy that ships the OKR Ally app itself. After it: the site's embedded Studio is at **`/studio/website`** (was `/studio`); bare `/studio` shows the picker — update any bookmarks / internal links.
-- [ ] **Stale sandbox Studio** — a separate hosted Studio `subramaniampg-sandbox.sanity.studio` (last deployed 2026-07-15) still points at the deleted `sandbox` dataset and is now non-functional. Delete it (`sanity undeploy`, choosing that app) or ignore; it is unrelated to OKR Ally and to the live site.
 
 ---
 
