@@ -381,8 +381,7 @@ export function ScoreInfographic({
             >
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0, marginRight: 8 }} />
               <span style={{ color: T.charcoal, flex: 1 }}>{c.criterion}</span>
-              <span style={{ fontWeight: 700, color, marginRight: 10 }}>{c.score}/10</span>
-              <span style={{ color: T.muted, width: 34, textAlign: 'right' }}>{Math.round(c.weight * 100)}%</span>
+              <span style={{ fontWeight: 700, color }}>{c.score}/10</span>
             </div>
           )
         })}

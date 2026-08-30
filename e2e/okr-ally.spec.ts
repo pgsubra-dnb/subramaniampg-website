@@ -152,7 +152,8 @@ test('happy path: sign in, submit an OKR, get a scored report', async ({ page, c
   // report screen — shared score infographic (ring + radar + legend)
   await expect(page.getByText(/Your OKR scored/i)).toBeVisible({ timeout: 200_000 })
   await expect(page.getByText('Weighted across the five criteria')).toBeVisible()
-  await expect(page.getByText('Why each criterion scored the way it did')).toBeVisible()
+  // per-criterion rationale + weight % are NOT shown on the user-facing report
+  await expect(page.getByText('Why each criterion scored the way it did')).toHaveCount(0)
   await expect(page.getByText('Refined Original')).toBeVisible()
   await expect(page.getByText('Fresh Rewrite')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Download PDF' })).toBeVisible()
