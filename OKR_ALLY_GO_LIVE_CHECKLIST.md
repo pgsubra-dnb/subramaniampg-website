@@ -72,7 +72,7 @@ accountant/footer fields.
 
 ## 3. Accountant — confirm before invoicing
 
-- [ ] **SAC code** for the review service — exact code and digit count (4 vs 6). Always begins "99". `998311` is now set in `okrAllySettings.supplierSacCode` and renders correctly on invoices (§2), **but still unconfirmed**: PGS needs to say whether `998311` was explicitly given by his accountant, or was only independently validated as plausible. Do not treat this as closed until PGS confirms the source.
+- [x] **SAC code** for the review service — **`998311`, confirmed directly by PGS's accountant (2026-08-30)**, not just independently validated. Set in `okrAllySettings.supplierSacCode`, renders correctly on invoices (§2). Closed.
 - [x] **Bill of Supply for ₹0 transactions** — no Bill of Supply is needed (accountant-confirmed
   2026-08-29): the 100%-off coupon discounts the *price* to zero, it does not make the service
   GST-exempt, so there is no exempt/nil-rated supply. **Superseded 2026-08-30 on PGS's instruction:**
@@ -84,7 +84,7 @@ accountant/footer fields.
 
 ## 4. Razorpay dashboard
 
-- [ ] **Register the webhook** — URL `https://subramaniampg.guru/api/okr-ally/webhook`, events **`payment.captured`** and **`order.paid`**, secret = the value put in `RAZORPAY_WEBHOOK_SECRET` (§1). This is the fallback confirmation path for the closed-tab case; without it a payment made while the browser is closed never credits.
+- [x] **Register the webhook** — URL `https://subramaniampg.guru/api/okr-ally/webhook`, events **`payment.captured`** and **`order.paid`**, secret = `RAZORPAY_WEBHOOK_SECRET` (§1). **Done — PGS verified the closed-tab webhook fallback credits a payment, 2026-08-30.**
 
 ## 5. Neon — one-time manual
 
@@ -116,10 +116,18 @@ accountant/footer fields.
   `credit_transactions.type = 'admin_grant'` + `note` column (migration 007). Atomic (ledger +
   balance in one txn). The recipient is **always** emailed (which BCCs PGS); a grant to an account
   that has not completed a review yet succeeds but returns a `warning`. e2e spec 8.
+- [x] **Returning-user profile-summary screen** — **BUILT 2026-08-30** (PGS feedback item 5). A
+  returning user with a full saved profile (company name + all three context fields) lands on one
+  summary screen — name / phone / company / 3 context fields shown as saved, each editable inline,
+  unchanged fields collapsed and display-only — instead of stepping through each. Only edited
+  context fields re-run the assess/clarify/paraphrase pipeline; unchanged fields make no call at
+  all. "Continue" moves forward. First-time users and partial-profile users are unchanged
+  (step-by-step, prefilled). `FormState.mode: 'stepwise' | 'summary'`, `nextStep()` in
+  `_formState.ts`, `ProfileSummaryStep` in `_form.tsx`. e2e specs 11–13.
 
 ## 7. Manual end-to-end pass (before go-live)
 
-The automated Playwright suite (`npm run test:e2e`, `e2e/okr-ally.spec.ts`, 10 specs)
+The automated Playwright suite (`npm run test:e2e`, `e2e/okr-ally.spec.ts`, 13 specs)
 covers the happy path, the refund-on-failure path, ownership scoping, the required
 rating, thin-context handling (a spec submits deliberately vague company context,
 asserts a clarifying question renders, answers it, and verifies the persisted
@@ -127,54 +135,24 @@ asserts a clarifying question renders, answers it, and verifies the persisted
 review screen (403 gate for non-admins, expert feedback on both options, and a
 grounded improvement-email draft with no score/rating language), and — as of
 2026-08-30 — the ₹0 first-review Tax Invoice + discount ladder, the manual admin
-credit grant, and the admin list filters + pagination.
-What it
-**can't** cover and must be done by hand once, against a preview/production deploy
-with real credentials:
+credit grant, the admin list filters + pagination, and the returning-user
+profile-summary screen (summary vs step-by-step, edit-one-field-only, and
+no-change-no-pipeline-calls).
+**Done by PGS against production (2026-08-30):** the manual pass came back working —
+magic link in a real inbox, the free first review running free, confirmation emails
+arriving, the self-BCC to `pgs@embiggen.co.in` landing (confirmed end to end, in
+that inbox directly), PDF downloads from the report screen and History, a real
+Razorpay checkout crediting via `verify-payment`, the webhook fallback crediting a
+closed-tab payment, and a clarifying question rendering inline mid-form with Skip
+working.
 
-- [ ] **Magic link in a real inbox** — request a link from the email gate, open the
-  email, click through, confirm the session lands on the form. (Needs
-  `BREVO_API_KEY` on the target environment.)
-- [ ] **The free first review actually runs free** — on the target environment,
-  with a fresh email, confirm `/api/okr-ally/status` returns
-  `freeReviewAvailable: true`, then submit a review and confirm **no credit was
-  charged** (balance stays 0, `credit_transactions` shows the coupon redemption,
-  not a `usage` debit). This is the end-to-end check of the two-layer gate in §2
-  — passing it means both the Sanity coupon *and* `OKR_ALLY_FREE_REVIEW_COUPON`
-  are correctly set on that environment.
-- [ ] **Confirmation emails actually arrive** — after a completed review: the
-  "your OKR Ally review" email with the PDF attached. After a purchase: the
-  "credits ready" email and the numbered GST invoice PDF.
-- [ ] **The self-BCC actually lands — check `pgs@embiggen.co.in` directly.**
-  `lib/sendBrevoEmail.ts` sends FROM and BCCs `pgs@embiggen.co.in`. As of 2026-08-30
-  this has only been **code-verified** (payload always carries the BCC), never
-  physically confirmed: the M365 mailbox reachable via the assistant's connector is
-  `pgs@embiggen.co` (a *different* address), and none of the 4 OKR Ally emails sent
-  to `.co.in` during the 2026-08-29 testing (sign-in, review, credits, invoice
-  `OKR/26-08/0001`) appeared in the `.co` mailbox. PGS to open the `.co.in` inbox
-  and confirm the invoice `OKR/26-08/0001` email + the review/credits emails +
-  their BCC copies are actually there (and not in spam). If they are not, the
-  sender/BCC address needs revisiting before go-live.
-- [ ] **The ₹0 first-review invoice arrives** — after the free first review, a
-  "Tax invoice OKR/YY-MM/XXXX — OKR Ally" email with a ₹0 Tax Invoice PDF attached
-  (List price ₹50 → 100% discount → Total ₹0), to the user **and** BCC to
-  `pgs@embiggen.co.in`. Confirm the invoice number increments the shared
-  `invoice_counters` sequence.
-- [ ] **A manual admin credit grant** — from the Admin tab, grant a few credits to
-  a test account by email; confirm the balance updates and the recipient (and PGS,
-  by BCC) get the "credits added" email.
-- [ ] **PDF download from the UI** — click "Download PDF" on the report screen and
-  on a History entry; confirm the file opens and renders.
-- [ ] **A real Razorpay checkout** — buy a pack through the Pricing tab with a
-  real card (or a Razorpay test card if the keys are test-mode): confirm the
-  modal opens, payment completes, `verify-payment` credits the account, the
-  invoice email arrives, and the balance updates. Then verify the **webhook**
-  fallback by completing a payment and closing the tab before `verify-payment`
-  fires — the webhook should still credit it (requires §4 webhook registration).
-- [ ] **A real clarifying question mid-form** — enter deliberately thin context
-  and confirm Ally's question renders inline and Skip works. (The Send/answer
-  path is now automated in `e2e/okr-ally.spec.ts`; this manual check is for the
-  Skip path and the production UI.)
+- [x] Magic link · free-first-review · confirmation emails · self-BCC · PDF downloads ·
+  Razorpay checkout · webhook fallback · mid-form clarify — **all verified by PGS, 2026-08-30.**
+- [ ] **Admin-role features pass against the 2026-08-30 deployment** — the only piece
+  left. PGS to walk, on production: the admin review list with its company/email
+  filters + pagination, a manual credit grant (+ the recipient email), the admin
+  (expert) review screen end to end, and the returning-user profile-summary screen
+  (edit one field → only that field re-runs; continue unchanged → nothing re-runs).
 
 ## 8. Deploy
 

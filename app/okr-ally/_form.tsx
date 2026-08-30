@@ -6,12 +6,16 @@ import {
   FormState,
   StepId,
   STEP_ORDER,
+  PROFILE_STEPS,
   LIMITS,
   CTX_KIND,
   CTX_PROMPT,
   ctxSnapshot,
   emptyForm,
   isCtxStep,
+  nextStep,
+  sameText,
+  emptyCtx,
   CtxFieldState,
   ParaphraseAction,
 } from './_formState'
@@ -29,6 +33,7 @@ export interface ReviewResult {
 }
 
 const STEP_LABEL: Record<StepId, string> = {
+  profile_summary: 'Your details',
   name: 'Your name',
   phone: 'Phone (optional)',
   company_name: 'Company name',
@@ -75,12 +80,15 @@ export default function StepForm({ initialForm, onSubmitted }: Props) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [form.step, busy, submitState])
 
-  const idx = STEP_ORDER.indexOf(form.step)
   const goStep = (s: StepId) => {
     setError(null)
     update({ step: s })
   }
-  const next = () => goStep(STEP_ORDER[Math.min(idx + 1, STEP_ORDER.length - 1)])
+  const next = () => goStep(nextStep(form, form.step))
+  // Profile-field edits from the transcript / confirm screen go back to the
+  // single summary screen when we're in returning-user mode.
+  const editStep = (s: StepId) =>
+    goStep(form.mode === 'summary' && PROFILE_STEPS.includes(s) ? 'profile_summary' : s)
 
   // ── context field pipeline ──────────────────────────────
   async function runAssess(kind: 'company' | 'business' | 'role') {
@@ -177,7 +185,7 @@ export default function StepForm({ initialForm, onSubmitted }: Props) {
   ) {
     update((f) => ({
       ...f,
-      step: STEP_ORDER[Math.min(STEP_ORDER.indexOf(f.step) + 1, STEP_ORDER.length - 1)],
+      step: nextStep(f, f.step),
       ctx: {
         ...f.ctx,
         [kind]: {
@@ -189,6 +197,41 @@ export default function StepForm({ initialForm, onSubmitted }: Props) {
         },
       },
     }))
+  }
+
+  // ── returning-user summary → forward ────────────────────
+  function applyProfileSummary(e: {
+    name: string
+    phone: string
+    companyName: string
+    company: string
+    business: string
+    role: string
+  }) {
+    if (!e.name.trim()) return setError('I need a name to address you by.')
+    if (!e.companyName.trim()) return setError('A company or team name, please.')
+    if (!e.company.trim() || !e.business.trim() || !e.role.trim()) {
+      return setError('Keep a few words in each context field, even if brief.')
+    }
+    setError(null)
+    update((f) => {
+      // A context field is only re-run through the pipeline if it actually
+      // changed; an unchanged field stays 'done' and is skipped entirely.
+      const resolve = (kind: 'company' | 'business' | 'role', text: string): CtxFieldState =>
+        sameText(text, f.ctx[kind].finalText) ? f.ctx[kind] : { ...emptyCtx(), raw: text.trim() }
+      const draftForm: FormState = {
+        ...f,
+        name: e.name.trim(),
+        phone: e.phone.trim(),
+        companyName: e.companyName.trim(),
+        ctx: {
+          company: resolve('company', e.company),
+          business: resolve('business', e.business),
+          role: resolve('role', e.role),
+        },
+      }
+      return { ...draftForm, step: nextStep(draftForm, 'profile_summary') }
+    })
   }
 
   // ── submit ──────────────────────────────────────────────
@@ -276,7 +319,7 @@ export default function StepForm({ initialForm, onSubmitted }: Props) {
 
   return (
     <div>
-      <Transcript form={form} onEdit={goStep} />
+      <Transcript form={form} onEdit={editStep} />
 
       {error && (
         <div
@@ -289,11 +332,13 @@ export default function StepForm({ initialForm, onSubmitted }: Props) {
 
       {submitState === 'running' ? (
         <GeneratingIndicator />
+      ) : form.step === 'profile_summary' ? (
+        <ProfileSummaryStep form={form} busy={busy} onContinue={applyProfileSummary} />
       ) : form.step === 'confirm' ? (
         <ConfirmStep
           form={form}
           busy={false}
-          onEdit={goStep}
+          onEdit={editStep}
           onToggleSave={(v) => update({ saveProfile: v })}
           onSubmit={submit}
           failed={submitState === 'failed'}
@@ -386,15 +431,27 @@ function Transcript({ form, onEdit }: { form: FormState; onEdit: (s: StepId) => 
   const at = STEP_ORDER.indexOf(form.step)
   const done = (s: StepId) => STEP_ORDER.indexOf(s) < at
 
-  if (done('name')) rows.push({ q: 'What should I call you?', a: form.name, step: 'name' })
-  if (done('phone')) rows.push({ q: 'Phone number?', a: form.phone || '(skipped)', step: 'phone' })
-  if (done('company_name')) rows.push({ q: 'Company or team name?', a: form.companyName, step: 'company_name' })
-  ;(['ctx_company', 'ctx_business', 'ctx_role'] as const).forEach((s) => {
-    if (done(s)) {
-      const cs = form.ctx[CTX_KIND[s]]
-      rows.push({ q: CTX_PROMPT[CTX_KIND[s]], a: cs.finalText || cs.raw, step: s })
+  if (form.mode === 'summary') {
+    // The identity/context fields were reviewed on one summary screen — show a
+    // single collapsed row once we've moved past it, not six.
+    if (at >= STEP_ORDER.indexOf('objective') && form.step !== 'profile_summary') {
+      rows.push({
+        q: 'Your details',
+        a: [form.name, form.companyName].filter(Boolean).join(' · '),
+        step: 'profile_summary',
+      })
     }
-  })
+  } else {
+    if (done('name')) rows.push({ q: 'What should I call you?', a: form.name, step: 'name' })
+    if (done('phone')) rows.push({ q: 'Phone number?', a: form.phone || '(skipped)', step: 'phone' })
+    if (done('company_name')) rows.push({ q: 'Company or team name?', a: form.companyName, step: 'company_name' })
+    ;(['ctx_company', 'ctx_business', 'ctx_role'] as const).forEach((s) => {
+      if (done(s)) {
+        const cs = form.ctx[CTX_KIND[s]]
+        rows.push({ q: CTX_PROMPT[CTX_KIND[s]], a: cs.finalText || cs.raw, step: s })
+      }
+    })
+  }
   if (done('objective')) rows.push({ q: 'Your Objective?', a: form.objective, step: 'objective' })
   if (done('krs'))
     rows.push({
@@ -428,6 +485,133 @@ function Transcript({ form, onEdit }: { form: FormState; onEdit: (s: StepId) => 
           </UserRow>
         </div>
       ))}
+    </>
+  )
+}
+
+// ── returning-user profile summary ────────────────────────
+function ProfileSummaryStep({
+  form,
+  busy,
+  onContinue,
+}: {
+  form: FormState
+  busy: boolean
+  onContinue: (e: {
+    name: string
+    phone: string
+    companyName: string
+    company: string
+    business: string
+    role: string
+  }) => void
+}) {
+  const [name, setName] = useState(form.name)
+  const [phone, setPhone] = useState(form.phone)
+  const [companyName, setCompanyName] = useState(form.companyName)
+  const [company, setCompany] = useState(form.ctx.company.finalText)
+  const [business, setBusiness] = useState(form.ctx.business.finalText)
+  const [role, setRole] = useState(form.ctx.role.finalText)
+  const [open, setOpen] = useState<Set<string>>(new Set())
+
+  const toggle = (k: string) =>
+    setOpen((s) => {
+      const n = new Set(s)
+      if (n.has(k)) n.delete(k)
+      else n.add(k)
+      return n
+    })
+
+  const fields = [
+    { k: 'name', label: 'Your name', value: name, set: setName, saved: form.name, multiline: false, optional: false },
+    { k: 'phone', label: 'Phone', value: phone, set: setPhone, saved: form.phone, multiline: false, optional: true },
+    { k: 'company_name', label: 'Company or team', value: companyName, set: setCompanyName, saved: form.companyName, multiline: false, optional: false },
+    { k: 'company', label: 'Company context', value: company, set: setCompany, saved: form.ctx.company.finalText, multiline: true, optional: false },
+    { k: 'business', label: 'Business context', value: business, set: setBusiness, saved: form.ctx.business.finalText, multiline: true, optional: false },
+    { k: 'role', label: 'Your role', value: role, set: setRole, saved: form.ctx.role.finalText, multiline: true, optional: false },
+  ] as const
+
+  const ctxChanged =
+    !sameText(company, form.ctx.company.finalText) ||
+    !sameText(business, form.ctx.business.finalText) ||
+    !sameText(role, form.ctx.role.finalText)
+
+  const first = form.name.split(' ')[0]
+
+  return (
+    <>
+      <AllyRow>
+        Welcome back{first ? `, ${first}` : ''}. Here&apos;s what I have on file. Edit anything that&apos;s changed,
+        then continue — I&apos;ll only re-check the parts you actually touch.
+      </AllyRow>
+
+      <div className="rounded-lg mb-4" style={{ background: T.card, border: `1px solid ${T.hairline}` }}>
+        {fields.map((f, i) => {
+          const isOpen = open.has(f.k)
+          const dirty = !sameText(f.value, f.saved)
+          return (
+            <div
+              key={f.k}
+              className="px-4 py-3"
+              style={{ borderBottom: i < fields.length - 1 ? `1px solid ${T.hairline}` : 'none' }}
+            >
+              <div className="flex justify-between items-baseline">
+                <span
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    letterSpacing: '.04em',
+                    textTransform: 'uppercase',
+                    color: T.gold,
+                  }}
+                >
+                  {f.label}
+                  {dirty && <span style={{ color: T.emeraldDark, textTransform: 'none', letterSpacing: 0 }}> · edited</span>}
+                </span>
+                <button
+                  onClick={() => toggle(f.k)}
+                  style={{ fontSize: 11.5, color: T.emeraldDark, background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  {isOpen ? 'Done' : 'Edit'}
+                </button>
+              </div>
+              {isOpen ? (
+                <div className="mt-2">
+                  <Field
+                    value={f.value}
+                    onChange={f.set}
+                    multiline={f.multiline}
+                    max={f.multiline ? LIMITS.context : undefined}
+                    autoFocus
+                    placeholder={f.optional ? 'Optional' : ''}
+                  />
+                  {f.multiline && (
+                    <div className="mt-1">
+                      <CharCount value={f.value} max={LIMITS.context} />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ fontSize: 14, color: T.charcoal, marginTop: 4, whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>
+                  {f.value || (f.optional ? '(none)' : '—')}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="flex items-center justify-between">
+        <span style={{ fontSize: 11.5, color: T.muted }}>
+          {ctxChanged ? "I'll re-check the context you changed." : 'Nothing to re-check.'}
+        </span>
+        <Btn
+          onClick={() => onContinue({ name, phone, companyName, company, business, role })}
+          disabled={busy}
+        >
+          Continue
+        </Btn>
+      </div>
     </>
   )
 }

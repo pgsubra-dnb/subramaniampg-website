@@ -35,6 +35,7 @@ export default function OkrAllyClient() {
   const [me, setMe] = useState<Me | null>(null)
   const [status, setStatus] = useState<Status | null>(null)
   const [draft, setDraft] = useState<FormState | null>(null)
+  const [profilePrefill, setProfilePrefill] = useState<FormState | null>(null)
   const [resumeOffer, setResumeOffer] = useState<FormState | null>(null)
   const [reportId, setReportId] = useState<string | null>(null)
   const [report, setReport] = useState<FullReport | null>(null)
@@ -77,10 +78,15 @@ export default function OkrAllyClient() {
           (await fetch('/api/okr-ally/draft')).json(),
           (await fetch('/api/okr-ally/profile')).json().catch(() => null),
         ])
-        if (d.formState && d.formState.step && d.formState.step !== 'name') {
+        const prefill = prof ? prefillFromProfile(prof, m) : null
+        setProfilePrefill(prefill)
+        // "Meaningful progress" = past the first stop of whichever flow applies.
+        // 'name' (stepwise start) and 'profile_summary' (summary start) don't count.
+        const savedStep = d.formState?.step
+        if (d.formState && savedStep && savedStep !== 'name' && savedStep !== 'profile_summary') {
           setResumeOffer(d.formState as FormState)
-        } else if (prof) {
-          setDraft(prefillFromProfile(prof, m))
+        } else {
+          setDraft(prefill)
         }
         setPhase('app')
       } catch {
@@ -119,7 +125,17 @@ export default function OkrAllyClient() {
   ): FormState | null {
     const hasContext = prof.companyContext || prof.businessContext || prof.roleContext
     if (!prof.companyName && !hasContext && !prof.phone) return null
+
+    // A "full" saved profile — company name + all three context fields — gets the
+    // returning-user summary screen. Anything partial falls back to the
+    // step-by-step flow (prefilled), unchanged.
+    const full =
+      !!prof.companyName && !!prof.companyContext && !!prof.businessContext && !!prof.roleContext
+
     const f = emptyForm()
+    f.mode = full ? 'summary' : 'stepwise'
+    f.step = full ? 'profile_summary' : 'name'
+    f.saveProfile = full // returning users keep their profile current by default
     f.name = prof.name || m.user?.name || ''
     f.phone = prof.phone || ''
     f.companyName = prof.companyName || ''
@@ -133,7 +149,9 @@ export default function OkrAllyClient() {
         paraphraseSuggested: null,
         finalText: t,
         paraphraseAction: t ? 'not_offered' : '',
-        phase: 'input',
+        // 'done' in summary mode: the field is already resolved and is skipped
+        // unless the user edits it on the summary screen.
+        phase: full ? 'done' : 'input',
       }
     }
     f.ctx = { company: seed(prof.companyContext), business: seed(prof.businessContext), role: seed(prof.roleContext) }
@@ -218,7 +236,7 @@ export default function OkrAllyClient() {
           <AllyRow>You have a review in progress. Pick up where you left off, or start fresh?</AllyRow>
           <div className="flex gap-2 mb-4">
             <Btn onClick={() => startForm(resumeOffer)}>Resume</Btn>
-            <Btn variant="ghost" onClick={() => startForm(null)}>
+            <Btn variant="ghost" onClick={() => startForm(profilePrefill)}>
               Start fresh
             </Btn>
           </div>
