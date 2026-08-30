@@ -582,6 +582,9 @@ export function InstallAppBanner() {
       setEvt(e as BeforeInstallPromptEvent)
     }
     const onInstalled = () => setEvt(null)
+    // an event the pre-hydration listener in layout.tsx may already have caught
+    const early = (window as unknown as { __okrDeferredInstall?: BeforeInstallPromptEvent }).__okrDeferredInstall
+    if (early) setEvt(early)
     window.addEventListener('beforeinstallprompt', onPrompt)
     window.addEventListener('appinstalled', onInstalled)
     return () => {

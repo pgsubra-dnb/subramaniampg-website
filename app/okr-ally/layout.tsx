@@ -25,5 +25,17 @@ export const viewport: Viewport = {
 }
 
 export default function OkrAllyLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>
+  return (
+    <>
+      {/* Catch `beforeinstallprompt` even if Chrome fires it before React has
+          hydrated (common for repeat visitors). InstallAppBanner reads this. */}
+      <script
+        dangerouslySetInnerHTML={{
+          __html:
+            "window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__okrDeferredInstall=e;});",
+        }}
+      />
+      {children}
+    </>
+  )
 }
