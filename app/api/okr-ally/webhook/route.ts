@@ -100,6 +100,9 @@ export async function POST(req: NextRequest) {
         await createAndSendInvoice({
           userId: buyer.id,
           razorpayPaymentId: paymentId,
+          listPrice: Number(notes.listPrice) || base,
+          discountPercent: Number(notes.discountPercent) || null,
+          couponCode: notes.couponCode || null,
           baseAmount: base,
           gstAmount: gst,
           totalAmount: total,

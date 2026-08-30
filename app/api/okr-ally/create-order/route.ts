@@ -100,6 +100,10 @@ export async function POST(req: NextRequest) {
         pack: pack.id,
         credits: String(pack.credits),
         couponCode: couponCode ?? '',
+        // listPrice = undiscounted pack price; base = net taxable value after the
+        // coupon. Both stamped so the invoice can print the discount ladder.
+        listPrice: String(pack.basePrice),
+        discountPercent: String(discountPercent),
         base: String(base),
         gst: String(gst),
         total: String(total),

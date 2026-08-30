@@ -2,31 +2,39 @@ import type { PoolClient } from 'pg'
 import { withTransaction, getSiteSettings } from '@/lib/okrAlly'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 import { putPdf } from '@/lib/okrAllyBlob'
+import { PACKS } from '@/lib/okrAllyBilling'
 import { GST_STATES, stateCode, stateCodeFromGstin } from '@/lib/indiaGstStates'
 
 /**
- * OKR Ally GST invoice generation (build sequence step 5).
+ * OKR Ally GST invoice generation (build sequence step 5, extended in migration
+ * 007 for a formal Tax Invoice on EVERY transaction).
  *
- * - One invoice per Razorpay payment, numbered OKR/YY-MM/XXXX, sequential
- *   within the calendar month via an atomic counter (invoice_counters) — the
- *   same race-safe INSERT ... ON CONFLICT DO UPDATE approach as credit
- *   deduction (design doc section 3).
- * - Supplier details are snapshotted from Sanity okrAllySettings onto the row,
- *   so historical invoices stay accurate if those details change later.
- * - Tax total is always 18% of base; the split is CGST+SGST when the buyer is
- *   in the supplier's state, IGST otherwise.
- * - PDF is rendered server-side with jsPDF and emailed as a Brevo attachment.
- *   Persisting it to Vercel Blob (invoices.pdf_url) is deferred until Blob is
- *   provisioned; downloads regenerate from the row (the row is the source of
- *   truth, not the file).
+ * - One invoice per transaction, numbered OKR/YY-MM/XXXX, sequential within the
+ *   calendar month via an atomic counter (invoice_counters).
+ * - Idempotency key: the Razorpay payment id for a paid pack purchase, or the
+ *   submission id for the ₹0 first-review redemption (which has no payment).
+ * - Every invoice prints the discount ladder — List price → Discount (%, coupon)
+ *   → Net taxable value → GST → Total — so a 100%-off review renders as a real,
+ *   complete Tax Invoice at ₹0, not a placeholder.
+ * - Supplier details are snapshotted from Sanity okrAllySettings onto the row.
+ * - Tax total is always 18% of the net taxable value; CGST+SGST when the buyer
+ *   is in the supplier's state, IGST otherwise. For a ₹0 invoice both are nil.
+ * - PDF is rendered server-side with jsPDF, stored to Vercel Blob, and emailed
+ *   as a Brevo attachment (which BCCs pgs@embiggen.co.in by default — see the
+ *   send call below). Downloads regenerate from the row (the row is the source
+ *   of truth, not the file).
  */
 
 export interface InvoiceRow {
   id: string
   user_id: string
-  razorpay_payment_id: string
+  razorpay_payment_id: string | null
+  submission_id: string | null
   invoice_number: string
   gstin: string | null
+  list_price: string
+  discount_percent: string | null
+  coupon_code: string | null
   base_amount: string
   gst_amount: string
   total_amount: string
@@ -45,14 +53,25 @@ export interface InvoiceRow {
 
 export interface CreateInvoiceInput {
   userId: string
-  razorpayPaymentId: string
-  /** INR, from lib/okrAllyBilling gstBreakdown — base excl. GST. */
+  /** Razorpay payment id for a paid purchase, or null for a ₹0 coupon invoice. */
+  razorpayPaymentId: string | null
+  /** Submission id — the idempotency key when razorpayPaymentId is null. */
+  submissionId?: string | null
+  /** INR, excl. GST — the undiscounted pack / single-review price. */
+  listPrice: number
+  /** INR, excl. GST — the net taxable value after any discount (from gstBreakdown). */
   baseAmount: number
   gstAmount: number
   totalAmount: number
+  /** Coupon percentage applied, or null when there was no coupon. */
+  discountPercent: number | null
+  /** Coupon code applied, or null. */
+  couponCode: string | null
   /** Buyer's GSTIN if they supplied one at checkout (optional). */
   buyerGstin: string | null
-  /** Buyer's state — the mandatory checkout dropdown value (name or 2-digit code). */
+  /** Buyer's state (name or 2-digit code). Empty string => default to the
+   *  supplier's own state (used for the ₹0 free-review invoice, which has no
+   *  checkout step and where GST is nil regardless). */
   placeOfSupply: string
   buyerName: string
   buyerEmail: string
@@ -116,6 +135,9 @@ const money = (v: number | string) => `₹${amount(v)}`
  * without first embedding a Unicode font that actually has the glyph.
  */
 const moneyPdf = (v: number | string) => `Rs. ${amount(v)}`
+
+/** "100.00" → "100", "12.50" → "12.5" — a clean percentage for the invoice. */
+const pct = (v: number | string) => String(Number(v))
 
 /** Render the invoice as a base64-encoded PDF (A4, jsPDF — same conventions as app/assessment/page.tsx). */
 export async function renderInvoicePdf(
@@ -183,12 +205,22 @@ export async function renderInvoicePdf(
   doc.text(`Place of supply: ${inv.place_of_supply}`, M, y)
   y += 8
 
-  const rows: [string, string][] = [
-    [
-      `OKR Ally — OKR review credits${inv.supplier_sac_code ? ` (SAC ${inv.supplier_sac_code})` : ''}`,
-      moneyPdf(inv.base_amount),
-    ],
-  ]
+  // ── line items + discount ladder ──────────────────────────────────────
+  const itemLabel = `OKR Ally — OKR review${inv.supplier_sac_code ? ` (SAC ${inv.supplier_sac_code})` : ''}`
+  const disc = inv.discount_percent != null ? Number(inv.discount_percent) : null
+  const hasDiscount = disc != null && disc > 0
+
+  const rows: [string, string][] = []
+  if (hasDiscount) {
+    const discountAmt = Math.round((Number(inv.list_price) - Number(inv.base_amount)) * 100) / 100
+    const couponBit = inv.coupon_code ? `, coupon ${inv.coupon_code}` : ''
+    rows.push([itemLabel, ''])
+    rows.push(['List price', moneyPdf(inv.list_price)])
+    rows.push([`Discount (${pct(disc)}%${couponBit})`, `- ${moneyPdf(discountAmt)}`])
+    rows.push(['Net taxable value', moneyPdf(inv.base_amount)])
+  } else {
+    rows.push([itemLabel, moneyPdf(inv.base_amount)])
+  }
   if (inv.igst_amount != null) {
     rows.push(['IGST @ 18%', moneyPdf(inv.igst_amount)])
   } else {
@@ -203,7 +235,7 @@ export async function renderInvoicePdf(
   for (const [label, value] of rows) {
     doc.setFont('helvetica', 'normal')
     doc.text(label, M, y)
-    doc.text(value, PW - M, y, { align: 'right' })
+    if (value) doc.text(value, PW - M, y, { align: 'right' })
     y += 6
   }
   doc.line(M, y, PW - M, y)
@@ -216,6 +248,14 @@ export async function renderInvoicePdf(
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
   doc.setTextColor(110)
+  if (Number(inv.total_amount) === 0) {
+    doc.text(
+      'This review was provided at no charge; this invoice is issued for your records.',
+      M,
+      y
+    )
+    y += 4
+  }
   doc.text('This is a system-generated invoice and does not require a signature.', M, y)
   y += 4
   doc.text('subramaniampg.guru  |  pgs@embiggen.co.in', M, y)
@@ -236,24 +276,41 @@ export async function getInvoiceForUser(invoiceId: string, userId: string): Prom
   })
 }
 
-async function fetchInvoiceByPayment(paymentId: string): Promise<InvoiceRow | null> {
+async function fetchExistingInvoice(
+  col: 'razorpay_payment_id' | 'submission_id',
+  val: string
+): Promise<InvoiceRow | null> {
   return withTransaction(async (client) => {
-    const r = await client.query<InvoiceRow>(
-      `SELECT * FROM invoices WHERE razorpay_payment_id = $1`,
-      [paymentId]
-    )
+    const r = await client.query<InvoiceRow>(`SELECT * FROM invoices WHERE ${col} = $1`, [val])
     return r.rows[0] ?? null
   })
 }
 
 /**
- * Create the invoice for a payment (idempotent on razorpay_payment_id) and
- * email the PDF to the buyer. Never throws — a config problem returns a soft
- * failure so the caller's payment confirmation still succeeds; the credits are
- * already granted and PGS can backfill the invoice.
+ * Create the invoice for a transaction (idempotent on the Razorpay payment id,
+ * or on the submission id for a ₹0 coupon invoice) and email the PDF to the
+ * buyer. Never throws — a config problem returns a soft failure so the caller's
+ * confirmation still succeeds; PGS can backfill the invoice.
  */
 export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<CreateInvoiceResult> {
   try {
+    if (!input.razorpayPaymentId && !input.submissionId) {
+      console.error('OKR Ally invoice: needs a razorpayPaymentId or a submissionId')
+      return { ok: false, reason: 'error' }
+    }
+
+    const idKey = input.razorpayPaymentId
+      ? {
+          col: 'razorpay_payment_id' as const,
+          val: input.razorpayPaymentId,
+          lock: `okr-ally-invoice:${input.razorpayPaymentId}`,
+        }
+      : {
+          col: 'submission_id' as const,
+          val: input.submissionId!,
+          lock: `okr-ally-invoice-sub:${input.submissionId}`,
+        }
+
     const settings = await getSiteSettings()
     if (
       !settings.legalBusinessName ||
@@ -265,10 +322,14 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<C
       return { ok: false, reason: 'supplier-not-configured' }
     }
 
-    const placeCode = stateCode(input.placeOfSupply)
-    const resolvedPlace = placeCode
-      ? GST_STATES.find((s) => s.code === placeCode)!.name
-      : null
+    // The ₹0 free-review invoice has no checkout step and therefore no buyer
+    // state. GST is nil either way, so default the place of supply to the
+    // supplier's own registered state (an intra-state nil invoice).
+    const placeInput =
+      input.placeOfSupply?.trim() ||
+      (input.razorpayPaymentId ? '' : stateCodeFromGstin(settings.supplierGstin) || '')
+    const placeCode = stateCode(placeInput)
+    const resolvedPlace = placeCode ? GST_STATES.find((s) => s.code === placeCode)!.name : null
     if (!resolvedPlace) {
       console.error('OKR Ally invoice: invalid place of supply', input.placeOfSupply)
       return { ok: false, reason: 'invalid-place-of-supply' }
@@ -278,22 +339,20 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<C
     const supplierStateCode = stateCodeFromGstin(settings.supplierGstin)
     const split = computeTaxSplit(input.gstAmount, buyerStateCode, supplierStateCode)
 
-    const existing = await fetchInvoiceByPayment(input.razorpayPaymentId)
+    const existing = await fetchExistingInvoice(idKey.col, idKey.val)
     if (existing) return { ok: true, created: false, invoice: existing }
 
     let row: InvoiceRow
     let created = true
     try {
       row = await withTransaction<InvoiceRow>(async (client) => {
-        // Serialise invoice creation per payment so a verify-payment/webhook
-        // race cannot both pass the existence check and burn two counter
-        // numbers. The lock releases at COMMIT/ROLLBACK.
-        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-          `okr-ally-invoice:${input.razorpayPaymentId}`,
-        ])
+        // Serialise invoice creation per transaction so a verify-payment/webhook
+        // race (or a double review-route call) cannot both pass the existence
+        // check and burn two counter numbers. The lock releases at COMMIT/ROLLBACK.
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [idKey.lock])
         const dup = await client.query<InvoiceRow>(
-          `SELECT * FROM invoices WHERE razorpay_payment_id = $1`,
-          [input.razorpayPaymentId]
+          `SELECT * FROM invoices WHERE ${idKey.col} = $1`,
+          [idKey.val]
         )
         if (dup.rows[0]) {
           created = false
@@ -303,17 +362,22 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<C
         const number = await nextInvoiceNumber(client, ym(new Date()))
         const inserted = await client.query<InvoiceRow>(
           `INSERT INTO invoices (
-             user_id, razorpay_payment_id, invoice_number, gstin,
+             user_id, razorpay_payment_id, submission_id, invoice_number, gstin,
+             list_price, discount_percent, coupon_code,
              base_amount, gst_amount, total_amount, place_of_supply,
              cgst_amount, sgst_amount, igst_amount,
              supplier_name, supplier_gstin, supplier_pan, supplier_address, supplier_sac_code
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
            RETURNING *`,
           [
             input.userId,
             input.razorpayPaymentId,
+            input.submissionId ?? null,
             number,
             input.buyerGstin,
+            input.listPrice,
+            input.discountPercent,
+            input.couponCode,
             input.baseAmount,
             input.gstAmount,
             input.totalAmount,
@@ -331,9 +395,10 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<C
         return inserted.rows[0]
       })
     } catch (err: unknown) {
-      // 23505 = verify-payment and the webhook raced; the other one won.
+      // 23505 = a concurrent caller won the race (Razorpay payment id or the
+      // submission-id partial-unique index).
       if (typeof err === 'object' && err && (err as { code?: string }).code === '23505') {
-        const won = await fetchInvoiceByPayment(input.razorpayPaymentId)
+        const won = await fetchExistingInvoice(idKey.col, idKey.val)
         if (won) return { ok: true, created: false, invoice: won }
       }
       throw err
@@ -357,20 +422,33 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<C
         row.pdf_url = blobUrl
       }
 
+      const isFree = Number(row.total_amount) === 0
+      const forWhat = isFree
+        ? `for your first OKR Ally review${row.coupon_code ? ` (covered in full by coupon ${row.coupon_code})` : ''}`
+        : 'for your OKR Ally purchase'
+      const amountLine = isFree
+        ? `Amount: <strong>${money(0)}</strong> — this review was free; the invoice is for your records.`
+        : `Amount: <strong>${money(row.total_amount)}</strong> (incl. GST). Place of supply: ${row.place_of_supply}.`
+
+      // sendBrevoEmail BCCs pgs@embiggen.co.in by default (skipBcc not passed) —
+      // that is how PGS gets a copy of every invoice, paid or ₹0. Do not add
+      // skipBcc here.
       await sendBrevoEmail({
         to: input.buyerEmail,
         toName: input.buyerName,
-        subject: `GST invoice ${row.invoice_number} — OKR Ally`,
+        subject: `Tax invoice ${row.invoice_number} — OKR Ally`,
         htmlContent: `
           <div style="font-family:Inter,Arial,sans-serif;color:#2C2C2A;line-height:1.6;">
-            <p>Your GST invoice <strong>${row.invoice_number}</strong> for your OKR Ally purchase is attached (PDF).</p>
-            <p>Amount: <strong>${money(row.total_amount)}</strong> (incl. GST). Place of supply: ${row.place_of_supply}.</p>
+            <p>Your GST invoice <strong>${row.invoice_number}</strong> ${forWhat} is attached (PDF).</p>
+            <p>${amountLine}</p>
             <p style="font-size:13px;color:#6b6b66;">This is a system-generated invoice and does not require a signature.</p>
             <p style="font-size:13px;color:#6b6b66;">${settings.legalBusinessName}</p>
           </div>`,
         textContent:
-          `Your GST invoice ${row.invoice_number} for your OKR Ally purchase is attached (PDF). ` +
-          `Amount: ${money(row.total_amount)} (incl. GST). ` +
+          `Your GST invoice ${row.invoice_number} ${forWhat} is attached (PDF). ` +
+          (isFree
+            ? `Amount: ${money(0)} — this review was free; the invoice is for your records. `
+            : `Amount: ${money(row.total_amount)} (incl. GST). `) +
           `This is a system-generated invoice and does not require a signature.`,
         attachments: [{ name: `${row.invoice_number.replace(/\//g, '-')}.pdf`, content: pdfBase64 }],
       })
@@ -383,4 +461,34 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<C
     console.error('OKR Ally createAndSendInvoice error:', err)
     return { ok: false, reason: 'error' }
   }
+}
+
+/**
+ * The ₹0 Tax Invoice for a first review covered in full by the one-per-user
+ * 100%-off coupon. This path never touches create-order / verify-payment / the
+ * webhook, so the invoice is issued from the review route instead. Idempotent
+ * on the submission id.
+ */
+export async function createAndSendFreeReviewInvoice(input: {
+  userId: string
+  submissionId: string
+  couponCode: string
+  buyerName: string
+  buyerEmail: string
+}): Promise<CreateInvoiceResult> {
+  return createAndSendInvoice({
+    userId: input.userId,
+    razorpayPaymentId: null,
+    submissionId: input.submissionId,
+    listPrice: PACKS.single.basePrice,
+    baseAmount: 0,
+    gstAmount: 0,
+    totalAmount: 0,
+    discountPercent: 100,
+    couponCode: input.couponCode,
+    buyerGstin: null,
+    placeOfSupply: '',
+    buyerName: input.buyerName,
+    buyerEmail: input.buyerEmail,
+  })
 }

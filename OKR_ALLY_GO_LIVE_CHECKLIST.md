@@ -73,7 +73,14 @@ accountant/footer fields.
 ## 3. Accountant — confirm before invoicing
 
 - [ ] **SAC code** for the review service — exact code and digit count (4 vs 6). Always begins "99". `998311` is now set in `okrAllySettings.supplierSacCode` and renders correctly on invoices (§2), **but still unconfirmed**: PGS needs to say whether `998311` was explicitly given by his accountant, or was only independently validated as plausible. Do not treat this as closed until PGS confirms the source.
-- [x] **Bill of Supply for ₹0 transactions** — **RESOLVED (2026-08-29), explicitly confirmed with PGS's accountant — not an assumption.** No document is required for the ₹0 first-review transaction: the 100%-off coupon discounts the *price* to zero, it does not make the underlying service GST-exempt, so there is no exempt/nil-rated supply that would trigger a Bill of Supply. The current behaviour — **no invoice and no Bill of Supply generated for fully-discounted transactions** — is correct as-is and should stay. Do **not** revisit or "fix" this (e.g. by adding a Bill-of-Supply flow for ₹0 redemptions) without first checking with PGS.
+- [x] **Bill of Supply for ₹0 transactions** — no Bill of Supply is needed (accountant-confirmed
+  2026-08-29): the 100%-off coupon discounts the *price* to zero, it does not make the service
+  GST-exempt, so there is no exempt/nil-rated supply. **Superseded 2026-08-30 on PGS's instruction:**
+  every transaction now gets a **full GST Tax Invoice, including the ₹0 first review** — a real Tax
+  Invoice showing the discount ladder (List price → Discount 100% (coupon) → Net taxable value ₹0
+  → CGST/SGST ₹0 → Total ₹0), not a Bill of Supply and not "no document". See migration 007 and the
+  Notes section. This is consistent with the accountant's point (still a taxable supply, just
+  100%-discounted).
 
 ## 4. Razorpay dashboard
 
@@ -100,16 +107,27 @@ accountant/footer fields.
   `improvement_emails`) applied to Neon; the `.sql` lives in the design-package
   folder with 002–005 (untracked there, like the others). Routes under
   `/api/okr-ally/admin/*` (403 for non-admins). e2e spec 6 covers it.
+- [x] **Admin list filtering + pagination** — **BUILT 2026-08-30.** The Admin tab list now has
+  objective / company-name / email filters (combinable) and 20-per-page pagination
+  (`GET /api/okr-ally/admin/reviews?q=&company=&email=&page=&pageSize=`, returns
+  `{ items, total, page, pageSize }`). e2e spec 9.
+- [x] **Manual admin credit grants** — **BUILT 2026-08-30.** "Grant credits to an account" panel on
+  the Admin tab → `POST /api/okr-ally/admin/grant-credits { email, credits, note? }`. New
+  `credit_transactions.type = 'admin_grant'` + `note` column (migration 007). Atomic (ledger +
+  balance in one txn). The recipient is **always** emailed (which BCCs PGS); a grant to an account
+  that has not completed a review yet succeeds but returns a `warning`. e2e spec 8.
 
 ## 7. Manual end-to-end pass (before go-live)
 
-The automated Playwright suite (`npm run test:e2e`, `e2e/okr-ally.spec.ts`, 7 specs)
+The automated Playwright suite (`npm run test:e2e`, `e2e/okr-ally.spec.ts`, 10 specs)
 covers the happy path, the refund-on-failure path, ownership scoping, the required
 rating, thin-context handling (a spec submits deliberately vague company context,
 asserts a clarifying question renders, answers it, and verifies the persisted
-`context_snapshot`), the `validateReviewOutput` 2–3-initiative gate, and — as of
-2026-08-29 — the admin review screen (403 gate for non-admins, expert feedback on
-both options, and a grounded improvement-email draft with no score/rating language).
+`context_snapshot`), the `validateReviewOutput` 2–3-initiative gate, the admin
+review screen (403 gate for non-admins, expert feedback on both options, and a
+grounded improvement-email draft with no score/rating language), and — as of
+2026-08-30 — the ₹0 first-review Tax Invoice + discount ladder, the manual admin
+credit grant, and the admin list filters + pagination.
 What it
 **can't** cover and must be done by hand once, against a preview/production deploy
 with real credentials:
@@ -127,6 +145,13 @@ with real credentials:
 - [ ] **Confirmation emails actually arrive** — after a completed review: the
   "your OKR Ally review" email with the PDF attached. After a purchase: the
   "credits ready" email and the numbered GST invoice PDF.
+- [ ] **The ₹0 first-review invoice arrives** — after the free first review, a
+  "Tax invoice OKR/YY-MM/XXXX — OKR Ally" email with a ₹0 Tax Invoice PDF attached
+  (List price ₹50 → 100% discount → Total ₹0), to the user **and** BCC to PGS.
+  Confirm the invoice number increments the shared `invoice_counters` sequence.
+- [ ] **A manual admin credit grant** — from the Admin tab, grant a few credits to
+  a test account by email; confirm the balance updates and the recipient (and PGS,
+  by BCC) get the "credits added" email.
 - [ ] **PDF download from the UI** — click "Download PDF" on the report screen and
   on a History entry; confirm the file opens and renders.
 - [ ] **A real Razorpay checkout** — buy a pack through the Pricing tab with a
@@ -171,6 +196,33 @@ fresh `main` checkout → `subramaniampg.guru`. `main` = production from here.
 ---
 
 ## Notes / risks carried from the build
+
+- **Migration 007 (2026-08-30, applied to Neon).** `okr-ally-schema-migration-007.sql` in the
+  design-package folder. (a) `invoices` gains `list_price`, `discount_percent`, `coupon_code`,
+  `submission_id`; `razorpay_payment_id` is now nullable; `idx_invoices_submission` (partial unique)
+  + `chk_invoice_key` (one of the two idempotency keys must be present). (b) `credit_transactions`
+  `type` CHECK widened with `admin_grant`, plus a `note` column.
+- **A GST Tax Invoice is now issued for EVERY transaction, including the ₹0 first review.**
+  - Paid packs: unchanged flow (verify-payment / webhook), but the invoice now prints the discount
+    ladder when a coupon was applied. `create-order` stamps `listPrice` + `discountPercent` into the
+    order notes.
+  - ₹0 first review: issued from `POST /api/okr-ally/review` on the coupon-redemption success path
+    (that path never touches create-order/verify-payment/the webhook). Idempotent on `submission_id`.
+    Sent to the user's email and — via `sendBrevoEmail`'s default BCC — copied to PGS, same as any
+    paid invoice.
+  - **Place of supply for the ₹0 invoice defaults to the supplier's own registered state
+    (Tamil Nadu)** — the free-review flow has no checkout step / state field, and GST is nil either
+    way, so it renders as an intra-state nil invoice (CGST ₹0 + SGST ₹0). If PGS later wants the
+    buyer's real state on ₹0 invoices, that needs a state field added to the free-review confirm
+    screen.
+  - **Not backfilled:** the 3 pre-2026-08-30 ₹0 redemptions in prod (PGS's own testing) have no
+    invoice. Going-forward only — PGS's call.
+- **Every invoice is copied to PGS via BCC** — `lib/sendBrevoEmail.ts` BCCs `pgs@embiggen.co.in`
+  whenever `skipBcc` is not passed; `createAndSendInvoice` never passes it. Verified 2026-08-30
+  (payload inspection). Do not add `skipBcc` to the invoice send.
+- **`credit_transactions.type` now has four values** — `purchase`, `usage`,
+  `refund_failed_generation`, `admin_grant`. `admin_grant` rows are deliberately **not** surfaced in
+  the user-facing History dashboard (which shows only `purchase`); they just land in the balance.
 
 - **Sanity dataset isolation (2026-08-28).** OKR Ally's Sanity content lives in a
   dedicated **private** dataset `okr-ally`, separate from `production`. The old

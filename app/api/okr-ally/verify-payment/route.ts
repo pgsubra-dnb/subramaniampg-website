@@ -93,6 +93,9 @@ export async function POST(req: NextRequest) {
       const inv = await createAndSendInvoice({
         userId: user.id,
         razorpayPaymentId: razorpay_payment_id,
+        listPrice: Number(notes.listPrice) || base,
+        discountPercent: Number(notes.discountPercent) || null,
+        couponCode: notes.couponCode || null,
         baseAmount: base,
         gstAmount: gst,
         totalAmount: total,

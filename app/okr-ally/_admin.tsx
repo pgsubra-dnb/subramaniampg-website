@@ -11,10 +11,18 @@ interface ListItem {
   objective: string
   userName: string
   userEmail: string
+  companyName: string | null
   overallScore: number
   createdAt: string
   expertReviewCount: number
   emailStatus: 'none' | 'draft' | 'sent'
+}
+
+interface ListResponse {
+  items: ListItem[]
+  total: number
+  page: number
+  pageSize: number
 }
 
 interface CtxField {
@@ -75,20 +83,57 @@ const areaStyle: React.CSSProperties = {
 //  Admin tab — list of every completed review
 // ══════════════════════════════════════════════════════════════════════
 
+const PAGE_SIZE = 20
+
 export function AdminList({ onOpen }: { onOpen: (submissionId: string) => void }) {
-  const [items, setItems] = useState<ListItem[] | null>(null)
+  const [data, setData] = useState<ListResponse | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [q, setQ] = useState('')
+  const [company, setCompany] = useState('')
+  const [email, setEmail] = useState('')
+  const [page, setPage] = useState(1)
+
+  // Debounce filter changes; reset to page 1 whenever a filter changes.
+  const filterKey = `${q}|${company}|${email}`
+  useEffect(() => {
+    setPage(1)
+  }, [filterKey])
 
   useEffect(() => {
-    fetch('/api/okr-ally/admin/reviews')
-      .then(async (r) => (r.ok ? r.json() : Promise.reject(new Error((await r.json()).error || r.statusText))))
-      .then((d) => setItems(d.items ?? []))
-      .catch((e) => setErr(String(e.message || e)))
-  }, [])
+    const t = setTimeout(() => {
+      setLoading(true)
+      const params = new URLSearchParams()
+      if (q.trim()) params.set('q', q.trim())
+      if (company.trim()) params.set('company', company.trim())
+      if (email.trim()) params.set('email', email.trim())
+      params.set('page', String(page))
+      params.set('pageSize', String(PAGE_SIZE))
+      fetch(`/api/okr-ally/admin/reviews?${params}`)
+        .then(async (r) => (r.ok ? r.json() : Promise.reject(new Error((await r.json()).error || r.statusText))))
+        .then((d: ListResponse) => {
+          setData(d)
+          setErr(null)
+        })
+        .catch((e) => setErr(String(e.message || e)))
+        .finally(() => setLoading(false))
+    }, 250)
+    return () => clearTimeout(t)
+  }, [q, company, email, page])
 
-  if (err) return <AllyRow>Couldn&apos;t load the admin list: {err}</AllyRow>
-  if (!items) return <p style={{ color: T.muted, fontSize: 14 }}>Loading…</p>
-  if (items.length === 0) return <AllyRow>No completed reviews yet.</AllyRow>
+  const items = data?.items ?? []
+  const total = data?.total ?? 0
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const anyFilter = !!(q.trim() || company.trim() || email.trim())
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '8px 10px',
+    border: `1px solid ${T.hairline}`,
+    borderRadius: 8,
+    fontSize: 13,
+    outline: 'none',
+  }
 
   const chip = (text: string, tone: 'muted' | 'gold' | 'emerald') => (
     <span
@@ -105,56 +150,204 @@ export function AdminList({ onOpen }: { onOpen: (submissionId: string) => void }
     </span>
   )
 
+  const showFrom = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
+  const showTo = Math.min(page * PAGE_SIZE, total)
+
   return (
     <div>
-      <div style={{ fontSize: 12.5, color: T.muted, marginBottom: 12 }}>
+      <GrantCreditsPanel />
+
+      <div style={{ fontSize: 12.5, color: T.muted, margin: '4px 0 10px' }}>
         Every completed review. Open one to add expert feedback and draft a follow-up note.
       </div>
-      {items.map((i) => (
-        <button
-          key={i.submissionId}
-          onClick={() => onOpen(i.submissionId)}
-          style={{
-            display: 'block',
-            width: '100%',
-            textAlign: 'left',
-            background: T.card,
-            border: `1px solid ${T.hairline}`,
-            borderRadius: 12,
-            padding: 14,
-            marginBottom: 10,
-            cursor: 'pointer',
-          }}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div style={{ fontSize: 13.5, color: T.charcoal, lineHeight: 1.4 }}>{i.objective}</div>
-            <div
+
+      <div className="grid gap-2 mb-3" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
+        <input style={inputStyle} placeholder="Search objectives…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input style={inputStyle} placeholder="Company name…" value={company} onChange={(e) => setCompany(e.target.value)} />
+        <input style={inputStyle} placeholder="Email…" value={email} onChange={(e) => setEmail(e.target.value)} />
+      </div>
+
+      {err ? (
+        <AllyRow>Couldn&apos;t load the admin list: {err}</AllyRow>
+      ) : loading && !data ? (
+        <p style={{ color: T.muted, fontSize: 14 }}>Loading…</p>
+      ) : items.length === 0 ? (
+        <AllyRow>{anyFilter ? 'No reviews match those filters.' : 'No completed reviews yet.'}</AllyRow>
+      ) : (
+        <>
+          {items.map((i) => (
+            <button
+              key={i.submissionId}
+              onClick={() => onOpen(i.submissionId)}
               style={{
-                flexShrink: 0,
-                fontFamily: 'var(--font-lora), serif',
-                fontWeight: 700,
-                color: T.emeraldDark,
-                fontSize: 15,
+                display: 'block',
+                width: '100%',
+                textAlign: 'left',
+                background: T.card,
+                border: `1px solid ${T.hairline}`,
+                borderRadius: 12,
+                padding: 14,
+                marginBottom: 10,
+                cursor: 'pointer',
+                opacity: loading ? 0.6 : 1,
               }}
             >
-              {i.overallScore.toFixed(1)}
+              <div className="flex items-start justify-between gap-3">
+                <div style={{ fontSize: 13.5, color: T.charcoal, lineHeight: 1.4 }}>{i.objective}</div>
+                <div
+                  style={{
+                    flexShrink: 0,
+                    fontFamily: 'var(--font-lora), serif',
+                    fontWeight: 700,
+                    color: T.emeraldDark,
+                    fontSize: 15,
+                  }}
+                >
+                  {i.overallScore.toFixed(1)}
+                </div>
+              </div>
+              <div style={{ fontSize: 11.5, color: T.muted, margin: '5px 0 8px' }}>
+                {i.userName} · {i.userEmail}
+                {i.companyName ? ` · ${i.companyName}` : ''} · {fmtDate(i.createdAt)}
+              </div>
+              <div className="flex gap-1.5">
+                {chip(
+                  `✎ ${i.expertReviewCount}/2`,
+                  i.expertReviewCount === 2 ? 'emerald' : i.expertReviewCount === 1 ? 'gold' : 'muted'
+                )}
+                {chip(
+                  i.emailStatus === 'sent' ? '✉ sent' : i.emailStatus === 'draft' ? '✉ draft' : '✉ —',
+                  i.emailStatus === 'sent' ? 'emerald' : i.emailStatus === 'draft' ? 'gold' : 'muted'
+                )}
+              </div>
+            </button>
+          ))}
+
+          <div className="flex items-center justify-between" style={{ marginTop: 6, fontSize: 12.5, color: T.muted }}>
+            <span>
+              {showFrom}–{showTo} of {total}
+            </span>
+            <div className="flex items-center gap-2">
+              <Btn small variant="ghost" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading}>
+                ← Prev
+              </Btn>
+              <span>
+                {page} / {pageCount}
+              </span>
+              <Btn
+                small
+                variant="ghost"
+                onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                disabled={page >= pageCount || loading}
+              >
+                Next →
+              </Btn>
             </div>
           </div>
-          <div style={{ fontSize: 11.5, color: T.muted, margin: '5px 0 8px' }}>
-            {i.userName} · {i.userEmail} · {fmtDate(i.createdAt)}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Manual credit grant
+// ══════════════════════════════════════════════════════════════════════
+
+function GrantCreditsPanel() {
+  const [open, setOpen] = useState(false)
+  const [email, setEmail] = useState('')
+  const [credits, setCredits] = useState('1')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string } | null>(null)
+
+  async function grant() {
+    setBusy(true)
+    setMsg(null)
+    try {
+      const res = await fetch('/api/okr-ally/admin/grant-credits', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), credits: Number(credits), note: note.trim() || undefined }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMsg({ kind: 'err', text: j.error || 'Grant failed.' })
+        return
+      }
+      const base = `${credits} credit(s) added to ${j.recipientEmail}. Balance now ${j.creditsRemaining}. ${
+        j.emailed ? 'They have been emailed.' : 'Note: the notification email did not send.'
+      }`
+      setMsg({ kind: j.warning ? 'warn' : 'ok', text: j.warning ? `${base} ${j.warning}` : base })
+      setEmail('')
+      setCredits('1')
+      setNote('')
+    } catch {
+      setMsg({ kind: 'err', text: 'Network problem — nothing was granted.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '8px 10px',
+    border: `1px solid ${T.hairline}`,
+    borderRadius: 8,
+    fontSize: 13,
+    outline: 'none',
+  }
+
+  return (
+    <div style={{ border: `1px solid ${T.hairline}`, borderRadius: 12, padding: 14, marginBottom: 14, background: T.card }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{ background: 'none', border: 'none', color: T.emeraldDark, fontWeight: 700, cursor: 'pointer', fontSize: 13, padding: 0 }}
+      >
+        {open ? '▾' : '▸'} Grant credits to an account
+      </button>
+      {open && (
+        <div style={{ marginTop: 12 }}>
+          <div className="grid gap-2" style={{ gridTemplateColumns: '2fr 1fr' }}>
+            <input style={inputStyle} placeholder="account email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <input
+              style={inputStyle}
+              type="number"
+              min={1}
+              max={100}
+              placeholder="credits"
+              value={credits}
+              onChange={(e) => setCredits(e.target.value)}
+            />
           </div>
-          <div className="flex gap-1.5">
-            {chip(
-              `✎ ${i.expertReviewCount}/2`,
-              i.expertReviewCount === 2 ? 'emerald' : i.expertReviewCount === 1 ? 'gold' : 'muted'
-            )}
-            {chip(
-              i.emailStatus === 'sent' ? '✉ sent' : i.emailStatus === 'draft' ? '✉ draft' : '✉ —',
-              i.emailStatus === 'sent' ? 'emerald' : i.emailStatus === 'draft' ? 'gold' : 'muted'
-            )}
+          <input
+            style={{ ...inputStyle, marginTop: 8 }}
+            placeholder="note (optional — kept for the record, shown to them)"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+          <div style={{ marginTop: 10 }}>
+            <Btn small onClick={grant} disabled={busy || !email.trim() || !credits}>
+              {busy ? 'Granting…' : 'Grant credits'}
+            </Btn>
           </div>
-        </button>
-      ))}
+          <p style={{ fontSize: 11.5, color: T.muted, marginTop: 8 }}>
+            The recipient is always emailed. The account must have signed in at least once.
+          </p>
+          {msg && (
+            <p
+              style={{
+                fontSize: 12.5,
+                marginTop: 8,
+                color: msg.kind === 'err' ? '#B91C1C' : msg.kind === 'warn' ? T.gold : T.emeraldDark,
+              }}
+            >
+              {msg.text}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

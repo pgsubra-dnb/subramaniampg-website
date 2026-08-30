@@ -3,6 +3,7 @@ import { getSessionUser } from '@/lib/okrAlly'
 import { validateCoupon } from '@/lib/okrAllyBilling'
 import { runReview } from '@/lib/okrAllyReview'
 import { generateStoreAndEmailReport } from '@/lib/okrAllyReport'
+import { createAndSendFreeReviewInvoice } from '@/lib/okrAllyInvoice'
 import {
   validateInput,
   isRateLimited,
@@ -154,6 +155,27 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  // ₹0 GST invoice for a coupon-covered first review. This path never touches
+  // create-order / verify-payment / the webhook, so it is issued here — sent to
+  // the user's email and (via sendBrevoEmail's default BCC) copied to PGS.
+  // Idempotent on the submission id; non-blocking (the review is already saved).
+  let invoiceNumber: string | null = null
+  if (charge === 'coupon' && reviewId && freeCouponCode) {
+    try {
+      const inv = await createAndSendFreeReviewInvoice({
+        userId: user.id,
+        submissionId: submission.id,
+        couponCode: freeCouponCode,
+        buyerName: user.name,
+        buyerEmail: user.email,
+      })
+      if (inv.ok) invoiceNumber = inv.invoice.invoice_number
+      else console.error('OKR Ally free-review invoice soft-failed:', submission.id, inv.reason)
+    } catch (err) {
+      console.error('OKR Ally free-review invoice threw:', submission.id, err)
+    }
+  }
+
   return NextResponse.json({
     status: 'complete',
     submissionId: submission.id,
@@ -162,6 +184,7 @@ export async function POST(req: NextRequest) {
     review: result.review,
     pdfStored: !!delivery.pdfUrl,
     emailed: delivery.emailed,
+    invoiceNumber,
     ...(reviewId ? {} : { warning: 'result not persisted; support has been notified' }),
   })
 }

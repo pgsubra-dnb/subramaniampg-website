@@ -12,6 +12,7 @@ import {
   getFeedback,
   seedCompletedReview,
   seedInvoice,
+  getInvoicesForUser,
   cleanupUsers,
   pool,
 } from './helpers'
@@ -459,4 +460,154 @@ test('admin: expert feedback on both options, then a grounded improvement-email 
   ).toBe(edited)
 
   await setAdmin(user.userId, false)
+})
+
+// ══════════════════════════════════════════════════════════
+// 7. ₹0 first review issues a complete Tax Invoice with the discount ladder
+// ══════════════════════════════════════════════════════════
+test('free first review issues a ₹0 tax invoice with the full discount breakdown', async ({ context }) => {
+  test.setTimeout(240_000)
+
+  const user = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(user.userId)
+
+  const res = await context.request.post('http://localhost:3200/api/okr-ally/review', {
+    headers: { cookie: user.cookieHeader },
+    data: {
+      idempotencyKey: 'e2e-free-inv-' + Date.now(),
+      couponCode: 'OKRALLY-FIRST-FREE',
+      objective: 'Our best customers consolidate more of their grocery spend with us this quarter.',
+      krs: [
+        { text: 'Raise top-tier loyalty members’ monthly visits from 6.1 to 7.4', initiatives: [] },
+        { text: 'Grow top-tier members’ share of wallet from 60% to 66%', initiatives: [] },
+      ],
+      context_snapshot: {
+        company_context: { final_text: 'A 45-store regional grocery chain, ~2,400 staff, ~$310M revenue, privately held.' },
+        business_context: { final_text: 'Two national chains entered our region; same-store growth fell from 3.8% to 0.6%. The board wants market-share defence via a better loyalty programme.' },
+        role_context: { final_text: 'Director of Loyalty and CRM. I own the loyalty programme and CRM campaigns and direct a team of six; I do not control pricing or store operations.' },
+      },
+    },
+  })
+  expect(res.status()).toBe(200)
+  const body = await res.json()
+  expect(body.status).toBe('complete')
+
+  // no credit was charged
+  expect(await getBalance(user.userId)).toBe(0)
+  expect(await getCreditTransactions(user.userId)).toEqual([{ type: 'usage', amount: 0 }])
+
+  const sub = await getLatestSubmission(user.userId)
+  const invoices = await getInvoicesForUser(user.userId)
+  expect(invoices).toHaveLength(1)
+  const inv = invoices[0]
+  expect(inv.invoice_number).toMatch(/^OKR\/\d{2}-\d{2}\/\d{4}$/)
+  expect(inv.razorpay_payment_id).toBeNull()
+  expect(inv.submission_id).toBe(sub!.id)
+  expect(Number(inv.list_price)).toBe(50)
+  expect(Number(inv.discount_percent)).toBe(100)
+  expect(inv.coupon_code).toBe('OKRALLY-FIRST-FREE')
+  expect(Number(inv.base_amount)).toBe(0)
+  expect(Number(inv.gst_amount)).toBe(0)
+  expect(Number(inv.total_amount)).toBe(0)
+  expect(inv.place_of_supply).toBe('Tamil Nadu') // supplier's own state (nil intra-state)
+  expect(Number(inv.cgst_amount)).toBe(0)
+  expect(Number(inv.sgst_amount)).toBe(0)
+  expect(inv.igst_amount).toBeNull()
+
+  // the PDF download route serves a real PDF for it
+  const invId = (await pool.query<{ id: string }>(`SELECT id FROM invoices WHERE submission_id = $1`, [sub!.id])).rows[0].id
+  const dl = await context.request.get(`http://localhost:3200/api/okr-ally/invoice/${invId}`, {
+    headers: { cookie: user.cookieHeader },
+  })
+  expect(dl.status()).toBe(200)
+  expect(dl.headers()['content-type']).toContain('application/pdf')
+})
+
+// ══════════════════════════════════════════════════════════
+// 8. Manual admin credit grant — atomic, emails, warns on no-first-review
+// ══════════════════════════════════════════════════════════
+test('admin credit grant: adds credits atomically, warns when no review yet, 403 for non-admins', async ({ browser }) => {
+  const ctxA = await browser.newContext()
+  const ctxB = await browser.newContext()
+  const admin = await signIn(ctxA, 'http://localhost:3200')
+  const recipient = await signIn(ctxB, 'http://localhost:3200')
+  createdUsers.push(admin.userId, recipient.userId)
+  const hdr = { cookie: admin.cookieHeader }
+
+  // non-admin → 403
+  expect(
+    (await ctxA.request.post('/api/okr-ally/admin/grant-credits', { headers: hdr, data: { email: recipient.email, credits: 2 } })).status()
+  ).toBe(403)
+
+  await setAdmin(admin.userId, true)
+
+  // unknown email → 400
+  expect(
+    (await ctxA.request.post('/api/okr-ally/admin/grant-credits', { headers: hdr, data: { email: 'nobody-' + Date.now() + '@example.com', credits: 2 } })).status()
+  ).toBe(400)
+
+  // real grant → 200, warning (recipient has no completed review), balance +3
+  const res = await ctxA.request.post('/api/okr-ally/admin/grant-credits', {
+    headers: hdr,
+    data: { email: recipient.email, credits: 3, note: 'goodwill' },
+  })
+  expect(res.status()).toBe(200)
+  const j = await res.json()
+  expect(j.ok).toBe(true)
+  expect(j.creditsRemaining).toBe(3)
+  expect(j.warning).toBeTruthy()
+
+  expect(await getBalance(recipient.userId)).toBe(3)
+  const txns = await getCreditTransactions(recipient.userId)
+  expect(txns).toContainEqual({ type: 'admin_grant', amount: 3 })
+
+  await setAdmin(admin.userId, false)
+  await ctxA.close()
+  await ctxB.close()
+})
+
+// ══════════════════════════════════════════════════════════
+// 9. Admin list — company / email filters + pagination
+// ══════════════════════════════════════════════════════════
+test('admin list: company and email filters narrow results, pagination is honoured', async ({ context }) => {
+  const admin = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(admin.userId)
+  await setAdmin(admin.userId, true)
+  const hdr = { cookie: admin.cookieHeader }
+
+  // two more users, each with a completed review + a distinct company on their profile
+  const tag = Date.now()
+  const others: string[] = []
+  for (const c of [`AcmeFoods${tag}`, `BorealisLabs${tag}`]) {
+    const u = await signIn(context, 'http://localhost:3200')
+    createdUsers.push(u.userId)
+    others.push(u.userId)
+    await seedCompletedReview(u.userId, `Objective for ${c}`)
+    await pool.query(
+      `INSERT INTO user_profile (user_id, company_name) VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET company_name = EXCLUDED.company_name`,
+      [u.userId, c]
+    )
+  }
+  const emailOfFirst = (await pool.query<{ email: string }>(`SELECT email FROM users WHERE id = $1`, [others[0]])).rows[0].email
+
+  // company filter
+  const byCompany = await (await context.request.get(`/api/okr-ally/admin/reviews?company=AcmeFoods${tag}`, { headers: hdr })).json()
+  expect(byCompany.items).toHaveLength(1)
+  expect(byCompany.items[0].companyName).toBe(`AcmeFoods${tag}`)
+
+  // email filter
+  const byEmail = await (await context.request.get(`/api/okr-ally/admin/reviews?email=${encodeURIComponent(emailOfFirst)}`, { headers: hdr })).json()
+  expect(byEmail.items).toHaveLength(1)
+  expect(byEmail.items[0].userEmail).toBe(emailOfFirst)
+
+  // pagination across the two seeded objectives
+  const p1 = await (await context.request.get(`/api/okr-ally/admin/reviews?q=Objective for &pageSize=1&page=1`, { headers: hdr })).json()
+  const p2 = await (await context.request.get(`/api/okr-ally/admin/reviews?q=Objective for &pageSize=1&page=2`, { headers: hdr })).json()
+  expect(p1.total).toBeGreaterThanOrEqual(2)
+  expect(p1.items).toHaveLength(1)
+  expect(p2.items).toHaveLength(1)
+  expect(p1.items[0].submissionId).not.toBe(p2.items[0].submissionId)
+
+  await setAdmin(admin.userId, false)
 })
