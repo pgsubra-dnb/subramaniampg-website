@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { AllyRow, Btn, ScoreInfographic, ShareCard, Stars, T, TONE_COLOR, CRITERIA_ORDER, scoreTone } from './_ui'
+import { AllyRow, Btn, ScoreInfographic, ShareCard, Stars, T } from './_ui'
 
 export interface OkrOption {
   label: string
@@ -136,19 +136,6 @@ export default function ReportScreen({
       </div>
 
       <div style={{ ...card, marginBottom: 18 }}>
-        <Section title="Why each criterion scored the way it did">
-          {CRITERIA_ORDER.map((name) => r.criteria_scores.find((c) => c.criterion === name))
-            .filter((c): c is NonNullable<typeof c> => !!c)
-            .map((c) => (
-              <div key={c.criterion} style={{ marginBottom: 12 }}>
-                <div style={{ fontWeight: 700, fontSize: 13.5, color: TONE_COLOR[scoreTone(c.score)] }}>
-                  {c.criterion} &nbsp;<span>{c.score}/10</span>
-                </div>
-                <p style={{ fontSize: 13, color: T.muted, lineHeight: 1.55, margin: '2px 0 0' }}>{c.rationale}</p>
-              </div>
-            ))}
-        </Section>
-
         <Section title="Objective">
           <FB works={r.objective_feedback.what_works} improve={r.objective_feedback.what_to_improve} />
         </Section>

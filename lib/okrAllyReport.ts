@@ -218,7 +218,8 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
     doc.setLineJoin('miter')
     yy = cy + R + 12
 
-    // Value legend
+    // Value legend — criterion name + score only (weights drive the calc but
+    // are not shown to the end user).
     guard(6 + scores.length * 6)
     doc.setFontSize(8.5)
     scores.forEach((s) => {
@@ -230,10 +231,7 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
       doc.text(s.criterion, M + 6, yy)
       doc.setFont('helvetica', 'bold')
       doc.setTextColor(...tone)
-      doc.text(`${s.score}/10`, PW - M - 20, yy, { align: 'right' })
-      doc.setFont('helvetica', 'normal')
-      doc.setTextColor(...MUTE)
-      doc.text(`${Math.round(s.weight * 100)}%`, PW - M, yy, { align: 'right' })
+      doc.text(`${s.score}/10`, PW - M, yy, { align: 'right' })
       yy += 6
     })
     doc.setLineWidth(0.2)
@@ -295,20 +293,8 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
   subLabel('Your role')
   body(ctxText(data.contextSnapshot.role_context))
 
-  // ── Score breakdown (scores + weights are in the infographic legend above) ──
-  heading('Why each criterion scored the way it did')
-  for (const r of RUBRIC) {
-    const c = data.review.criteria_scores.find((x) => x.criterion === r.criterion)
-    if (!c) continue
-    guard(12)
-    doc.setFontSize(10.5)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(...toneRgb(scoreTone(c.score)))
-    doc.text(`${c.criterion}  ${c.score}/10`, M, y)
-    y += 5.5
-    body(c.rationale)
-    y += 3
-  }
+  // Per-criterion scores are shown in the infographic legend above; the
+  // per-criterion rationale is intentionally not shown to the end user.
 
   // ── Feedback ────────────────────────────────────────────────
   heading('Objective feedback')
