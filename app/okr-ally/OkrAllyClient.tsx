@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Image from 'next/image'
-import { Page, TopBar, AllyRow, Btn, Field, ShareCard, T, AVATAR, keyframes } from './_ui'
+import { Page, TopBar, InstallAppBanner, AllyRow, Btn, Field, ShareCard, T, AVATAR, keyframes } from './_ui'
 import StepForm from './_form'
 import ReportScreen, { FullReport } from './_report'
 import PricingTab from './_pricing'
@@ -45,7 +45,7 @@ export default function OkrAllyClient() {
   const isAdmin = !!me?.user?.isAdmin
 
   // Register the minimal service worker — the last PWA-installability criterion
-  // for the native desktop install button (Chrome/Edge). It does no caching.
+  // (Chrome/Edge, desktop + Android). It does no caching.
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/okr-ally/sw.js', { scope: '/okr-ally' }).catch(() => {})
@@ -198,6 +198,8 @@ export default function OkrAllyClient() {
           ) : null
         }
       />
+
+      <InstallAppBanner />
 
       {me?.authenticated && !showingReport && !showingAdmin && (
         <TabBar tab={activeTab} onChange={setTab} isAdmin={isAdmin} />

@@ -552,3 +552,92 @@ export function Stars({
 }
 
 export const keyframes = `@keyframes okraIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}@keyframes okraPulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}`
+
+interface BeforeInstallPromptEvent extends Event {
+  readonly platforms: string[]
+  prompt: () => Promise<void>
+  readonly userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
+}
+
+/**
+ * Custom install affordance. Modern Chrome — especially on Android — does NOT
+ * show an automatic "Add to Home screen" banner. It fires `beforeinstallprompt`
+ * and expects the site to `preventDefault()`, stash the event, and offer its own
+ * button. This is that button: it renders only once Chrome/Edge deem the app
+ * installable and it isn't already installed, and calls the stashed prompt on
+ * tap. iOS Safari never fires the event, so it simply never renders there.
+ */
+export function InstallAppBanner() {
+  const [evt, setEvt] = useState<BeforeInstallPromptEvent | null>(null)
+  const [dismissed, setDismissed] = useState(false)
+
+  useEffect(() => {
+    const standalone =
+      window.matchMedia?.('(display-mode: standalone)').matches ||
+      (navigator as unknown as { standalone?: boolean }).standalone === true
+    if (standalone) return
+
+    const onPrompt = (e: Event) => {
+      e.preventDefault()
+      setEvt(e as BeforeInstallPromptEvent)
+    }
+    const onInstalled = () => setEvt(null)
+    window.addEventListener('beforeinstallprompt', onPrompt)
+    window.addEventListener('appinstalled', onInstalled)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onPrompt)
+      window.removeEventListener('appinstalled', onInstalled)
+    }
+  }, [])
+
+  if (!evt || dismissed) return null
+
+  return (
+    <div
+      className="flex items-center justify-between gap-3 mb-4"
+      style={{
+        background: T.emeraldTint,
+        border: `1px solid ${T.emeraldBorder}`,
+        borderRadius: 12,
+        padding: '10px 14px',
+        fontSize: 13,
+        color: T.bubbleText,
+        animation: 'okraIn .35s ease both',
+      }}
+    >
+      <span>Install OKR Ally for one-tap access from your home screen.</span>
+      <span className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+        <button
+          onClick={async () => {
+            try {
+              await evt.prompt()
+              await evt.userChoice
+            } catch {
+              /* user backed out of the prompt */
+            }
+            setEvt(null)
+          }}
+          style={{
+            fontWeight: 700,
+            color: '#fff',
+            background: T.emerald,
+            border: 'none',
+            borderRadius: 8,
+            padding: '6px 14px',
+            cursor: 'pointer',
+            fontSize: 12.5,
+          }}
+        >
+          Install
+        </button>
+        <button
+          onClick={() => setDismissed(true)}
+          aria-label="Dismiss"
+          style={{ background: 'none', border: 'none', color: T.emeraldDark, cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 2 }}
+        >
+          ×
+        </button>
+      </span>
+    </div>
+  )
+}

@@ -444,8 +444,9 @@ test('admin: expert feedback on both options, then a grounded improvement-email 
   expect(draft.trim().length).toBeGreaterThan(60)
   // grounding rule: no score / rating language
   expect(draft).not.toMatch(/\b\d\s*\/\s*10\b/)
-  expect(draft.toLowerCase()).not.toContain('rating')
-  expect(draft.toLowerCase()).not.toMatch(/\bscored?\b/)
+  // word-boundary: "rating"/"score" as its own word, not inside "separating" etc.
+  expect(draft).not.toMatch(/\brating\b/i)
+  expect(draft).not.toMatch(/\bscored?\b/i)
 
   // edit + save
   const edited = draft + '\n\nPS: added by PGS.'
@@ -728,4 +729,45 @@ test('first-time user (no profile) still gets the step-by-step flow', async ({ p
   await page.goto('/okr-ally')
   await expect(page.getByText('what should I call you?')).toBeVisible()
   await expect(page.getByText(/what I have on file/i)).toHaveCount(0)
+})
+
+// ══════════════════════════════════════════════════════════
+// 14. Custom PWA install banner is wired to beforeinstallprompt
+// ══════════════════════════════════════════════════════════
+test('install banner: appears on beforeinstallprompt and calls prompt() on click', async ({ page }) => {
+  test.setTimeout(90_000)
+  // Chromium under Playwright never fires beforeinstallprompt itself, so
+  // dispatch a synthetic one carrying a spy prompt()/userChoice — this proves
+  // the listener is genuinely wired and the button acts on the stashed event.
+  await page.goto('/okr-ally')
+  // wait for hydration (the client component + its effect must be mounted)
+  await expect(page.getByRole('button', { name: /Say hi to Ally/i })).toBeVisible({ timeout: 45_000 })
+
+  // not shown before any event
+  await expect(page.getByRole('button', { name: 'Install', exact: true })).toHaveCount(0)
+
+  await page.evaluate(() => {
+    const e: Event & { prompt?: () => Promise<void>; userChoice?: Promise<unknown> } = new Event('beforeinstallprompt', {
+      cancelable: true,
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(window as any).__promptCalled = 0
+    e.prompt = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(window as any).__promptCalled++
+      return Promise.resolve()
+    }
+    e.userChoice = Promise.resolve({ outcome: 'accepted', platform: 'web' })
+    window.dispatchEvent(e)
+  })
+
+  const installBtn = page.getByRole('button', { name: 'Install', exact: true })
+  await expect(installBtn).toBeVisible()
+  await expect(page.getByText(/Install OKR Ally for one-tap access/i)).toBeVisible()
+
+  await installBtn.click()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  expect(await page.evaluate(() => (window as any).__promptCalled)).toBe(1)
+  // banner dismisses itself after the prompt resolves
+  await expect(installBtn).toHaveCount(0)
 })
