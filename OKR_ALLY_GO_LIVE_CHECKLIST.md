@@ -148,11 +148,30 @@ working.
 
 - [x] Magic link · free-first-review · confirmation emails · self-BCC · PDF downloads ·
   Razorpay checkout · webhook fallback · mid-form clarify — **all verified by PGS, 2026-08-30.**
-- [ ] **Admin-role features pass against the 2026-08-30 deployment** — the only piece
-  left. PGS to walk, on production: the admin review list with its company/email
-  filters + pagination, a manual credit grant (+ the recipient email), the admin
-  (expert) review screen end to end, and the returning-user profile-summary screen
-  (edit one field → only that field re-runs; continue unchanged → nothing re-runs).
+- [x] **Admin-role features pass against production — DONE 2026-08-30** (deployment
+  `9jyyf35e0`, `subramaniampg.guru`). Verified live:
+  - **Admin list** — `company` / `email` / objective filters each narrow correctly
+    (`email=gmail`→1, `email=embiggen.co.in`→1, `company=stucred`→2, `q=exit`→2);
+    `pageSize=1` pages return distinct rows with the right `total`; the filter bar +
+    "N–M of T" + Prev/Next + the "Grant credits" panel all render in the UI.
+  - **Manual credit grant** — granted 2 credits to `pgs@embiggen.co`: response
+    `ok, emailed:true`, balance 0→2, one `credit_transactions` `admin_grant` row with
+    the note, and the **"2 review credits added to your OKR Ally account" email
+    physically arrived** in that inbox (with the note, from `pgs@embiggen.co.in`).
+  - **Admin review screen** — opened a completed review, saved expert feedback on
+    **both** options (2 `expert_reviews` rows), drafted the improvement email
+    (real Claude call — grounded in the user's actual OKR + context, first person,
+    **no score/rating language**), edited it, and **sent it**: `sent_at` stamped,
+    and the **"A note on your OKR — Subramaniam P G" email physically arrived** at
+    the review owner's inbox with the edited text.
+  - **Returning-user summary screen** — a returning user (`pgs@embiggen.co`, full
+    profile) lands on the summary, not the step-by-step form; **Continue with no
+    edits → zero assess/paraphrase calls**; **editing only the Business context
+    field → exactly one `assess` + one `paraphrase`, both `field: business`**, none
+    for company/role.
+  - Prod artifacts left in place (intentional): `pgs@embiggen.co` +2 credits, the
+    2 expert-review rows + sent improvement-email on that one review. Zero out /
+    delete if unwanted — they don't affect go-live.
 
 ## 8. Deploy
 
