@@ -4,6 +4,7 @@ import { validateReviewOutput } from '../lib/okrAllyReview'
 import {
   signIn,
   seedCredits,
+  seedProfile,
   setAdmin,
   getBalance,
   getLatestSubmission,
@@ -610,4 +611,120 @@ test('admin list: company and email filters narrow results, pagination is honour
   expect(p1.items[0].submissionId).not.toBe(p2.items[0].submissionId)
 
   await setAdmin(admin.userId, false)
+})
+
+// ══════════════════════════════════════════════════════════
+// 10. Returning user with a full profile — summary screen, not step-by-step
+// ══════════════════════════════════════════════════════════
+const FULL_PROFILE = {
+  name: 'Return Visitor',
+  companyName: 'Meridian Foods',
+  companyContext:
+    'Meridian Foods is a 45-store regional grocery chain in the US Southeast, ~2,400 employees, ~$310M annual revenue, privately held.',
+  businessContext:
+    'Two national chains entered our region this year; same-store sales growth fell from 3.8% to 0.6%. The board wants market-share defence this quarter through a better loyalty programme.',
+  roleContext:
+    'I am the Director of Loyalty and CRM. I own the loyalty programme, app content, and email/SMS campaigns and direct a team of six plus an agency. I do not control store operations or pricing.',
+}
+
+/** Record every context-pipeline call the page makes, with its `field`. */
+function trackContextCalls(page: Page) {
+  const calls: { path: string; field: string }[] = []
+  page.on('request', (req) => {
+    const u = req.url()
+    if (u.includes('/api/okr-ally/context/')) {
+      let field = ''
+      try {
+        field = JSON.parse(req.postData() || '{}').field || ''
+      } catch {
+        /* ignore */
+      }
+      calls.push({ path: u.includes('/assess') ? 'assess' : u.includes('/paraphrase') ? 'paraphrase' : 'other', field })
+    }
+  })
+  return calls
+}
+
+test('returning user: sees the profile summary, and unchanged fields skip the pipeline entirely', async ({ page, context }) => {
+  test.setTimeout(120_000)
+  const user = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(user.userId)
+  await seedProfile(user.userId, FULL_PROFILE)
+  await seedCredits(user.userId, 1)
+
+  const calls = trackContextCalls(page)
+  await page.goto('/okr-ally')
+
+  // the summary screen, NOT the first step of the step-by-step flow
+  await expect(page.getByText(/what I have on file/i)).toBeVisible()
+  await expect(page.getByText('what should I call you?')).toHaveCount(0)
+  await expect(page.getByText('Company context')).toBeVisible()
+  await expect(page.getByText('Business context')).toBeVisible()
+  await expect(page.getByText('Your role')).toBeVisible()
+  await expect(page.getByText('Meridian Foods', { exact: true })).toBeVisible()
+
+  // continue with nothing changed → straight to the objective step
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+  await expect(page.getByText(/your Objective for this cycle/i)).toBeVisible()
+
+  // and NOT a single assess/paraphrase call was made
+  expect(calls).toEqual([])
+})
+
+test('returning user: editing one context field re-runs the pipeline for that field only', async ({ page, context }) => {
+  test.setTimeout(180_000)
+  const user = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(user.userId)
+  await seedProfile(user.userId, FULL_PROFILE)
+  await seedCredits(user.userId, 1)
+
+  const calls = trackContextCalls(page)
+  await page.goto('/okr-ally')
+  await expect(page.getByText(/what I have on file/i)).toBeVisible()
+
+  // open "Business context" (4th field: name, phone, company, company-ctx, business-ctx, role)
+  await page.getByRole('button', { name: 'Edit' }).nth(4).click()
+  await page.locator('textarea').last().fill(
+    'A national competitor just acquired our second-largest regional rival, so consolidation pressure jumped sharply this quarter; the board now wants a defensible loyalty moat, not just parity.'
+  )
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+
+  // now on the business context step — submit it and walk any clarify/paraphrase
+  await page.getByRole('button', { name: 'Continue', exact: true }).last().click()
+  await expect
+    .poll(
+      async () => {
+        if (await page.getByText(/your Objective for this cycle/i).count()) return 'done'
+        if (await page.getByRole('button', { name: 'Skip' }).count()) {
+          await page.getByRole('button', { name: 'Skip' }).click()
+          return 'step'
+        }
+        if (await page.getByRole('button', { name: /Use Ally/ }).count()) {
+          await page.getByRole('button', { name: /Use Ally/ }).click()
+          return 'step'
+        }
+        if (await page.getByRole('button', { name: 'Keep mine' }).count()) {
+          await page.getByRole('button', { name: 'Keep mine' }).click()
+          return 'step'
+        }
+        return 'wait'
+      },
+      { timeout: 60_000, intervals: [500] }
+    )
+    .not.toBe('wait')
+  await expect(page.getByText(/your Objective for this cycle/i)).toBeVisible({ timeout: 20_000 })
+
+  // the pipeline ran for `business` and for nothing else
+  expect(calls.length).toBeGreaterThan(0)
+  expect(calls.every((c) => c.field === 'business')).toBe(true)
+  expect(calls.some((c) => c.path === 'assess')).toBe(true)
+})
+
+test('first-time user (no profile) still gets the step-by-step flow', async ({ page, context }) => {
+  const user = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(user.userId)
+
+  await page.goto('/okr-ally')
+  await expect(page.getByText('what should I call you?')).toBeVisible()
+  await expect(page.getByText(/what I have on file/i)).toHaveCount(0)
 })

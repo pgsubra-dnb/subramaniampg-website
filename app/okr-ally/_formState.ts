@@ -1,4 +1,5 @@
 export type StepId =
+  | 'profile_summary'
   | 'name'
   | 'phone'
   | 'company_name'
@@ -10,6 +11,7 @@ export type StepId =
   | 'confirm'
 
 export const STEP_ORDER: StepId[] = [
+  'profile_summary',
   'name',
   'phone',
   'company_name',
@@ -20,6 +22,10 @@ export const STEP_ORDER: StepId[] = [
   'krs',
   'confirm',
 ]
+
+/** The identity/context steps a returning user edits inline on the summary screen
+ *  instead of stepping through one by one. */
+export const PROFILE_STEPS: StepId[] = ['name', 'phone', 'company_name', 'ctx_company', 'ctx_business', 'ctx_role']
 
 export const LIMITS = {
   objective: 500,
@@ -65,6 +71,10 @@ export interface KR {
 
 export interface FormState {
   step: StepId
+  /** 'stepwise' — first-time users walk every step. 'summary' — returning users
+   *  with a full saved profile start on the profile-summary screen and only the
+   *  fields they actually edit are re-run through the context pipeline. */
+  mode: 'stepwise' | 'summary'
   name: string
   phone: string
   companyName: string
@@ -77,6 +87,7 @@ export interface FormState {
 export function emptyForm(): FormState {
   return {
     step: 'name',
+    mode: 'stepwise',
     name: '',
     phone: '',
     companyName: '',
@@ -85,6 +96,27 @@ export function emptyForm(): FormState {
     krs: [{ text: '', initiatives: [] }],
     saveProfile: false,
   }
+}
+
+/**
+ * The next step to land on from `from`. In 'stepwise' mode this is just the next
+ * entry in STEP_ORDER. In 'summary' mode it skips the inline profile fields
+ * (name/phone/company_name) and any context field already resolved
+ * (`phase === 'done'`, i.e. left unchanged on the summary screen), and once the
+ * context steps are exhausted it jumps straight to the confirm screen when the
+ * objective + Key Results are already filled (the "edit from confirm" case).
+ */
+export function nextStep(form: FormState, from: StepId): StepId {
+  for (let i = STEP_ORDER.indexOf(from) + 1; i < STEP_ORDER.length; i++) {
+    const s = STEP_ORDER[i]
+    if (form.mode === 'summary') {
+      if (s === 'name' || s === 'phone' || s === 'company_name') continue
+      if (isCtxStep(s) && form.ctx[CTX_KIND[s]].phase === 'done') continue
+      if (s === 'objective' && form.objective.trim() && form.krs.some((k) => k.text.trim())) return 'confirm'
+    }
+    return s
+  }
+  return STEP_ORDER[STEP_ORDER.length - 1]
 }
 
 export const CTX_KIND: Record<'ctx_company' | 'ctx_business' | 'ctx_role', 'company' | 'business' | 'role'> = {
@@ -116,4 +148,11 @@ export function ctxSnapshot(c: CtxFieldState) {
 
 export function isCtxStep(s: StepId): s is 'ctx_company' | 'ctx_business' | 'ctx_role' {
   return s === 'ctx_company' || s === 'ctx_business' || s === 'ctx_role'
+}
+
+/** Same normalisation the assess route uses to decide "unchanged" — mirror it
+ *  so the summary screen's change detection agrees with the server's skip. */
+export function sameText(a: string, b: string): boolean {
+  const n = (t: string) => t.trim().replace(/\s+/g, ' ')
+  return n(a) === n(b)
 }

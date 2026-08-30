@@ -88,6 +88,27 @@ export async function setAdmin(userId: string, isAdmin: boolean): Promise<void> 
   await pool.query(`UPDATE users SET is_admin = $2 WHERE id = $1`, [userId, isAdmin])
 }
 
+/** Give a user a full saved profile (name/phone on users, context on user_profile)
+ *  so they land on the returning-user summary screen. */
+export async function seedProfile(
+  userId: string,
+  p: { name?: string; phone?: string | null; companyName: string; companyContext: string; businessContext: string; roleContext: string }
+): Promise<void> {
+  await pool.query(`UPDATE users SET name = COALESCE($2, name), phone = $3 WHERE id = $1`, [
+    userId,
+    p.name ?? null,
+    p.phone ?? null,
+  ])
+  await pool.query(
+    `INSERT INTO user_profile (user_id, company_name, company_context, business_context, role_context)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (user_id) DO UPDATE SET
+       company_name = EXCLUDED.company_name, company_context = EXCLUDED.company_context,
+       business_context = EXCLUDED.business_context, role_context = EXCLUDED.role_context`,
+    [userId, p.companyName, p.companyContext, p.businessContext, p.roleContext]
+  )
+}
+
 export async function seedCredits(userId: string, n: number): Promise<void> {
   await pool.query(
     `INSERT INTO user_credit_balance (user_id, credits_remaining) VALUES ($1, $2)
