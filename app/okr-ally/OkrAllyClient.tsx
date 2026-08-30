@@ -44,6 +44,14 @@ export default function OkrAllyClient() {
 
   const isAdmin = !!me?.user?.isAdmin
 
+  // Register the minimal service worker — the last PWA-installability criterion
+  // for the native desktop install button (Chrome/Edge). It does no caching.
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/okr-ally/sw.js', { scope: '/okr-ally' }).catch(() => {})
+    }
+  }, [])
+
   const refreshStatus = useCallback(() => {
     fetch('/api/okr-ally/status')
       .then((r) => r.json())
