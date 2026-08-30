@@ -184,13 +184,40 @@ export async function seedCompletedReview(userId: string, objective = 'Seeded E2
 export async function seedInvoice(userId: string): Promise<{ invoiceId: string }> {
   const r = await pool.query<{ id: string }>(
     `INSERT INTO invoices (
-       user_id, razorpay_payment_id, invoice_number, base_amount, gst_amount, total_amount,
+       user_id, razorpay_payment_id, invoice_number, list_price, base_amount, gst_amount, total_amount,
        place_of_supply, igst_amount, supplier_name, supplier_gstin, supplier_pan, supplier_address
-     ) VALUES ($1, $2, $3, 50, 9, 59, 'Maharashtra', 9, 'Test LLP', '29ABCDE1234F1Z5', 'ABCDE1234F', 'Test address')
+     ) VALUES ($1, $2, $3, 50, 50, 9, 59, 'Maharashtra', 9, 'Test LLP', '29ABCDE1234F1Z5', 'ABCDE1234F', 'Test address')
      RETURNING id`,
     [userId, 'e2e-pay-' + crypto.randomUUID(), 'OKR/E2E/' + Math.floor(Math.random() * 1e6)]
   )
   return { invoiceId: r.rows[0].id }
+}
+
+export interface InvoiceRowLite {
+  invoice_number: string
+  razorpay_payment_id: string | null
+  submission_id: string | null
+  list_price: string
+  discount_percent: string | null
+  coupon_code: string | null
+  base_amount: string
+  gst_amount: string
+  total_amount: string
+  place_of_supply: string
+  cgst_amount: string | null
+  sgst_amount: string | null
+  igst_amount: string | null
+}
+
+export async function getInvoicesForUser(userId: string): Promise<InvoiceRowLite[]> {
+  const r = await pool.query<InvoiceRowLite>(
+    `SELECT invoice_number, razorpay_payment_id, submission_id, list_price, discount_percent,
+            coupon_code, base_amount, gst_amount, total_amount, place_of_supply,
+            cgst_amount, sgst_amount, igst_amount
+       FROM invoices WHERE user_id = $1 ORDER BY created_at`,
+    [userId]
+  )
+  return r.rows
 }
 
 /** Delete every row belonging to the given users + any blobs, and their Sanity magic tokens. */

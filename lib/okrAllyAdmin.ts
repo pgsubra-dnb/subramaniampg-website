@@ -1,5 +1,5 @@
 import type { OkrAllyUser } from '@/lib/okrAlly'
-import { query } from '@/lib/okrAlly'
+import { query, withTransaction } from '@/lib/okrAlly'
 import { RUBRIC, REVIEW_MODEL, ANTHROPIC_VERSION } from '@/lib/okrAllyReview'
 import type {
   ReviewOutput,
@@ -48,6 +48,7 @@ export interface AdminReviewListItem {
   objective: string
   userName: string
   userEmail: string
+  companyName: string | null
   overallScore: number
   createdAt: string
   /** How many of the two option feedback panels PGS has saved (0, 1 or 2). */
@@ -55,24 +56,75 @@ export interface AdminReviewListItem {
   emailStatus: 'none' | 'draft' | 'sent'
 }
 
-export async function listAdminReviews(user: OkrAllyUser): Promise<AdminReviewListItem[]> {
+export interface AdminReviewListOptions {
+  /** Objective free-text (ILIKE). */
+  q?: string
+  /** Buyer's company name from user_profile (ILIKE). */
+  company?: string
+  /** Buyer's email (ILIKE). */
+  email?: string
+  /** 1-based page. */
+  page?: number
+  /** Rows per page; clamped to 1..50, default 20. */
+  pageSize?: number
+}
+
+export interface AdminReviewListResult {
+  items: AdminReviewListItem[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export async function listAdminReviews(
+  user: OkrAllyUser,
+  opts: AdminReviewListOptions = {}
+): Promise<AdminReviewListResult> {
   requireAdmin(user)
+
+  const page = Math.max(1, Math.floor(opts.page ?? 1))
+  const pageSize = Math.min(50, Math.max(1, Math.floor(opts.pageSize ?? 20)))
+
+  const where: string[] = [`s.status = 'complete'`]
+  const params: unknown[] = []
+  const like = (v?: string) => `%${(v ?? '').trim()}%`
+  if (opts.q?.trim()) {
+    params.push(like(opts.q))
+    where.push(`s.objective ILIKE $${params.length}`)
+  }
+  if (opts.company?.trim()) {
+    params.push(like(opts.company))
+    where.push(`up.company_name ILIKE $${params.length}`)
+  }
+  if (opts.email?.trim()) {
+    params.push(like(opts.email))
+    where.push(`u.email ILIKE $${params.length}`)
+  }
+  const whereSql = where.join(' AND ')
+
+  params.push(pageSize, (page - 1) * pageSize)
+  const limitParam = params.length - 1
+  const offsetParam = params.length
+
   const res = await query<{
     submission_id: string
     review_id: string
     objective: string
     user_name: string
     user_email: string
+    company_name: string | null
     overall_score: string
     created_at: string
     expert_count: string
     email_status: 'none' | 'draft' | 'sent'
+    total: string
   }>(
     `SELECT s.id                         AS submission_id,
             r.id                         AS review_id,
             s.objective,
             u.name                       AS user_name,
             u.email                      AS user_email,
+            up.company_name              AS company_name,
             r.overall_score,
             r.created_at,
             (SELECT count(*) FROM expert_reviews er WHERE er.review_id = r.id) AS expert_count,
@@ -80,25 +132,36 @@ export async function listAdminReviews(user: OkrAllyUser): Promise<AdminReviewLi
               WHEN ie.sent_at IS NOT NULL THEN 'sent'
               WHEN ie.id IS NOT NULL       THEN 'draft'
               ELSE 'none'
-            END                          AS email_status
+            END                          AS email_status,
+            count(*) OVER()              AS total
        FROM reviews r
-       JOIN submissions s ON s.id = r.submission_id
-       JOIN users u       ON u.id = s.user_id
+       JOIN submissions s   ON s.id = r.submission_id
+       JOIN users u         ON u.id = s.user_id
+       LEFT JOIN user_profile up      ON up.user_id = s.user_id
        LEFT JOIN improvement_emails ie ON ie.review_id = r.id
-      WHERE s.status = 'complete'
-      ORDER BY r.created_at DESC`
+      WHERE ${whereSql}
+      ORDER BY r.created_at DESC, r.id DESC
+      LIMIT $${limitParam} OFFSET $${offsetParam}`,
+    params
   )
-  return res.rows.map((row) => ({
-    submissionId: row.submission_id,
-    reviewId: row.review_id,
-    objective: row.objective,
-    userName: row.user_name,
-    userEmail: row.user_email,
-    overallScore: Number(row.overall_score),
-    createdAt: row.created_at,
-    expertReviewCount: Number(row.expert_count),
-    emailStatus: row.email_status,
-  }))
+
+  return {
+    items: res.rows.map((row) => ({
+      submissionId: row.submission_id,
+      reviewId: row.review_id,
+      objective: row.objective,
+      userName: row.user_name,
+      userEmail: row.user_email,
+      companyName: row.company_name,
+      overallScore: Number(row.overall_score),
+      createdAt: row.created_at,
+      expertReviewCount: Number(row.expert_count),
+      emailStatus: row.email_status,
+    })),
+    total: res.rows[0] ? Number(res.rows[0].total) : 0,
+    page,
+    pageSize,
+  }
 }
 
 // ─── Full review (Admin review screen) ──────────────────────────────────
@@ -507,4 +570,117 @@ ${bodyText
     [reviewId]
   )
   return { sent: true, sentAt: upd.rows[0]?.sent_at }
+}
+
+// ─── Manual admin credit grant ─────────────────────────────────────────
+
+const GRANT_MAX = 100
+
+export interface GrantCreditsInput {
+  /** Recipient's email — must already have an OKR Ally account. */
+  email: string
+  credits: number
+  /** Optional audit note stored on the credit_transactions row. */
+  note?: string | null
+}
+
+export type GrantCreditsResult =
+  | {
+      ok: true
+      creditsRemaining: number
+      /** True if the recipient has not completed a review yet — a soft warning, not a block. */
+      firstReviewPending: boolean
+      recipientEmail: string
+      recipientName: string
+      /** Whether the notification email was accepted by Brevo. */
+      emailed: boolean
+    }
+  | { ok: false; error: string }
+
+/**
+ * PGS adds review credits to an account by email from the admin screen. Atomic
+ * (ledger row + balance in one transaction) and the recipient is ALWAYS
+ * notified by email (which also BCCs PGS). A grant to an account that has not
+ * completed a first review is allowed but flagged.
+ */
+export async function grantCreditsAsAdmin(
+  user: OkrAllyUser,
+  input: GrantCreditsInput
+): Promise<GrantCreditsResult> {
+  requireAdmin(user)
+
+  const email = (input.email || '').trim().toLowerCase()
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { ok: false, error: 'Enter a valid email address.' }
+  }
+  const credits = Number(input.credits)
+  if (!Number.isInteger(credits) || credits < 1 || credits > GRANT_MAX) {
+    return { ok: false, error: `Credits must be a whole number between 1 and ${GRANT_MAX}.` }
+  }
+  const note =
+    typeof input.note === 'string' && input.note.trim() ? input.note.trim().slice(0, 500) : null
+
+  const u = await query<{ id: string; name: string; email: string }>(
+    `SELECT id, name, email FROM users WHERE email = $1`,
+    [email]
+  )
+  const recipient = u.rows[0]
+  if (!recipient) {
+    return {
+      ok: false,
+      error: 'No OKR Ally account with that email yet — they need to sign in once first.',
+    }
+  }
+
+  const done = await query<{ n: string }>(
+    `SELECT count(*) AS n FROM submissions WHERE user_id = $1 AND status = 'complete'`,
+    [recipient.id]
+  )
+  const firstReviewPending = Number(done.rows[0]?.n ?? 0) === 0
+
+  const creditsRemaining = await withTransaction(async (client) => {
+    await client.query(
+      `INSERT INTO credit_transactions (user_id, amount, type, note)
+       VALUES ($1, $2, 'admin_grant', $3)`,
+      [recipient.id, credits, note]
+    )
+    const bal = await client.query<{ credits_remaining: number }>(
+      `INSERT INTO user_credit_balance (user_id, credits_remaining, updated_at)
+       VALUES ($1, $2, now())
+       ON CONFLICT (user_id)
+       DO UPDATE SET credits_remaining = user_credit_balance.credits_remaining + EXCLUDED.credits_remaining,
+                     updated_at = now()
+       RETURNING credits_remaining`,
+      [recipient.id, credits]
+    )
+    return bal.rows[0].credits_remaining
+  })
+
+  const plural = credits === 1 ? 'credit' : 'credits'
+  const emailed = await sendBrevoEmail({
+    to: recipient.email,
+    toName: recipient.name,
+    subject: `${credits} review ${plural} added to your OKR Ally account`,
+    htmlContent: `
+      <div style="font-family:Inter,Arial,sans-serif;color:#2C2C2A;line-height:1.6;">
+        <p><strong>${credits} review ${plural}</strong> ${credits === 1 ? 'has' : 'have'} been added to your OKR Ally account.</p>
+        <p>Your balance is now <strong>${creditsRemaining}</strong>. Sign in at
+          <a href="https://subramaniampg.guru/okr-ally">subramaniampg.guru/okr-ally</a> to use them.</p>
+        ${note ? `<p style="font-size:13px;color:#6b6b66;">Note: ${note.replace(/</g, '&lt;')}</p>` : ''}
+        <p style="font-size:13px;color:#6b6b66;">— Subramaniam P G</p>
+      </div>`,
+    textContent:
+      `${credits} review ${plural} ${credits === 1 ? 'has' : 'have'} been added to your OKR Ally account. ` +
+      `Your balance is now ${creditsRemaining}. Sign in at https://subramaniampg.guru/okr-ally to use them.` +
+      (note ? `\n\nNote: ${note}` : ''),
+  })
+
+  return {
+    ok: true,
+    creditsRemaining,
+    firstReviewPending,
+    recipientEmail: recipient.email,
+    recipientName: recipient.name,
+    emailed,
+  }
 }
