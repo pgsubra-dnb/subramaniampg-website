@@ -50,7 +50,7 @@ const TOPICS: Topic[] = [
   {
     id: 'credits',
     title: 'Credit packs',
-    blurb: 'Buying reviews, invoices, and coupons.',
+    blurb: 'Buying reviews and invoices.',
     items: [
       {
         q: 'How do credits work?',
@@ -69,10 +69,6 @@ const TOPICS: Topic[] = [
         a: 'Yes. Every purchase generates a GST invoice. It is emailed to you and also listed in your History tab, where you can download it again any time.',
       },
       {
-        q: 'I have a coupon code.',
-        a: 'Enter it on the Pricing & Plans tab before you pay. Percentage-off coupons apply to pack purchases, and each coupon can be used once per account.',
-      },
-      {
         q: 'My payment went through but I have no credits.',
         a: 'Give it a moment and refresh — the confirmation can lag by a few seconds. If the credits still are not there, email pgs@embiggen.co.in with your payment reference and it will be sorted out.',
       },
@@ -89,7 +85,7 @@ const TOPICS: Topic[] = [
       },
       {
         q: 'How do I claim it?',
-        a: "You don't need a code. When you have no credits and you are still eligible, I apply the free review automatically the moment you submit.",
+        a: 'Nothing to do. When you have no credits and you are still eligible, I apply the free review automatically the moment you submit.',
       },
       {
         q: 'It charged me a credit instead.',
@@ -111,8 +107,8 @@ const TOPICS: Topic[] = [
         a: "Sometimes PGS reads a review personally and sends you a short note in his own words — a second pair of eyes on top of mine. It is commentary and suggestions, never a score or a grade.",
       },
       {
-        q: 'Can I ask for a personal review?',
-        a: "There is no formal request flow for that yet. If you want PGS's direct input, book a conversation with him — the link is on your report — or email pgs@embiggen.co.in.",
+        q: 'Can I get PGS to personally review my OKR?',
+        a: "Yes — that's a paid one-to-one conversation with PGS, separate from my automated review. Book it at subramaniampg.guru/work/book-consulting (“A Conversation with PGS”): ₹1,180 for 30 minutes, ₹2,360 for 60 minutes, or ₹3,540 for 90 minutes. Those are GST-inclusive — the amount you actually pay. Bring your OKR and context and he'll work through it with you live.",
       },
       {
         q: 'Who can see what I submit?',
