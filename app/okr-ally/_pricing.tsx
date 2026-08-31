@@ -24,6 +24,16 @@ type RazorpayCtor = new (opts: any) => { open: () => void }
 
 const money = (n: number) => `₹${n.toLocaleString('en-IN')}`
 
+/**
+ * Coupon codes aren't being issued right now, so a visible "enter a coupon code"
+ * field just moves the "…where do I get one?" confusion to the checkout screen
+ * (same reasoning as the Help copy). This only hides the input — the whole
+ * coupon mechanism (validate-coupon, applyCoupon, price adjustment, the
+ * one-per-account free-first-review coupon) is untouched. Flip to true if a
+ * coupon is ever issued.
+ */
+const SHOW_COUPON_FIELD = false
+
 export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: number) => void }) {
   const [status, setStatus] = useState<Status | null>(null)
   const [state, setState] = useState('')
@@ -272,25 +282,29 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
             Not a valid GSTIN — it&apos;s 15 characters: 2-digit state code, then the 10-character PAN, then 3 more.
           </p>
         )}
-        <label style={{ display: 'block', fontSize: 12.5, color: T.muted, marginBottom: 4 }}>Coupon code (optional)</label>
-        <div className="flex gap-2">
-          <input
-            value={coupon}
-            onChange={(e) => setCoupon(e.target.value.toUpperCase())}
-            placeholder="Code"
-            style={{ flex: 1, padding: '9px 10px', borderRadius: 8, border: `1px solid ${T.hairline}`, fontSize: 13.5 }}
-          />
-          <Btn small variant="ghost" onClick={applyCoupon}>
-            Apply
-          </Btn>
-        </div>
-        {couponMsg && (
-          <p style={{ fontSize: 12, color: couponApplied ? T.emeraldDark : '#B91C1C', margin: '6px 0 0' }}>{couponMsg}</p>
+        {SHOW_COUPON_FIELD && (
+          <>
+            <label style={{ display: 'block', fontSize: 12.5, color: T.muted, marginBottom: 4 }}>Coupon code (optional)</label>
+            <div className="flex gap-2">
+              <input
+                value={coupon}
+                onChange={(e) => setCoupon(e.target.value.toUpperCase())}
+                placeholder="Code"
+                style={{ flex: 1, padding: '9px 10px', borderRadius: 8, border: `1px solid ${T.hairline}`, fontSize: 13.5 }}
+              />
+              <Btn small variant="ghost" onClick={applyCoupon}>
+                Apply
+              </Btn>
+            </div>
+            {couponMsg && (
+              <p style={{ fontSize: 12, color: couponApplied ? T.emeraldDark : '#B91C1C', margin: '6px 0 0' }}>{couponMsg}</p>
+            )}
+          </>
         )}
       </div>
 
       <p style={{ fontSize: 11.5, color: T.muted, marginTop: 12 }}>
-        GST is 18%. A numbered GST invoice is emailed for every purchase. First review free via a one-per-account coupon.
+        GST is 18%. A numbered GST invoice is emailed for every purchase. Your first review is free, one per account.
       </p>
     </div>
   )

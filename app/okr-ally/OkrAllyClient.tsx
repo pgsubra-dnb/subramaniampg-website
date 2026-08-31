@@ -443,10 +443,15 @@ function EmailGate({ error }: { error: string | null }) {
 
   if (sent) {
     return (
-      <AllyRow>
-        Check your inbox — I&apos;ve sent a sign-in link to <strong>{email}</strong>. It works once and expires in 15
-        minutes. Come back here after you click it.
-      </AllyRow>
+      <>
+        <AllyRow>
+          Check your inbox — I&apos;ve sent a sign-in link to <strong>{email}</strong>. It works once and expires in 15
+          minutes. Come back here after you click it.
+        </AllyRow>
+        <p style={{ fontSize: 12.5, color: T.muted, marginTop: 8 }}>
+          Didn&apos;t get it? Check your spam or junk folder, or wait a minute and try again.
+        </p>
+      </>
     )
   }
 
