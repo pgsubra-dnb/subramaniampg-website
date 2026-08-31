@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { fulfilConsultingPayment } from '@/lib/consultingCheckout'
+import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
 
 export const dynamic = 'force-dynamic'
 
@@ -75,6 +76,16 @@ export async function POST(req: NextRequest) {
     }
     if (link?.status && link.status !== 'paid') {
       return NextResponse.json({ ok: true, ignored: `link status ${link.status}` })
+    }
+
+    try {
+      assertFulfillmentAllowed('consulting webhook', paymentId, paymentLinkId)
+    } catch (e) {
+      if (e instanceof FulfillmentBlockedError) {
+        console.error(e.message)
+        return NextResponse.json({ ok: true, ignored: 'fulfillment blocked' })
+      }
+      throw e
     }
 
     // Amount + customer come straight off the webhook body (already signed).

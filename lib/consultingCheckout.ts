@@ -3,6 +3,7 @@ import { query, getSiteSettings } from '@/lib/okrAlly'
 import { createAndSendInvoice } from '@/lib/okrAllyInvoice'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 import { stateCodeFromGstin } from '@/lib/indiaGstStates'
+import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
 import {
   CONSULTING_SLOTS,
   slotForAmountInInr,
@@ -54,6 +55,7 @@ export type FulfilOutcome =
       firstTime: boolean
     }
   | { status: 'unrecognised' } // paid, but the amount matches no configured duration
+  | { status: 'error' } // blocked (non-prod / implausible id) or an unexpected failure
 
 async function findExistingInvoice(
   paymentId: string
@@ -71,6 +73,16 @@ async function findExistingInvoice(
 }
 
 export async function fulfilConsultingPayment(input: FulfilInput): Promise<FulfilOutcome> {
+  try {
+    assertFulfillmentAllowed('consulting fulfilment', input.paymentId, input.paymentLinkId)
+  } catch (e) {
+    if (e instanceof FulfillmentBlockedError) {
+      console.error(e.message)
+      return { status: 'error' }
+    }
+    throw e
+  }
+
   // ── Idempotency: an invoice for this payment means it's already fulfilled.
   const done = await findExistingInvoice(input.paymentId)
   if (done) {
@@ -259,6 +271,17 @@ export async function confirmConsultingPayment(raw: RawParams): Promise<ConfirmO
 
   if (!verifyPaymentLinkSignature(params, keySecret)) return { status: 'invalid' }
   if (params.paymentLinkStatus !== 'paid') return { status: 'pending' }
+
+  // Guard before spending a Razorpay API call or touching the DB.
+  try {
+    assertFulfillmentAllowed('consulting confirm', params.paymentId, params.paymentLinkId)
+  } catch (e) {
+    if (e instanceof FulfillmentBlockedError) {
+      console.error(e.message)
+      return { status: 'error' }
+    }
+    throw e
+  }
 
   // Fast path: already fulfilled (e.g. the webhook beat the redirect).
   const done = await findExistingInvoice(params.paymentId)

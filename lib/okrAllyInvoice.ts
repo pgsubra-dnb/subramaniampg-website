@@ -4,6 +4,7 @@ import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 import { putPdf } from '@/lib/okrAllyBlob'
 import { PACKS } from '@/lib/okrAllyBilling'
 import { GST_STATES, stateCode, stateCodeFromGstin } from '@/lib/indiaGstStates'
+import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
 
 /**
  * OKR Ally GST invoice generation (build sequence step 5, extended in migration
@@ -92,7 +93,10 @@ export interface CreateInvoiceInput {
 
 export type CreateInvoiceResult =
   | { ok: true; created: boolean; invoice: InvoiceRow }
-  | { ok: false; reason: 'supplier-not-configured' | 'invalid-place-of-supply' | 'error' }
+  | {
+      ok: false
+      reason: 'supplier-not-configured' | 'invalid-place-of-supply' | 'blocked-nonprod' | 'error'
+    }
 
 function ym(date: Date): string {
   const yy = String(date.getUTCFullYear()).slice(-2)
@@ -308,6 +312,17 @@ async function fetchExistingInvoice(
  */
 export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<CreateInvoiceResult> {
   try {
+    // Backstop: never mint a real invoice from a non-prod process or a fake id.
+    try {
+      assertFulfillmentAllowed('createAndSendInvoice', input.razorpayPaymentId)
+    } catch (e) {
+      if (e instanceof FulfillmentBlockedError) {
+        console.error(e.message)
+        return { ok: false, reason: 'blocked-nonprod' }
+      }
+      throw e
+    }
+
     if (!input.razorpayPaymentId && !input.submissionId) {
       console.error('OKR Ally invoice: needs a razorpayPaymentId or a submissionId')
       return { ok: false, reason: 'error' }
