@@ -286,7 +286,7 @@ function ExitLinks({
       <ShareCard />
       <div style={{ color: T.muted, margin: '14px 0 4px' }}>If you want to go further:</div>
       <div className="flex flex-col">
-        {bookingUrl && link(bookingUrl, 'Book a consulting session with PGS →')}
+        {bookingUrl && link(bookingUrl, 'Book a conversation with PGS →')}
         {link('/work/okr-consulting', 'OKR consulting →')}
         {link('/assessment', 'Leadership Execution Scale Assessment →')}
         {substackUrl && link(substackUrl, 'Subscribe on Substack →')}

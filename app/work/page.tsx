@@ -205,7 +205,7 @@ export default function WorkPage() {
               href="/work/book-consulting"
               className="inline-flex items-center gap-2 px-8 py-4 border-2 border-white text-white font-medium rounded-lg hover:bg-white hover:text-[#633806] transition-colors"
             >
-              Book a consulting session
+              Book a conversation with PGS
               <ArrowIcon />
             </Link>
           </div>

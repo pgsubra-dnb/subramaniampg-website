@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
 import { CONSULTING_SLOTS, formatDuration } from '@/lib/consultingBooking'
@@ -7,14 +8,14 @@ import BookConsultingClient from './BookConsultingClient'
 const BASE = 'https://www.subramaniampg.guru'
 
 export const metadata = {
-  title: 'Book a Consulting Session — Subramaniam P G',
+  title: 'A Conversation with PGS — Subramaniam P G',
   description:
-    'Book dedicated advisory time with Subramaniam P G. Sessions run in 30-minute blocks at ₹1,000 per block — 30, 60, or 90 minutes. Pick a duration and a time, pay online, and get a calendar invite.',
+    'Book a paid one-to-one conversation with Subramaniam P G on OKRs, execution, strategy, and leadership decisions. 30-minute blocks — 30, 60, or 90 minutes. Pick a length, pay online, and pick a time.',
   alternates: { canonical: `${BASE}/work/book-consulting` },
   openGraph: {
-    title: 'Book a Consulting Session | Subramaniam P G',
+    title: 'A Conversation with PGS | Subramaniam P G',
     description:
-      'Dedicated advisory time on OKRs, execution, and leadership decisions. 30-minute blocks at ₹1,000.',
+      'A focused, paid one-to-one conversation on OKRs, execution, and leadership decisions. 30-minute blocks.',
     url: `${BASE}/work/book-consulting`,
   },
 }
@@ -22,15 +23,15 @@ export const metadata = {
 const serviceJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'Service',
-  name: 'Paid Consulting Session',
+  name: 'A Conversation with PGS',
   description:
-    'A dedicated one-to-one consulting session with Subramaniam P G on OKRs, execution, strategy, and leadership decisions. Booked in 30-minute blocks.',
+    'A paid one-to-one conversation with Subramaniam P G on OKRs, execution, strategy, and leadership decisions. Booked in 30-minute blocks.',
   provider: { '@type': 'Person', name: 'Subramaniam P G', url: BASE },
   areaServed: { '@type': 'Country', name: 'India' },
   url: `${BASE}/work/book-consulting`,
   offers: CONSULTING_SLOTS.map((slot) => ({
     '@type': 'Offer',
-    name: `${formatDuration(slot.minutes)} consulting session`,
+    name: `${formatDuration(slot.minutes)} conversation with PGS`,
     price: String(slot.priceInr),
     priceCurrency: 'INR',
     url: `${BASE}/work/book-consulting`,
@@ -46,28 +47,59 @@ export default function BookConsultingPage() {
       {/* Breadcrumb */}
       <div className="max-w-5xl mx-auto px-6 pt-6 pb-2">
         <p className="text-sm text-[#5F5E5A]">
-          <Link href="/work" className="hover:text-[#633806]">Work</Link> / Book a consulting session
+          <Link href="/work" className="hover:text-[#633806]">Work</Link> / A conversation with PGS
         </p>
       </div>
 
       {/* Hero */}
       <section className="max-w-5xl mx-auto px-6 py-12">
-        <p className="text-xs font-medium tracking-widest uppercase text-[#1D9E75] mb-4">
-          Paid Consulting
-        </p>
-        <h1 className="font-lora text-4xl font-bold text-[#2C2C2A] leading-snug mb-6 max-w-3xl">
-          Dedicated time to think through the problem in front of you
-        </h1>
-        <p className="text-base text-[#5F5E5A] leading-relaxed max-w-2xl mb-4">
-          Some questions do not need a full engagement — they need a focused conversation with
-          someone who has seen the pattern before. This is paid advisory time with Subramaniam P G:
-          you bring the situation, he brings two decades of implementing OKRs and coaching
-          leadership teams, and you leave with a clear next step.
-        </p>
-        <p className="text-sm text-[#5F5E5A] leading-relaxed max-w-2xl">
-          Sessions are booked in 30-minute blocks at <strong>₹1,000 per block</strong>. Choose
-          30, 60, or 90 minutes below.
-        </p>
+        <div className="grid lg:grid-cols-5 gap-8 lg:gap-12 items-center">
+          <div className="lg:col-span-2 lg:order-last flex justify-center lg:justify-end">
+            <Image
+              src="/images/PGS Coach.png"
+              alt="Subramaniam P G — Growth Architect and Executive Coach"
+              width={280}
+              height={280}
+              className="rounded-2xl object-cover object-top"
+              style={{ width: 240, height: 240 }}
+              priority
+            />
+          </div>
+
+          <div className="lg:col-span-3">
+            <p className="text-xs font-medium tracking-widest uppercase text-[#1D9E75] mb-4">
+              Paid Consulting
+            </p>
+            <h1 className="font-lora text-4xl font-bold text-[#2C2C2A] leading-snug mb-6">
+              A Conversation with PGS
+            </h1>
+            <p className="text-base text-[#5F5E5A] leading-relaxed mb-4">
+              Some questions do not need a full engagement — they need a focused conversation with
+              someone who has seen the pattern before. You bring the situation; Subramaniam P G
+              brings two decades of implementing OKRs and coaching leadership teams. You leave with
+              a clear next step.
+            </p>
+            <p className="text-sm text-[#5F5E5A] leading-relaxed">
+              Booked in 30-minute blocks at <strong>₹1,000 per block</strong> (plus GST). Choose
+              30, 60, or 90 minutes below.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Policy — seen before payment */}
+      <section className="max-w-5xl mx-auto px-6 pb-6">
+        <div
+          className="rounded-xl p-5 text-sm leading-relaxed"
+          style={{ backgroundColor: '#FAEEDA', color: '#633806', border: '1px solid #E7C9A0' }}
+        >
+          <strong>Before you book.</strong> This time is reserved specifically for you and is
+          non-refundable. If you need to reschedule, contact PGS directly at{' '}
+          <a href="mailto:pgs@embiggen.co.in" className="font-medium underline">
+            pgs@embiggen.co.in
+          </a>
+          .
+        </div>
       </section>
 
       {/* Selector */}
@@ -76,7 +108,7 @@ export default function BookConsultingPage() {
       {/* What you can use it for */}
       <section className="max-w-5xl mx-auto px-6 pb-16">
         <h2 className="font-lora text-2xl font-bold text-[#2C2C2A] mb-6">
-          What people bring to these sessions
+          What people bring to these conversations
         </h2>
         <div className="grid sm:grid-cols-2 gap-3">
           {[
@@ -103,18 +135,18 @@ export default function BookConsultingPage() {
           {[
             {
               num: '01',
-              title: 'Pick a duration',
+              title: 'Pick a length',
               body: 'Choose 30, 60, or 90 minutes depending on how much ground you need to cover.',
             },
             {
               num: '02',
-              title: 'Choose a time and pay',
-              body: 'The booking page shows available slots. Payment is collected online before the slot is confirmed.',
+              title: 'Pay online',
+              body: 'You are taken to a secure payment page. The amount shown includes GST.',
             },
             {
               num: '03',
-              title: 'Get the invite',
-              body: 'A calendar invite with the video link arrives immediately. Send any context ahead of the call.',
+              title: 'Pick a time',
+              body: 'Once payment is confirmed you get the link to choose a slot. A calendar invite with the video link follows.',
             },
           ].map((card) => (
             <div key={card.num} className="bg-white border rounded-xl p-5" style={{ borderColor: '#E8E4DC' }}>
@@ -123,21 +155,6 @@ export default function BookConsultingPage() {
               <p className="text-sm text-[#5F5E5A] leading-relaxed">{card.body}</p>
             </div>
           ))}
-        </div>
-      </section>
-
-      {/* Rescheduling */}
-      <section className="max-w-5xl mx-auto px-6 pb-16">
-        <div
-          className="border rounded-lg p-4 text-sm text-[#5F5E5A] max-w-2xl"
-          style={{ borderColor: '#1D9E75', backgroundColor: '#E1F5EE' }}
-        >
-          <strong className="text-[#0F6E56]">Rescheduling.</strong> You can reschedule from the
-          link in your confirmation email. For any other change, email{' '}
-          <a href="mailto:pgs@embiggen.co.in" className="font-medium text-[#0F6E56]">
-            pgs@embiggen.co.in
-          </a>
-          .
         </div>
       </section>
 

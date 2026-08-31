@@ -349,7 +349,7 @@ export default function StrategyConsultingPage() {
             {[
               { title: 'Take the PACE Assessment', body: 'Find your maturity level and your most important next step.', link: '/work/strategy-consulting/assessment', label: 'Start the assessment' },
               { title: 'Read about the approach', body: 'Understand how the work unfolds before you decide.', link: '/work/strategy-consulting/approach', label: 'See the approach' },
-              { title: 'Book a consulting session', body: 'Focused paid advisory time — 30, 60, or 90 minutes.', link: '/work/book-consulting', label: 'See options' },
+              { title: 'A conversation with PGS', body: 'A focused paid conversation — 30, 60, or 90 minutes.', link: '/work/book-consulting', label: 'See options' },
             ].map((c, i) => (
               <div key={i} style={{ background: '#3a3a38', borderRadius: '8px', padding: '1.75rem' }}>
                 <h3 style={{ fontFamily: 'Lora, serif', fontSize: '1.05rem', fontWeight: 700, color: '#fff', margin: '0 0 0.6rem' }}>{c.title}</h3>

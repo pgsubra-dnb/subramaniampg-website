@@ -26,8 +26,8 @@ export default function BookConsultingClient() {
           Choose how long you need
         </h2>
         <p className="text-sm mb-6" style={{ color: MUTED }}>
-          Sessions are booked in 30-minute blocks at {formatInr(1000)} per block. Payment is
-          collected on the booking page before the slot is confirmed.
+          Conversations are booked in 30-minute blocks at {formatInr(1000)} per block plus GST.
+          Payment is collected before a time is confirmed.
         </p>
 
         <div
@@ -89,8 +89,8 @@ export default function BookConsultingClient() {
         )}
 
         <p className="text-xs mt-3" style={{ color: MUTED }}>
-          You will be taken to the secure booking page to pick a time and pay. A calendar
-          invite with the meeting link follows immediately.
+          You will be taken to a secure payment page. Once payment is confirmed you get the link
+          to choose a time, and a calendar invite with the video link follows.
         </p>
 
         <div className="mt-6 pt-4 border-t text-sm" style={{ borderColor: HAIRLINE }}>

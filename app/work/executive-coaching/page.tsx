@@ -379,7 +379,7 @@ export default function ExecutiveCoachingPage() {
             className="inline-flex items-center px-6 py-3 rounded font-medium text-sm"
             style={{ backgroundColor: '#633806', color: '#FAEEDA' }}
           >
-            Book a consulting session →
+            Book a conversation with PGS →
           </Link>
         </div>
       </section>
