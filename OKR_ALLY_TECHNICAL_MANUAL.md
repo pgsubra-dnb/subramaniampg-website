@@ -519,13 +519,15 @@ established practice for anything user-visible — see checklist §7.
 
 ## 17. Known gaps / follow-ons
 
-- **`/work/book-consulting` paid flow** (PR #12, draft): the page exists; the
-  Razorpay-Payment-Link → server verify → reveal Cal.id link → GST invoice flow
-  is **not built** — gated on confirming each Payment Link's `callback_url` and
-  on PGS sending the three free Cal.id event URLs. `lib/consultingBooking.ts`
-  holds the amounts + link references. This would be OKR Ally's invoice pipeline
-  adapted for a non-account purchase (buyer from the Razorpay payment object,
-  place of supply = supplier state).
+- **`/work/book-consulting` paid flow** (PR #12): built. Razorpay Payment Link →
+  `/work/book-consulting/confirmed` verifies the Payment Links signature, matches
+  the paid amount to a duration, issues the GST invoice via **this** pipeline
+  (`createAndSendInvoice` with `userId: null` + a `serviceLabel` override; GST
+  back-calculated from the inclusive amount, place of supply = supplier state),
+  and emails the free Cal.id booking link. `lib/consultingCheckout.ts` +
+  `lib/consultingBooking.ts`. The one open item is a real end-to-end payment
+  test (PGS's — it's a funds transfer). Optional: a `payment_link.paid` webhook
+  as a closed-tab fallback.
 - No admin "request a personal review" flow for users.
 - Preview deployments can't exercise OKR Ally (env gap — by design, noted here so
   nobody spends time debugging it).
