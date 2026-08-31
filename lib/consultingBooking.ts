@@ -32,42 +32,57 @@ export type ConsultingSlot = {
    */
   amountInInr: number
   /**
-   * Razorpay Payment Link (rzp.io short URL) for this exact duration.
-   * `null` until the link's `callback_url` is confirmed/configured to point at
-   * the payment-confirmation route (see below) — the booking page keeps the
-   * option visible but disables its pay button until then.
+   * Razorpay Payment Link (rzp.io short URL) for this exact duration — where the
+   * customer pays. `null` disables the pay button ("Booking opens shortly").
    */
   razorpayPaymentLink: string | null
+  /** The Payment Link's Razorpay id (plink_…), for reference / dashboard lookup. */
+  razorpayPaymentLinkId: string
   /**
-   * Free Cal.id event type for this duration, revealed to the customer only
-   * AFTER their payment is verified. `null` until PGS creates the three events
-   * and sends the URLs. Cal.id itself has no payment gate.
+   * Free Cal.id event for this duration, revealed to the customer only AFTER
+   * their payment is verified server-side (see lib/consultingCheckout.ts). Cal.id
+   * itself has no payment gate.
    */
-  calUrl: string | null
+  calUrl: string
 }
 
 // ────────────────────────────────────────────────────────────────────────────
 // Razorpay Payment Links (amounts are ₹base + 18% GST). The first set (created
 // 2026-08-31, short codes pkAJGdUg/fhELv8uU/RZz1ViqS) had NO callback_url and it
 // can't be patched onto an existing link, so they were CANCELLED and recreated
-// 2026-08-31 with `callback_url` + `callback_method: "get"` set at creation:
-//   30 min → ₹1,180 → https://rzp.io/rzp/J8v6UJEI   (plink_TWK1Py3iytXubM)
-//   60 min → ₹2,360 → https://rzp.io/rzp/Wd191mx    (plink_TWK1QhVOyzaq0n)
-//   90 min → ₹3,540 → https://rzp.io/rzp/x1Ty1KM    (plink_TWK1RVVWiylTt5)
+// 2026-08-31 with `callback_url` + `callback_method: "get"` set at creation.
 // callback_url on all three verified by re-fetch =
 //   https://www.subramaniampg.guru/work/book-consulting/confirmed
-//
-// STILL BLOCKED before the pay buttons can go live:
-//   1. The `GET /work/book-consulting/confirmed` route (verify the Payment Links
-//      signature, match the amount, reveal the Cal.id link, issue the invoice).
-//   2. The three free Cal.id event URLs (30/60/90 min) → fill `calUrl` below.
-// Then flip `razorpayPaymentLink` from null to the rzp.io URL.
+// Cal.id event URLs verified live 2026-08-31 (page <title> confirms each duration).
 // ────────────────────────────────────────────────────────────────────────────
 export const CONSULTING_SLOTS: ConsultingSlot[] = [
-  { minutes: 30, amountInInr: 1180, razorpayPaymentLink: null /* https://rzp.io/rzp/J8v6UJEI */, calUrl: null },
-  { minutes: 60, amountInInr: 2360, razorpayPaymentLink: null /* https://rzp.io/rzp/Wd191mx */, calUrl: null },
-  { minutes: 90, amountInInr: 3540, razorpayPaymentLink: null /* https://rzp.io/rzp/x1Ty1KM */, calUrl: null },
+  {
+    minutes: 30,
+    amountInInr: 1180,
+    razorpayPaymentLink: 'https://rzp.io/rzp/J8v6UJEI',
+    razorpayPaymentLinkId: 'plink_TWK1Py3iytXubM',
+    calUrl: 'https://cal.id/pgs/book-time-with-me',
+  },
+  {
+    minutes: 60,
+    amountInInr: 2360,
+    razorpayPaymentLink: 'https://rzp.io/rzp/Wd191mx',
+    razorpayPaymentLinkId: 'plink_TWK1QhVOyzaq0n',
+    calUrl: 'https://cal.id/pgs/book-time-with-me-60-minutes',
+  },
+  {
+    minutes: 90,
+    amountInInr: 3540,
+    razorpayPaymentLink: 'https://rzp.io/rzp/x1Ty1KM',
+    razorpayPaymentLinkId: 'plink_TWK1RVVWiylTt5',
+    calUrl: 'https://cal.id/pgs/book-time-with-me-90-minutes',
+  },
 ]
+
+/** The slot whose GST-inclusive amount matches `inr` exactly, or null. */
+export function slotForAmountInInr(inr: number): ConsultingSlot | null {
+  return CONSULTING_SLOTS.find((s) => s.amountInInr === inr) ?? null
+}
 
 /** GST-inclusive → { base, gst, total }, all in INR, rounded to whole rupees. */
 export function gstFromInclusive(amountInInr: number): { base: number; gst: number; total: number } {
