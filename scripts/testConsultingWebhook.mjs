@@ -20,7 +20,7 @@
  *   CONSULTING_RAZORPAY_WEBHOOK_SECRET || RAZORPAY_WEBHOOK_SECRET
  * so this script picks the candidate the same way (override with WEBHOOK_TEST_SECRET).
  *
- *   --url <u>   target (default https://www.subramaniampg.guru/api/consulting/webhook)
+ *   --url <u>   target (default https://subramaniampg.guru/api/consulting/webhook)
  */
 
 import crypto from 'crypto'
@@ -42,7 +42,7 @@ const urlArg = process.argv.indexOf('--url')
 const url =
   urlArg !== -1 && process.argv[urlArg + 1]
     ? process.argv[urlArg + 1]
-    : 'https://www.subramaniampg.guru/api/consulting/webhook'
+    : 'https://subramaniampg.guru/api/consulting/webhook'
 
 // Deliberately NOT payment_link.paid — the route verifies the signature before
 // it looks at the event, then ignores anything it doesn't handle.

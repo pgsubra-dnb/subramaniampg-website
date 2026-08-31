@@ -19,10 +19,15 @@ export const dynamic = 'force-dynamic'
  * Dashboard setup: a SEPARATE webhook endpoint (Razorpay routes events per URL,
  * and /api/okr-ally/webhook is subscribed to payment.captured + order.paid, not
  * payment_link.paid):
- *   URL    https://www.subramaniampg.guru/api/consulting/webhook
+ *   URL    https://subramaniampg.guru/api/consulting/webhook   <- APEX, no "www."
  *   Event  payment_link.paid
  *   Secret CONSULTING_RAZORPAY_WEBHOOK_SECRET, or reuse RAZORPAY_WEBHOOK_SECRET
  *          (this route accepts either).
+ *
+ * The apex host matters: www.subramaniampg.guru 307-redirects to the apex, and
+ * Razorpay's webhook sender does NOT follow redirects — a "www." URL logs every
+ * delivery as a non-2xx and the signature check here never runs. (The working
+ * OKR Ally webhook is registered on the apex too.)
  */
 
 interface Entity {
