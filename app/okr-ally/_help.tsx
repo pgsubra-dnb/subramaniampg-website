@@ -18,6 +18,10 @@ const TOPICS: Topic[] = [
     blurb: 'What the number means, and how I get to it.',
     items: [
       {
+        q: 'Why not just use Claude or ChatGPT for this?',
+        a: "You can absolutely paste your OKR into a general AI chatbot and ask it to critique it. What you'd get back would be generic, though, since a general assistant has no fixed standard to score you against. I score every OKR against the same five-criteria rubric every time, the same one from Subramaniam's own consulting practice and his book, so your result is comparable across different objectives and different quarters. I also ask follow-up questions when your context is thin, generate a formal PDF report you can keep, and for reviews that come in below a certain quality, Subramaniam himself sometimes adds his own note directly. A general chatbot can't do any of that consistently, because it isn't built around one person's specific coaching standard.",
+      },
+      {
         q: 'How do you score my OKR?',
         a: "I read your objective, key results and initiatives together with the context you gave me, then score five things: Outcome vs Output, Alignment, Measurability, Specificity, and Ambition vs Realism. Each gets a 0–10 with a short reason. Your overall score is a weighted blend of the five — Outcome vs Output and Alignment count for the most, because an OKR that measures activity or points nowhere is the most common way these go wrong.",
       },

@@ -651,6 +651,33 @@ function SimpleStep({
 }
 
 // ── context step ──────────────────────────────────────────
+/** Short guidance shown under the prompt on a fresh context field (beta feedback). */
+function ContextTips({ kind }: { kind: 'company' | 'business' | 'role' }) {
+  return (
+    <div
+      style={{
+        margin: '2px 0 10px',
+        padding: '10px 12px',
+        background: T.emeraldTint,
+        border: `1px solid ${T.emeraldBorder}`,
+        borderRadius: 8,
+        fontSize: 12.5,
+        lineHeight: 1.55,
+        color: T.bubbleText,
+      }}
+    >
+      The more detail you give, the sharper and more specific my review will be — err on the side of
+      over-sharing.
+      {kind === 'company' && (
+        <> A fast way to fill this well: paste a paragraph or two from your company&apos;s website or
+        About page.</>
+      )}{' '}
+      I&apos;ll save this to your profile and reuse it for your next objective, so you only write it
+      once.
+    </div>
+  )
+}
+
 function CtxStep({
   kind,
   state,
@@ -700,7 +727,10 @@ function CtxStep({
   if (state.phase === 'paraphrase' && state.paraphraseSuggested) {
     return (
       <>
-        <AllyRow>Here&apos;s how I&apos;d put that, for clarity. Same meaning — nothing added.</AllyRow>
+        <AllyRow>
+          Here&apos;s how I&apos;d put that, for clarity — same meaning, nothing added. Tweak it in
+          the box if you like, then tell me which version to use:
+        </AllyRow>
         <div
           className="mb-3 rounded-lg p-4 text-sm"
           style={{ background: T.card, border: `1px solid ${T.hairline}`, color: T.charcoal, lineHeight: 1.6 }}
@@ -712,15 +742,15 @@ function CtxStep({
             style={{ width: '100%', border: 'none', outline: 'none', font: 'inherit', color: 'inherit', resize: 'vertical', background: 'transparent' }}
           />
         </div>
-        <div className="flex flex-wrap justify-end gap-2">
-          <Btn variant="ghost" small onClick={() => onParaphrase('ignored', state.raw)}>
-            Keep mine
+        <div className="grid gap-2 sm:grid-cols-3">
+          <Btn onClick={() => onParaphrase('confirmed', state.paraphraseSuggested!)}>
+            Use Ally&apos;s version
           </Btn>
-          <Btn variant="ghost" small onClick={() => onParaphrase('modified', editText)}>
+          <Btn variant="ghost" onClick={() => onParaphrase('modified', editText)}>
             Use my edit
           </Btn>
-          <Btn small onClick={() => onParaphrase('confirmed', state.paraphraseSuggested!)}>
-            Use Ally&apos;s
+          <Btn variant="ghost" onClick={() => onParaphrase('ignored', state.raw)}>
+            Keep my original
           </Btn>
         </div>
       </>
@@ -739,6 +769,7 @@ function CtxStep({
           </span>
         )}
       </AllyRow>
+      {!prefilled && <ContextTips kind={kind} />}
       <div className="mb-2">
         <Field value={state.raw} onChange={onRawChange} multiline max={LIMITS.context} autoFocus />
       </div>
