@@ -33,6 +33,7 @@ import {
  */
 
 const SUPPORT_EMAIL = 'pgs@embiggen.co.in'
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 // ── Fulfilment core ─────────────────────────────────────────────────────────
 
@@ -289,7 +290,20 @@ function nameFromNotes(notes: RzpPayment['notes']): string | null {
   return n.name || n.customer_name || n.full_name || null
 }
 
-export async function confirmConsultingPayment(raw: RawParams): Promise<ConfirmOutcome> {
+export interface ConfirmConsultingOptions {
+  /**
+   * An email the payer typed on the confirmation page when Razorpay collected
+   * none (UPI payments often carry only a phone). Signature-verified the same
+   * way as a normal redirect, so it can only set the email for the payer's own
+   * already-paid transaction. Overrides the link/payment lookup when valid.
+   */
+  emailOverride?: string | null
+}
+
+export async function confirmConsultingPayment(
+  raw: RawParams,
+  opts: ConfirmConsultingOptions = {}
+): Promise<ConfirmOutcome> {
   const params = parseCallbackParams(raw)
   if (!params) return { status: 'invalid' }
 
@@ -340,7 +354,11 @@ export async function confirmConsultingPayment(raw: RawParams): Promise<ConfirmO
   // be issued and no confirmation email goes out.
   let customerEmail = link.customer?.email ?? null
   let customerName = link.customer?.name ?? null
-  if (!customerEmail) {
+
+  const override = opts.emailOverride?.trim()
+  if (override && EMAIL_RE.test(override)) {
+    customerEmail = override
+  } else if (!customerEmail) {
     try {
       const payment = await fetchPayment(params.paymentId, keyId, keySecret)
       customerEmail = payment.email ?? null
@@ -348,7 +366,7 @@ export async function confirmConsultingPayment(raw: RawParams): Promise<ConfirmO
     } catch (e) {
       console.error('consulting confirm: fetchPayment failed', e)
       // Fall through with a null email — fulfilConsultingPayment logs the gap and
-      // the confirmed page tells the payer the email is coming to their pay address.
+      // the confirmed page shows a form asking the payer to enter their email.
     }
   }
 

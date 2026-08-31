@@ -3,6 +3,11 @@ import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
 import { confirmConsultingPayment } from '@/lib/consultingCheckout'
 import { formatDuration, formatInr } from '@/lib/consultingBooking'
+import CollectConsultingEmail from './CollectConsultingEmail'
+
+function first(v: string | string[] | undefined): string {
+  return typeof v === 'string' ? v : Array.isArray(v) ? v[0] ?? '' : ''
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +24,16 @@ export default async function BookingConfirmedPage({
   searchParams: Record<string, string | string[] | undefined>
 }) {
   const outcome = await confirmConsultingPayment(searchParams)
+
+  const signedParams = {
+    razorpay_payment_id: first(searchParams.razorpay_payment_id),
+    razorpay_payment_link_id: first(searchParams.razorpay_payment_link_id),
+    razorpay_payment_link_reference_id: first(searchParams.razorpay_payment_link_reference_id),
+    razorpay_payment_link_status: first(searchParams.razorpay_payment_link_status),
+    razorpay_signature: first(searchParams.razorpay_signature),
+  }
+  const needsEmail =
+    outcome.status === 'confirmed' && !!outcome.slot && !outcome.email && !outcome.invoiceNumber
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#FAF8F5' }}>
@@ -46,17 +61,30 @@ export default async function BookingConfirmedPage({
             >
               Pick a time for your {formatDuration(outcome.slot.minutes)} conversation →
             </a>
-            <p className="text-sm text-[#5F5E5A] leading-relaxed mt-6">
-              {outcome.email
-                ? `A confirmation with this link${
-                    outcome.invoiceNumber ? `, plus your GST invoice ${outcome.invoiceNumber},` : ' and your GST invoice'
-                  } is on the way to ${outcome.email}.`
-                : 'Your confirmation and GST invoice are being sent to the email you paid with.'}{' '}
-              Keep the calendar link handy — you can pick your time whenever suits you.
-            </p>
-            <p className="text-xs text-[#5F5E5A] mt-2">
-              Didn&apos;t get it? Check your spam or junk folder, or wait a minute and try again.
-            </p>
+            {needsEmail ? (
+              <>
+                <p className="text-sm text-[#5F5E5A] leading-relaxed mt-6">
+                  Keep the calendar link handy — you can pick your time whenever suits you.
+                </p>
+                <CollectConsultingEmail params={signedParams} />
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-[#5F5E5A] leading-relaxed mt-6">
+                  {outcome.email
+                    ? `A confirmation with this link${
+                        outcome.invoiceNumber ? `, plus your GST invoice ${outcome.invoiceNumber},` : ' and your GST invoice'
+                      } is on the way to ${outcome.email}.`
+                    : `Your GST invoice${
+                        outcome.invoiceNumber ? ` (${outcome.invoiceNumber})` : ''
+                      } has been emailed to the address you provided.`}{' '}
+                  Keep the calendar link handy — you can pick your time whenever suits you.
+                </p>
+                <p className="text-xs text-[#5F5E5A] mt-2">
+                  Didn&apos;t get it? Check your spam or junk folder, or wait a minute and try again.
+                </p>
+              </>
+            )}
             <div
               className="rounded-xl p-5 text-sm leading-relaxed mt-8"
               style={{ backgroundColor: '#FAEEDA', color: '#633806', border: '1px solid #E7C9A0' }}
