@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
-import { fulfilConsultingPayment } from '@/lib/consultingCheckout'
+import { fulfilConsultingPayment, fetchPayment } from '@/lib/consultingCheckout'
 import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
 
 export const dynamic = 'force-dynamic'
@@ -90,8 +90,21 @@ export async function POST(req: NextRequest) {
 
     // Amount + customer come straight off the webhook body (already signed).
     const amountPaise = Number(link?.amount ?? payment?.amount ?? 0)
-    const customerEmail = link?.customer?.email || payment?.email || null
+    let customerEmail = link?.customer?.email || payment?.email || null
     const customerName = link?.customer?.name || null
+
+    // Belt-and-braces: if the body somehow carried no email, fetch the payment.
+    if (!customerEmail) {
+      const keyId = process.env.RAZORPAY_KEY_ID
+      const keySecret = process.env.RAZORPAY_KEY_SECRET
+      if (keyId && keySecret) {
+        try {
+          customerEmail = (await fetchPayment(paymentId, keyId, keySecret)).email || null
+        } catch (e) {
+          console.error('consulting webhook: fetchPayment fallback failed', e)
+        }
+      }
+    }
 
     const outcome = await fulfilConsultingPayment({
       paymentId,
