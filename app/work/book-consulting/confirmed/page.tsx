@@ -54,6 +54,9 @@ export default async function BookingConfirmedPage({
                 : 'Your confirmation and GST invoice are being sent to the email you paid with.'}{' '}
               Keep the calendar link handy — you can pick your time whenever suits you.
             </p>
+            <p className="text-xs text-[#5F5E5A] mt-2">
+              Didn&apos;t get it? Check your spam or junk folder, or wait a minute and try again.
+            </p>
             <div
               className="rounded-xl p-5 text-sm leading-relaxed mt-8"
               style={{ backgroundColor: '#FAEEDA', color: '#633806', border: '1px solid #E7C9A0' }}
