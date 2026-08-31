@@ -55,6 +55,73 @@ function ctxText(f: ReviewContextSnapshot[keyof ReviewContextSnapshot] | undefin
   return t || '(not provided)'
 }
 
+/**
+ * jsPDF's built-in Helvetica is WinAnsi (cp1252) only. A character outside that
+ * set - the rupee sign (U+20B9), arrows, primes, non-breaking hyphens,
+ * checkmarks, math glyphs - is not merely dropped: jsPDF mis-measures its
+ * width, which throws splitTextToSize's wrap point off AND makes doc.text
+ * render the whole line with runaway letter-spacing that overflows the right
+ * margin. That is the root cause of the beta "inconsistent paragraph
+ * formatting" report (any feedback line quoting a "Rs 1.4 crore" figure, etc.).
+ * The web report is unaffected (real fonts), so only the PDF path needs this.
+ *
+ * Transliterate the common offenders to ASCII, keep the cp1252 "extras" jsPDF
+ * can render (en/em dash, ellipsis, curly quotes, bullet, euro, tm), replace
+ * anything else outside cp1252 with a space. Same spirit as money()/moneyPdf()
+ * in lib/okrAllyInvoice.ts.
+ */
+const WINANSI_EXTRAS = new Set([
+  0x20ac, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160,
+  0x2039, 0x0152, 0x017d, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014,
+  0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x017e, 0x0178,
+])
+const PDF_CHAR_MAP: Record<string, string> = {
+  '→': '->', '←': '<-', '↑': '^', '↓': 'v', '↔': '<->',
+  '⇒': '=>', '⇐': '<=', '⇔': '<=>',
+  '⟶': '->', '⟵': '<-', '➔': '->', '➙': '->', '➜': '->',
+  '′': "'", '″': '"', '‵': "'", '‶': '"',
+  '‑': '-', '‒': '-', '―': '-', '−': '-', '⁃': '-',
+  '▪': '-', '●': '-', '‣': '-', '‧': '-',
+  '≤': '<=', '≥': '>=', '≠': '!=', '≈': '~', '∞': 'infinity',
+  '✖': 'x',
+  '✓': 'yes', '✔': 'yes', '✅': 'yes',
+  '✗': 'no', '✘': 'no', '❌': 'no',
+  ' ': ' ', ' ': ' ', ' ': ' ', ' ': ' ', ' ': ' ', ' ': ' ', '　': ' ',
+  '­': '', '​': '', '‌': '', '‍': '', '﻿': '',
+}
+
+/** Make model/user text renderable by jsPDF's WinAnsi standard font. */
+export function pdfSafe(input: string | null | undefined): string {
+  if (!input) return ''
+  const s = input.replace(/\r\n?/g, '\n').replace(/₹\s*/g, 'Rs. ')
+  let out = ''
+  for (const ch of s) {
+    const code = ch.codePointAt(0)!
+    if (Object.prototype.hasOwnProperty.call(PDF_CHAR_MAP, ch)) {
+      out += PDF_CHAR_MAP[ch]
+      continue
+    }
+    if (code <= 0x7f || (code >= 0xa0 && code <= 0xff)) {
+      out += ch
+      continue
+    }
+    if (WINANSI_EXTRAS.has(code)) {
+      out += ch
+      continue
+    }
+    if (code < 0xa0) {
+      out += ' ' // C0 / C1 control
+      continue
+    }
+    if (process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
+      console.warn(`[pdfSafe] replaced unsupported U+${code.toString(16).toUpperCase().padStart(4, '0')}`)
+    }
+    out += ' '
+  }
+  return out
+}
+
 export async function renderReportPdf(data: ReportData): Promise<Buffer> {
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
@@ -84,11 +151,14 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
     }
   }
 
+  // Every string that reaches doc.text / splitTextToSize goes through pdfSafe:
+  // model- and user-authored text can carry glyphs jsPDF's standard font cannot
+  // render, which corrupts wrapping and letter-spacing for the whole line.
   const body = (text: string, indent = 0) => {
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(...BODY)
-    for (const l of doc.splitTextToSize(text, CW - indent) as string[]) {
+    for (const l of doc.splitTextToSize(pdfSafe(text), CW - indent) as string[]) {
       guard(6)
       doc.text(l, M + indent, y)
       y += 5.5
@@ -101,7 +171,7 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
     doc.setFontSize(13)
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(...CHARCOAL)
-    doc.text(text, M, y)
+    doc.text(pdfSafe(text), M, y)
     y += 3
     doc.setDrawColor(...RULE)
     doc.line(M, y, PW - M, y)
@@ -113,7 +183,7 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
     doc.setFontSize(9)
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(...BROWN)
-    doc.text(text.toUpperCase(), M, y)
+    doc.text(pdfSafe(text).toUpperCase(), M, y)
     y += 5
   }
 
@@ -261,7 +331,7 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
   doc.setFontSize(11)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(...BODY)
-  doc.text(data.userName, M, y)
+  doc.text(pdfSafe(data.userName), M, y)
   y += 6
   doc.text(data.dateText, M, y)
   y += 14
@@ -310,7 +380,7 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
     doc.setFontSize(10.5)
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(...CHARCOAL)
-    for (const l of doc.splitTextToSize(f.kr_reference, CW) as string[]) {
+    for (const l of doc.splitTextToSize(pdfSafe(f.kr_reference), CW) as string[]) {
       guard(6)
       doc.text(l, M, y)
       y += 5.5
