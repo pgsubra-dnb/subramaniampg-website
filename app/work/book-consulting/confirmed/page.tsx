@@ -24,7 +24,7 @@ export default async function BookingConfirmedPage({
     <div className="min-h-screen" style={{ backgroundColor: '#FAF8F5' }}>
       <NavBar />
       <section className="max-w-3xl mx-auto px-6 py-16">
-        {outcome.status === 'confirmed' ? (
+        {outcome.status === 'confirmed' && outcome.slot ? (
           <>
             <p className="text-xs font-medium tracking-widest uppercase text-[#1D9E75] mb-4">
               Payment confirmed
@@ -65,6 +65,20 @@ export default async function BookingConfirmedPage({
               </a>
               .
             </div>
+          </>
+        ) : outcome.status === 'confirmed' ? (
+          <>
+            <h1 className="font-lora text-3xl font-bold text-[#2C2C2A] leading-snug mb-4">
+              Your payment is confirmed
+            </h1>
+            <p className="text-base text-[#5F5E5A] leading-relaxed mb-6">
+              Your booking link has been emailed to you — check your inbox. If it hasn&apos;t
+              arrived within 15 minutes, email{' '}
+              <a href={`mailto:${SUPPORT}`} className="font-medium" style={{ color: '#0F6E56' }}>
+                {SUPPORT}
+              </a>
+              .
+            </p>
           </>
         ) : outcome.status === 'pending' ? (
           <>
