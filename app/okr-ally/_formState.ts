@@ -129,7 +129,7 @@ export const CTX_PROMPT: Record<'company' | 'business' | 'role', string> = {
   company:
     "Tell me about your company or organisation — what it does, who it serves, roughly how big it is. A few sentences is plenty.",
   business:
-    "Now the business situation this OKR sits inside. What's the goal or pressure driving it this quarter?",
+    "How does this objective connect to your organisation's broader goals or priorities, and what impact is it meant to have?",
   role:
     "And your own role — what you're accountable for, and what you can and can't directly influence.",
 }
