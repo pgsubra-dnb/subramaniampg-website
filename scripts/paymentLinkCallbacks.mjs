@@ -28,10 +28,12 @@ const CALLBACK_URL = 'https://www.subramaniampg.guru/work/book-consulting/confir
 
 // The three links from PR #12 / lib/consultingBooking.ts, keyed by the rzp.io
 // short code and the expected GST-inclusive amount (paise).
+// Current (callback-wired) links — recreated 2026-08-31. The first set
+// (pkAJGdUg / fhELv8uU / RZz1ViqS) was cancelled.
 const EXPECTED = [
-  { minutes: 30, shortCode: 'pkAJGdUg', amountPaise: 118000 },
-  { minutes: 60, shortCode: 'fhELv8uU', amountPaise: 236000 },
-  { minutes: 90, shortCode: 'RZz1ViqS', amountPaise: 354000 },
+  { minutes: 30, shortCode: 'J8v6UJEI', amountPaise: 118000 },
+  { minutes: 60, shortCode: 'Wd191mx', amountPaise: 236000 },
+  { minutes: 90, shortCode: 'x1Ty1KM', amountPaise: 354000 },
 ]
 
 const AUTH = 'Basic ' + Buffer.from(`${KEY_ID}:${KEY_SECRET}`).toString('base64')

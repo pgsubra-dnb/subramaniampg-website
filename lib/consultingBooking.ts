@@ -47,22 +47,26 @@ export type ConsultingSlot = {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Razorpay Payment Links created 2026-08-31 (amounts are ₹base + 18% GST):
-//   30 min → ₹1,180 → https://rzp.io/rzp/pkAJGdUg
-//   60 min → ₹2,360 → https://rzp.io/rzp/fhELv8uU
-//   90 min → ₹3,540 → https://rzp.io/rzp/RZz1ViqS
+// Razorpay Payment Links (amounts are ₹base + 18% GST). The first set (created
+// 2026-08-31, short codes pkAJGdUg/fhELv8uU/RZz1ViqS) had NO callback_url and it
+// can't be patched onto an existing link, so they were CANCELLED and recreated
+// 2026-08-31 with `callback_url` + `callback_method: "get"` set at creation:
+//   30 min → ₹1,180 → https://rzp.io/rzp/J8v6UJEI   (plink_TWK1Py3iytXubM)
+//   60 min → ₹2,360 → https://rzp.io/rzp/Wd191mx    (plink_TWK1QhVOyzaq0n)
+//   90 min → ₹3,540 → https://rzp.io/rzp/x1Ty1KM    (plink_TWK1RVVWiylTt5)
+// callback_url on all three verified by re-fetch =
+//   https://www.subramaniampg.guru/work/book-consulting/confirmed
 //
-// BLOCKED until PGS confirms, for EACH link:
-//   1. `callback_url` is set to  https://www.subramaniampg.guru/work/book-consulting/confirmed
-//      with `callback_method: "get"`  (API-only field on standard Payment Links —
-//      not editable from the dashboard list view; see the item-4 notes in PR #12).
+// STILL BLOCKED before the pay buttons can go live:
+//   1. The `GET /work/book-consulting/confirmed` route (verify the Payment Links
+//      signature, match the amount, reveal the Cal.id link, issue the invoice).
 //   2. The three free Cal.id event URLs (30/60/90 min) → fill `calUrl` below.
-// Flip `razorpayPaymentLink` from null to the rzp.io URL once (1) is confirmed.
+// Then flip `razorpayPaymentLink` from null to the rzp.io URL.
 // ────────────────────────────────────────────────────────────────────────────
 export const CONSULTING_SLOTS: ConsultingSlot[] = [
-  { minutes: 30, amountInInr: 1180, razorpayPaymentLink: null /* https://rzp.io/rzp/pkAJGdUg */, calUrl: null },
-  { minutes: 60, amountInInr: 2360, razorpayPaymentLink: null /* https://rzp.io/rzp/fhELv8uU */, calUrl: null },
-  { minutes: 90, amountInInr: 3540, razorpayPaymentLink: null /* https://rzp.io/rzp/RZz1ViqS */, calUrl: null },
+  { minutes: 30, amountInInr: 1180, razorpayPaymentLink: null /* https://rzp.io/rzp/J8v6UJEI */, calUrl: null },
+  { minutes: 60, amountInInr: 2360, razorpayPaymentLink: null /* https://rzp.io/rzp/Wd191mx */, calUrl: null },
+  { minutes: 90, amountInInr: 3540, razorpayPaymentLink: null /* https://rzp.io/rzp/x1Ty1KM */, calUrl: null },
 ]
 
 /** GST-inclusive → { base, gst, total }, all in INR, rounded to whole rupees. */
