@@ -824,50 +824,92 @@ function KrStep({
                   </button>
                 )}
               </div>
-              {kr.initiatives.map((init, k) => (
-                <div key={k} className="mt-2 flex items-center gap-2">
-                  <span style={{ color: T.muted, fontSize: 13 }}>–</span>
-                  <div className="flex-1">
-                    <Field
-                      value={init}
-                      onChange={(v) =>
-                        setKr(i, { initiatives: kr.initiatives.map((x, m) => (m === k ? v.slice(0, LIMITS.initiative + 20) : x)) })
-                      }
-                      max={LIMITS.initiative}
-                      placeholder="Optional initiative"
-                    />
-                  </div>
-                  <button
-                    onClick={() => setKr(i, { initiatives: kr.initiatives.filter((_, m) => m !== k) })}
-                    style={{ fontSize: 11.5, color: T.muted, background: 'none', border: 'none', cursor: 'pointer' }}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-              {kr.initiatives.length < LIMITS.initiativesPerKr && (
-                <button
-                  onClick={() => setKr(i, { initiatives: [...kr.initiatives, ''] })}
-                  style={{ marginTop: 8, fontSize: 12, color: T.emeraldDark, background: 'none', border: 'none', cursor: 'pointer' }}
+
+              {/* Initiatives — visibly nested inside THIS KR's card, subordinate */}
+              <div className="mt-3 pl-3" style={{ borderLeft: `2px solid ${T.hairline}` }}>
+                <div
+                  style={{
+                    fontSize: 10.5,
+                    fontWeight: 600,
+                    letterSpacing: '.05em',
+                    textTransform: 'uppercase',
+                    color: T.muted,
+                  }}
                 >
-                  + add initiative
-                </button>
-              )}
+                  Initiatives for KR{i + 1}{' '}
+                  <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
+                </div>
+                {kr.initiatives.map((init, k) => (
+                  <div key={k} className="mt-2 flex items-center gap-2">
+                    <span style={{ color: T.muted, fontSize: 13 }}>–</span>
+                    <div className="flex-1">
+                      <Field
+                        value={init}
+                        onChange={(v) =>
+                          setKr(i, { initiatives: kr.initiatives.map((x, m) => (m === k ? v.slice(0, LIMITS.initiative + 20) : x)) })
+                        }
+                        max={LIMITS.initiative}
+                        placeholder="Optional initiative"
+                      />
+                    </div>
+                    <button
+                      onClick={() => setKr(i, { initiatives: kr.initiatives.filter((_, m) => m !== k) })}
+                      style={{ fontSize: 11.5, color: T.muted, background: 'none', border: 'none', cursor: 'pointer' }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                {kr.initiatives.length < LIMITS.initiativesPerKr && (
+                  <button
+                    onClick={() => setKr(i, { initiatives: [...kr.initiatives, ''] })}
+                    style={{
+                      marginTop: 6,
+                      fontSize: 11.5,
+                      fontWeight: 400,
+                      color: T.muted,
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                  >
+                    + Add an initiative for KR{i + 1}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
       ))}
-      <div className="flex items-center justify-between">
+
+      {/* The one, prominent way to add another KR — full width, below the whole list */}
+      <div className="mb-4">
         {krs.length < LIMITS.krsMax ? (
           <button
             onClick={() => onChange([...krs, { text: '', initiatives: [] }])}
-            style={{ fontSize: 13, color: T.emeraldDark, fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}
+            style={{
+              width: '100%',
+              padding: '12px 14px',
+              fontSize: 14,
+              fontWeight: 700,
+              color: T.emeraldDark,
+              background: T.emeraldTint,
+              border: `1px dashed ${T.emeraldBorder}`,
+              borderRadius: 10,
+              cursor: 'pointer',
+            }}
           >
-            + add Key Result
+            + Add another Key Result
           </button>
         ) : (
-          <span style={{ fontSize: 11.5, color: T.muted }}>6 is the maximum</span>
+          <div style={{ fontSize: 11.5, color: T.muted, textAlign: 'center', padding: 8 }}>
+            6 Key Results is the maximum.
+          </div>
         )}
+      </div>
+
+      <div className="flex justify-end">
         <Btn onClick={onNext}>Review everything</Btn>
       </div>
     </>
