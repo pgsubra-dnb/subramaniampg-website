@@ -4,6 +4,7 @@ import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 import { putPdf } from '@/lib/okrAllyBlob'
 import { PACKS } from '@/lib/okrAllyBilling'
 import { GST_STATES, stateCode, stateCodeFromGstin } from '@/lib/indiaGstStates'
+import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
 
 /**
  * OKR Ally GST invoice generation (build sequence step 5, extended in migration
@@ -52,7 +53,9 @@ export interface InvoiceRow {
 }
 
 export interface CreateInvoiceInput {
-  userId: string
+  /** The OKR Ally user, or null for a standalone purchase (e.g. a consulting
+   *  booking) that has no OKR Ally account. `invoices.user_id` is nullable. */
+  userId: string | null
   /** Razorpay payment id for a paid purchase, or null for a ₹0 coupon invoice. */
   razorpayPaymentId: string | null
   /** Submission id — the idempotency key when razorpayPaymentId is null. */
@@ -75,11 +78,25 @@ export interface CreateInvoiceInput {
   placeOfSupply: string
   buyerName: string
   buyerEmail: string
+  /** Line-item label on the PDF. Defaults to the OKR Ally review wording.
+   *  The SAC code (when set) is still appended automatically. NOTE: this is not
+   *  persisted on the row, so a regenerated PDF falls back to the default —
+   *  fine for OKR Ally (unchanged) and for consulting invoices, which have no
+   *  authenticated download route (user_id is null). */
+  serviceLabel?: string
+  /** "…is attached (PDF)" preamble in the email, e.g. "for your OKR Ally
+   *  purchase" (default) or "for your 30 minutes conversation with PGS". */
+  emailDescriptor?: string
+  /** Suffix on the email subject after the invoice number. Default " — OKR Ally". */
+  emailSubjectTag?: string
 }
 
 export type CreateInvoiceResult =
   | { ok: true; created: boolean; invoice: InvoiceRow }
-  | { ok: false; reason: 'supplier-not-configured' | 'invalid-place-of-supply' | 'error' }
+  | {
+      ok: false
+      reason: 'supplier-not-configured' | 'invalid-place-of-supply' | 'blocked-nonprod' | 'error'
+    }
 
 function ym(date: Date): string {
   const yy = String(date.getUTCFullYear()).slice(-2)
@@ -142,7 +159,8 @@ const pct = (v: number | string) => String(Number(v))
 /** Render the invoice as a base64-encoded PDF (A4, jsPDF — same conventions as app/assessment/page.tsx). */
 export async function renderInvoicePdf(
   inv: InvoiceRow,
-  buyer: { name: string; email: string }
+  buyer: { name: string; email: string },
+  serviceLabel?: string
 ): Promise<string> {
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
@@ -206,7 +224,7 @@ export async function renderInvoicePdf(
   y += 8
 
   // ── line items + discount ladder ──────────────────────────────────────
-  const itemLabel = `OKR Ally — OKR review${inv.supplier_sac_code ? ` (SAC ${inv.supplier_sac_code})` : ''}`
+  const itemLabel = `${serviceLabel ?? 'OKR Ally — OKR review'}${inv.supplier_sac_code ? ` (SAC ${inv.supplier_sac_code})` : ''}`
   const disc = inv.discount_percent != null ? Number(inv.discount_percent) : null
   const hasDiscount = disc != null && disc > 0
 
@@ -294,6 +312,17 @@ async function fetchExistingInvoice(
  */
 export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<CreateInvoiceResult> {
   try {
+    // Backstop: never mint a real invoice from a non-prod process or a fake id.
+    try {
+      assertFulfillmentAllowed('createAndSendInvoice', input.razorpayPaymentId)
+    } catch (e) {
+      if (e instanceof FulfillmentBlockedError) {
+        console.error(e.message)
+        return { ok: false, reason: 'blocked-nonprod' }
+      }
+      throw e
+    }
+
     if (!input.razorpayPaymentId && !input.submissionId) {
       console.error('OKR Ally invoice: needs a razorpayPaymentId or a submissionId')
       return { ok: false, reason: 'error' }
@@ -407,7 +436,11 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<C
     if (!created) return { ok: true, created: false, invoice: row }
 
     try {
-      const pdfBase64 = await renderInvoicePdf(row, { name: input.buyerName, email: input.buyerEmail })
+      const pdfBase64 = await renderInvoicePdf(
+        row,
+        { name: input.buyerName, email: input.buyerEmail },
+        input.serviceLabel
+      )
 
       // Store to Vercel Blob (step 7 — same store as the review report). Best
       // effort; the download route regenerates from the row if pdf_url is null.
@@ -423,9 +456,11 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<C
       }
 
       const isFree = Number(row.total_amount) === 0
-      const forWhat = isFree
-        ? `for your first OKR Ally review${row.coupon_code ? ` (covered in full by coupon ${row.coupon_code})` : ''}`
-        : 'for your OKR Ally purchase'
+      const forWhat =
+        input.emailDescriptor ??
+        (isFree
+          ? `for your first OKR Ally review${row.coupon_code ? ` (covered in full by coupon ${row.coupon_code})` : ''}`
+          : 'for your OKR Ally purchase')
       const amountLine = isFree
         ? `Amount: <strong>${money(0)}</strong> — this review was free; the invoice is for your records.`
         : `Amount: <strong>${money(row.total_amount)}</strong> (incl. GST). Place of supply: ${row.place_of_supply}.`
@@ -436,7 +471,7 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<C
       await sendBrevoEmail({
         to: input.buyerEmail,
         toName: input.buyerName,
-        subject: `Tax invoice ${row.invoice_number} — OKR Ally`,
+        subject: `Tax invoice ${row.invoice_number}${input.emailSubjectTag ?? ' — OKR Ally'}`,
         htmlContent: `
           <div style="font-family:Inter,Arial,sans-serif;color:#2C2C2A;line-height:1.6;">
             <p>Your GST invoice <strong>${row.invoice_number}</strong> ${forWhat} is attached (PDF).</p>

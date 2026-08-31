@@ -4,6 +4,7 @@ import Razorpay from 'razorpay'
 import { getUserById } from '@/lib/okrAlly'
 import { grantCredits, getPack } from '@/lib/okrAllyBilling'
 import { createAndSendInvoice } from '@/lib/okrAllyInvoice'
+import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
 
 export const dynamic = 'force-dynamic'
 
@@ -72,6 +73,16 @@ export async function POST(req: NextRequest) {
     }
     if (!paymentId) {
       return NextResponse.json({ ok: true, ignored: 'no payment id' })
+    }
+
+    try {
+      assertFulfillmentAllowed('okr-ally webhook', paymentId, orderId)
+    } catch (e) {
+      if (e instanceof FulfillmentBlockedError) {
+        console.error(e.message)
+        return NextResponse.json({ ok: true, ignored: 'fulfillment blocked' })
+      }
+      throw e
     }
 
     const pack = getPack(notes.pack)

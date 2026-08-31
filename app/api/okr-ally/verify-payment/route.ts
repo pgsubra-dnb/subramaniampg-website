@@ -5,6 +5,7 @@ import { getSessionUser, getSiteSettings } from '@/lib/okrAlly'
 import { grantCredits, getPack } from '@/lib/okrAllyBilling'
 import { createAndSendInvoice } from '@/lib/okrAllyInvoice'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
+import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,6 +37,16 @@ export async function POST(req: NextRequest) {
 
     if (expectedSignature !== razorpay_signature) {
       return NextResponse.json({ success: false, reason: 'Signature mismatch' }, { status: 400 })
+    }
+
+    try {
+      assertFulfillmentAllowed('okr-ally verify-payment', razorpay_payment_id, razorpay_order_id)
+    } catch (e) {
+      if (e instanceof FulfillmentBlockedError) {
+        console.error(e.message)
+        return NextResponse.json({ success: false, reason: 'Fulfillment blocked' }, { status: 503 })
+      }
+      throw e
     }
 
     const razorpay = new Razorpay({

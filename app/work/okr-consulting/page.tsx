@@ -475,15 +475,13 @@ export default function OkrConsultingPage() {
             If you have a sense of what you need and want to explore how we can work together, a
             short call is the best next step.
           </p>
-          <a
-            href="https://cal.id/pgs/short-discussion"
-            target="_blank"
-            rel="noopener noreferrer"
+          <Link
+            href="/work/book-consulting"
             className="inline-flex items-center px-6 py-3 rounded font-medium text-sm"
             style={{ backgroundColor: '#633806', color: '#FAEEDA' }}
           >
-            Book a 30-minute call →
-          </a>
+            Book a conversation with PGS →
+          </Link>
         </div>
       </section>
 

@@ -4,6 +4,7 @@ import { validateCoupon } from '@/lib/okrAllyBilling'
 import { runReview } from '@/lib/okrAllyReview'
 import { generateStoreAndEmailReport } from '@/lib/okrAllyReport'
 import { createAndSendFreeReviewInvoice } from '@/lib/okrAllyInvoice'
+import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
 import {
   validateInput,
   isRateLimited,
@@ -42,6 +43,19 @@ export async function POST(req: NextRequest) {
   const user = await getSessionUser(req)
   if (!user) {
     return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
+  }
+
+  // A review creates a submission + deducts a credit + (for the free review)
+  // mints a ₹0 invoice + stores a PDF. `.env.local` points at prod, so block a
+  // non-prod run unless ALLOW_NONPROD_FULFILLMENT=1 is set (Playwright sets it).
+  try {
+    assertFulfillmentAllowed('okr-ally review')
+  } catch (e) {
+    if (e instanceof FulfillmentBlockedError) {
+      console.error(e.message)
+      return NextResponse.json({ error: 'Reviews are disabled in this environment' }, { status: 503 })
+    }
+    throw e
   }
 
   const body = await req.json().catch(() => ({}))

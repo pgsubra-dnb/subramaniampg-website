@@ -52,7 +52,10 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       stdout: 'ignore',
       stderr: 'pipe',
-      env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '' },
+      // The e2e suite deliberately exercises the real fulfillment paths against
+      // the Neon DB and cleans up after itself (see e2e/helpers.ts), so it opts
+      // past the non-prod fulfillment guard (lib/fulfillmentGuard.ts).
+      env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '', ALLOW_NONPROD_FULFILLMENT: '1' },
     },
     {
       command: `npx next dev -p ${FAIL_PORT}`,
@@ -62,7 +65,7 @@ export default defineConfig({
       stdout: 'ignore',
       stderr: 'pipe',
       // deliberately no ANTHROPIC_API_KEY → runReview() fails fast → refund path
-      env: { ANTHROPIC_API_KEY: '' },
+      env: { ANTHROPIC_API_KEY: '', ALLOW_NONPROD_FULFILLMENT: '1' },
     },
   ],
 })
