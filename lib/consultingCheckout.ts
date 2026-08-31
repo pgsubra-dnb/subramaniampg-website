@@ -249,6 +249,14 @@ interface RzpPaymentLink {
   customer?: { name?: string; email?: string; contact?: string }
 }
 
+interface RzpPayment {
+  status?: string
+  amount?: number
+  email?: string
+  contact?: string
+  notes?: Record<string, string> | unknown[]
+}
+
 async function fetchPaymentLink(id: string, keyId: string, keySecret: string): Promise<RzpPaymentLink> {
   const auth = 'Basic ' + Buffer.from(`${keyId}:${keySecret}`).toString('base64')
   const res = await fetch(`https://api.razorpay.com/v1/payment_links/${encodeURIComponent(id)}`, {
@@ -256,6 +264,29 @@ async function fetchPaymentLink(id: string, keyId: string, keySecret: string): P
   })
   if (!res.ok) throw new Error(`payment_links/${id} → ${res.status}`)
   return (await res.json()) as RzpPaymentLink
+}
+
+/**
+ * The payer's email/contact for a Payment Link payment lives on the PAYMENT, not
+ * the Payment Link — our links are created without a pre-set `customer`, so
+ * `link.customer` is empty even after payment. The redirect callback only carries
+ * `razorpay_payment_id`, so fetch the payment to recover the email the invoice
+ * pipeline needs. (The webhook body already includes the payment entity.)
+ */
+export async function fetchPayment(id: string, keyId: string, keySecret: string): Promise<RzpPayment> {
+  const auth = 'Basic ' + Buffer.from(`${keyId}:${keySecret}`).toString('base64')
+  const res = await fetch(`https://api.razorpay.com/v1/payments/${encodeURIComponent(id)}`, {
+    headers: { Authorization: auth },
+  })
+  if (!res.ok) throw new Error(`payments/${id} → ${res.status}`)
+  return (await res.json()) as RzpPayment
+}
+
+/** Razorpay `notes` is usually an object, but an empty one serialises as `[]`. */
+function nameFromNotes(notes: RzpPayment['notes']): string | null {
+  if (!notes || Array.isArray(notes)) return null
+  const n = notes as Record<string, string>
+  return n.name || n.customer_name || n.full_name || null
 }
 
 export async function confirmConsultingPayment(raw: RawParams): Promise<ConfirmOutcome> {
@@ -304,11 +335,28 @@ export async function confirmConsultingPayment(raw: RawParams): Promise<ConfirmO
   }
   if (link.status !== 'paid') return { status: 'pending' }
 
+  // The payer's email is on the payment, not the (customer-less) link. Fetch it
+  // whenever the link doesn't already carry one — without it the invoice can't
+  // be issued and no confirmation email goes out.
+  let customerEmail = link.customer?.email ?? null
+  let customerName = link.customer?.name ?? null
+  if (!customerEmail) {
+    try {
+      const payment = await fetchPayment(params.paymentId, keyId, keySecret)
+      customerEmail = payment.email ?? null
+      customerName = customerName ?? nameFromNotes(payment.notes)
+    } catch (e) {
+      console.error('consulting confirm: fetchPayment failed', e)
+      // Fall through with a null email — fulfilConsultingPayment logs the gap and
+      // the confirmed page tells the payer the email is coming to their pay address.
+    }
+  }
+
   return fulfilConsultingPayment({
     paymentId: params.paymentId,
     paymentLinkId: params.paymentLinkId,
     amountPaise: Number(link.amount ?? 0),
-    customerEmail: link.customer?.email ?? null,
-    customerName: link.customer?.name ?? null,
+    customerEmail,
+    customerName,
   })
 }
