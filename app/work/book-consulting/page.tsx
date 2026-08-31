@@ -32,7 +32,7 @@ const serviceJsonLd = {
   offers: CONSULTING_SLOTS.map((slot) => ({
     '@type': 'Offer',
     name: `${formatDuration(slot.minutes)} conversation with PGS`,
-    price: String(slot.priceInr),
+    price: String(slot.amountInInr),
     priceCurrency: 'INR',
     url: `${BASE}/work/book-consulting`,
   })),
