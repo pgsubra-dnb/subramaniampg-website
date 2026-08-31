@@ -58,8 +58,20 @@ const masked =
     ? '*'.repeat(candidate.length)
     : candidate.slice(0, 3) + '…' + candidate.slice(-3) + ` (len ${candidate.length})`
 
+// Formatting diagnostics — catch a stray quote / space / CR / newline that a
+// dashboard copy-paste or a CRLF .env file can smuggle into the value.
+const first = candidate.charCodeAt(0)
+const last = candidate.charCodeAt(candidate.length - 1)
+const suspects = []
+if (/\s/.test(candidate)) suspects.push('contains whitespace')
+if (/^["']|["']$/.test(candidate)) suspects.push('surrounding quote')
+if (candidate !== candidate.trim()) suspects.push('leading/trailing whitespace')
+if (candidate.includes('\r')) suspects.push('carriage return (CRLF file?)')
+
 console.log(`POST ${url}`)
-console.log(`candidate secret: ${masked}`)
+console.log(`candidate secret: ${masked}  [first charCode ${first}, last charCode ${last}]`)
+if (suspects.length) console.log(`⚠ value looks off: ${suspects.join('; ')}`)
+else console.log('value formatting: clean (no quotes / spaces / CR)')
 
 const res = await fetch(url, {
   method: 'POST',
