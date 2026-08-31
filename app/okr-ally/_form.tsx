@@ -651,6 +651,33 @@ function SimpleStep({
 }
 
 // ── context step ──────────────────────────────────────────
+/** Short guidance shown under the prompt on a fresh context field (beta feedback). */
+function ContextTips({ kind }: { kind: 'company' | 'business' | 'role' }) {
+  return (
+    <div
+      style={{
+        margin: '2px 0 10px',
+        padding: '10px 12px',
+        background: T.emeraldTint,
+        border: `1px solid ${T.emeraldBorder}`,
+        borderRadius: 8,
+        fontSize: 12.5,
+        lineHeight: 1.55,
+        color: T.bubbleText,
+      }}
+    >
+      The more detail you give, the sharper and more specific my review will be — err on the side of
+      over-sharing.
+      {kind === 'company' && (
+        <> A fast way to fill this well: paste a paragraph or two from your company&apos;s website or
+        About page.</>
+      )}{' '}
+      I&apos;ll save this to your profile and reuse it for your next objective, so you only write it
+      once.
+    </div>
+  )
+}
+
 function CtxStep({
   kind,
   state,
@@ -700,7 +727,10 @@ function CtxStep({
   if (state.phase === 'paraphrase' && state.paraphraseSuggested) {
     return (
       <>
-        <AllyRow>Here&apos;s how I&apos;d put that, for clarity. Same meaning — nothing added.</AllyRow>
+        <AllyRow>
+          Here&apos;s how I&apos;d put that, for clarity — same meaning, nothing added. Tweak it in
+          the box if you like, then tell me which version to use:
+        </AllyRow>
         <div
           className="mb-3 rounded-lg p-4 text-sm"
           style={{ background: T.card, border: `1px solid ${T.hairline}`, color: T.charcoal, lineHeight: 1.6 }}
@@ -712,15 +742,15 @@ function CtxStep({
             style={{ width: '100%', border: 'none', outline: 'none', font: 'inherit', color: 'inherit', resize: 'vertical', background: 'transparent' }}
           />
         </div>
-        <div className="flex flex-wrap justify-end gap-2">
-          <Btn variant="ghost" small onClick={() => onParaphrase('ignored', state.raw)}>
-            Keep mine
+        <div className="grid gap-2 sm:grid-cols-3">
+          <Btn onClick={() => onParaphrase('confirmed', state.paraphraseSuggested!)}>
+            Use Ally&apos;s version
           </Btn>
-          <Btn variant="ghost" small onClick={() => onParaphrase('modified', editText)}>
+          <Btn variant="ghost" onClick={() => onParaphrase('modified', editText)}>
             Use my edit
           </Btn>
-          <Btn small onClick={() => onParaphrase('confirmed', state.paraphraseSuggested!)}>
-            Use Ally&apos;s
+          <Btn variant="ghost" onClick={() => onParaphrase('ignored', state.raw)}>
+            Keep my original
           </Btn>
         </div>
       </>
@@ -739,6 +769,7 @@ function CtxStep({
           </span>
         )}
       </AllyRow>
+      {!prefilled && <ContextTips kind={kind} />}
       <div className="mb-2">
         <Field value={state.raw} onChange={onRawChange} multiline max={LIMITS.context} autoFocus />
       </div>
@@ -793,50 +824,92 @@ function KrStep({
                   </button>
                 )}
               </div>
-              {kr.initiatives.map((init, k) => (
-                <div key={k} className="mt-2 flex items-center gap-2">
-                  <span style={{ color: T.muted, fontSize: 13 }}>–</span>
-                  <div className="flex-1">
-                    <Field
-                      value={init}
-                      onChange={(v) =>
-                        setKr(i, { initiatives: kr.initiatives.map((x, m) => (m === k ? v.slice(0, LIMITS.initiative + 20) : x)) })
-                      }
-                      max={LIMITS.initiative}
-                      placeholder="Optional initiative"
-                    />
-                  </div>
-                  <button
-                    onClick={() => setKr(i, { initiatives: kr.initiatives.filter((_, m) => m !== k) })}
-                    style={{ fontSize: 11.5, color: T.muted, background: 'none', border: 'none', cursor: 'pointer' }}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-              {kr.initiatives.length < LIMITS.initiativesPerKr && (
-                <button
-                  onClick={() => setKr(i, { initiatives: [...kr.initiatives, ''] })}
-                  style={{ marginTop: 8, fontSize: 12, color: T.emeraldDark, background: 'none', border: 'none', cursor: 'pointer' }}
+
+              {/* Initiatives — visibly nested inside THIS KR's card, subordinate */}
+              <div className="mt-3 pl-3" style={{ borderLeft: `2px solid ${T.hairline}` }}>
+                <div
+                  style={{
+                    fontSize: 10.5,
+                    fontWeight: 600,
+                    letterSpacing: '.05em',
+                    textTransform: 'uppercase',
+                    color: T.muted,
+                  }}
                 >
-                  + add initiative
-                </button>
-              )}
+                  Initiatives for KR{i + 1}{' '}
+                  <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
+                </div>
+                {kr.initiatives.map((init, k) => (
+                  <div key={k} className="mt-2 flex items-center gap-2">
+                    <span style={{ color: T.muted, fontSize: 13 }}>–</span>
+                    <div className="flex-1">
+                      <Field
+                        value={init}
+                        onChange={(v) =>
+                          setKr(i, { initiatives: kr.initiatives.map((x, m) => (m === k ? v.slice(0, LIMITS.initiative + 20) : x)) })
+                        }
+                        max={LIMITS.initiative}
+                        placeholder="Optional initiative"
+                      />
+                    </div>
+                    <button
+                      onClick={() => setKr(i, { initiatives: kr.initiatives.filter((_, m) => m !== k) })}
+                      style={{ fontSize: 11.5, color: T.muted, background: 'none', border: 'none', cursor: 'pointer' }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                {kr.initiatives.length < LIMITS.initiativesPerKr && (
+                  <button
+                    onClick={() => setKr(i, { initiatives: [...kr.initiatives, ''] })}
+                    style={{
+                      marginTop: 6,
+                      fontSize: 11.5,
+                      fontWeight: 400,
+                      color: T.muted,
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                  >
+                    + Add an initiative for KR{i + 1}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
       ))}
-      <div className="flex items-center justify-between">
+
+      {/* The one, prominent way to add another KR — full width, below the whole list */}
+      <div className="mb-4">
         {krs.length < LIMITS.krsMax ? (
           <button
             onClick={() => onChange([...krs, { text: '', initiatives: [] }])}
-            style={{ fontSize: 13, color: T.emeraldDark, fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}
+            style={{
+              width: '100%',
+              padding: '12px 14px',
+              fontSize: 14,
+              fontWeight: 700,
+              color: T.emeraldDark,
+              background: T.emeraldTint,
+              border: `1px dashed ${T.emeraldBorder}`,
+              borderRadius: 10,
+              cursor: 'pointer',
+            }}
           >
-            + add Key Result
+            + Add another Key Result
           </button>
         ) : (
-          <span style={{ fontSize: 11.5, color: T.muted }}>6 is the maximum</span>
+          <div style={{ fontSize: 11.5, color: T.muted, textAlign: 'center', padding: 8 }}>
+            6 Key Results is the maximum.
+          </div>
         )}
+      </div>
+
+      <div className="flex justify-end">
         <Btn onClick={onNext}>Review everything</Btn>
       </div>
     </>

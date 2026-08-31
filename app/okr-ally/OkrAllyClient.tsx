@@ -7,11 +7,12 @@ import StepForm from './_form'
 import ReportScreen, { FullReport } from './_report'
 import PricingTab from './_pricing'
 import HistoryTab from './_history'
+import HelpTab from './_help'
 import { AdminList, AdminReviewScreen } from './_admin'
 import { FormState, emptyForm, CtxFieldState } from './_formState'
 
 type Phase = 'loading' | 'intro' | 'email' | 'app' | 'signedout'
-type Tab = 'ally' | 'pricing' | 'history' | 'admin'
+type Tab = 'ally' | 'pricing' | 'history' | 'help' | 'admin'
 
 interface Me {
   authenticated: boolean
@@ -271,6 +272,8 @@ export default function OkrAllyClient() {
         <HistoryTab onOpen={(id) => setReportId(id)} />
       )}
 
+      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'help' && <HelpTab />}
+
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'admin' && isAdmin && (
         <AdminList onOpen={(id) => setAdminId(id)} />
       )}
@@ -293,10 +296,14 @@ function TabBar({ tab, onChange, isAdmin }: { tab: Tab; onChange: (t: Tab) => vo
     ['ally', 'Ally'],
     ['pricing', 'Pricing & Plans'],
     ['history', 'History'],
+    ['help', 'Help'],
     ...(isAdmin ? ([['admin', 'Admin']] as [Tab, string][]) : []),
   ]
   return (
-    <div className="flex gap-1 mb-6" style={{ borderBottom: `1px solid ${T.hairline}` }}>
+    <div
+      className="flex gap-1 mb-6"
+      style={{ borderBottom: `1px solid ${T.hairline}`, overflowX: 'auto' }}
+    >
       {tabs.map(([id, label]) => (
         <button
           key={id}
@@ -306,6 +313,8 @@ function TabBar({ tab, onChange, isAdmin }: { tab: Tab; onChange: (t: Tab) => vo
             fontWeight: 600,
             letterSpacing: '.03em',
             textTransform: 'uppercase',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
             color: tab === id ? T.charcoal : T.muted,
             background: 'none',
             border: 'none',
