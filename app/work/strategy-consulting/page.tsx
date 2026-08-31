@@ -349,12 +349,12 @@ export default function StrategyConsultingPage() {
             {[
               { title: 'Take the PACE Assessment', body: 'Find your maturity level and your most important next step.', link: '/work/strategy-consulting/assessment', label: 'Start the assessment' },
               { title: 'Read about the approach', body: 'Understand how the work unfolds before you decide.', link: '/work/strategy-consulting/approach', label: 'See the approach' },
-              { title: 'Book a discovery call', body: '30 minutes. No commitment required.', link: 'https://cal.id/pgs', label: 'Book a call', external: true },
+              { title: 'Book a consulting session', body: 'Focused paid advisory time — 30, 60, or 90 minutes.', link: '/work/book-consulting', label: 'See options' },
             ].map((c, i) => (
               <div key={i} style={{ background: '#3a3a38', borderRadius: '8px', padding: '1.75rem' }}>
                 <h3 style={{ fontFamily: 'Lora, serif', fontSize: '1.05rem', fontWeight: 700, color: '#fff', margin: '0 0 0.6rem' }}>{c.title}</h3>
                 <p style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.6)', lineHeight: 1.6, marginBottom: '1.25rem' }}>{c.body}</p>
-                <Link href={c.link} target={c.external ? '_blank' : undefined} style={{ color: '#1D9E75', fontWeight: 600, fontSize: '0.9rem', textDecoration: 'none' }}>
+                <Link href={c.link} style={{ color: '#1D9E75', fontWeight: 600, fontSize: '0.9rem', textDecoration: 'none' }}>
                   {c.label} →
                 </Link>
               </div>

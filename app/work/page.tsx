@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
 import TestimonialsCarousel from '@/components/TestimonialsCarousel'
@@ -200,15 +201,13 @@ export default function WorkPage() {
             <p className="text-white/70 leading-relaxed mb-8">
               Every engagement begins with a simple call.
             </p>
-            <a
-              href="https://cal.id/pgs/short-discussion"
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              href="/work/book-consulting"
               className="inline-flex items-center gap-2 px-8 py-4 border-2 border-white text-white font-medium rounded-lg hover:bg-white hover:text-[#633806] transition-colors"
             >
-              Book a call
+              Book a consulting session
               <ArrowIcon />
-            </a>
+            </Link>
           </div>
         </div>
       </section>
