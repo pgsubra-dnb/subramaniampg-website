@@ -162,6 +162,11 @@ export default function ReportScreen({
           {report.emailed
             ? "The full report is in your inbox as a PDF."
             : "Download the full report as a PDF below."}
+          {report.emailed && (
+            <span style={{ display: 'block', fontSize: 12.5, marginTop: 4 }}>
+              Didn&apos;t get it? Check your spam or junk folder, or wait a minute and try again.
+            </span>
+          )}
         </p>
         <div className="flex gap-2">
           <a href={`/api/okr-ally/report/${report.submissionId}`} target="_blank" rel="noopener noreferrer">
