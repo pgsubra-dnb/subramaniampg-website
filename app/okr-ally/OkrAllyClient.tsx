@@ -9,17 +9,27 @@ import PricingTab from './_pricing'
 import HistoryTab from './_history'
 import HelpTab from './_help'
 import { AdminList, AdminReviewScreen } from './_admin'
+import OrgAdminScreen from './_org'
 import { FormState, emptyForm, CtxFieldState } from './_formState'
 
 type Phase = 'loading' | 'intro' | 'email' | 'app' | 'signedout'
-type Tab = 'ally' | 'pricing' | 'history' | 'help' | 'admin'
+type Tab = 'ally' | 'pricing' | 'history' | 'help' | 'admin' | 'company'
 
 interface Me {
   authenticated: boolean
-  user?: { id: string; name: string; email: string; isAdmin: boolean }
+  user?: {
+    id: string
+    name: string
+    email: string
+    isAdmin: boolean
+    isOrgAdmin: boolean
+    organizationId: string | null
+  }
 }
 interface Status {
   creditsRemaining: number
+  personalCredits: number
+  orgCredits: { name: string; credits: number }[]
   freeReviewAvailable: boolean
   links: { booking: string | null; substack: string | null; linkedin: string | null }
 }
@@ -44,6 +54,7 @@ export default function OkrAllyClient() {
   const [verifyError, setVerifyError] = useState<string | null>(null)
 
   const isAdmin = !!me?.user?.isAdmin
+  const isOrgAdmin = !!me?.user?.isOrgAdmin
 
   // Register the minimal service worker — the last PWA-installability criterion
   // (Chrome/Edge, desktop + Android). It does no caching.
@@ -179,8 +190,10 @@ export default function OkrAllyClient() {
 
   const showingReport = phase === 'app' && reportId !== null
   const showingAdmin = phase === 'app' && adminId !== null
-  // Admin tab only makes sense for admins; fall back if the flag isn't (or is no longer) set.
-  const activeTab: Tab = tab === 'admin' && !isAdmin ? 'ally' : tab
+  // Admin / Company tabs only make sense with the matching flag; fall back if
+  // it isn't (or is no longer) set.
+  const activeTab: Tab =
+    (tab === 'admin' && !isAdmin) || (tab === 'company' && !isOrgAdmin) ? 'ally' : tab
 
   return (
     <Page>
@@ -189,8 +202,22 @@ export default function OkrAllyClient() {
         right={
           me?.authenticated ? (
             <>
-              <span style={{ color: T.muted }}>
+              <span
+                style={{ color: T.muted }}
+                title={
+                  status && status.orgCredits.length
+                    ? `${status.personalCredits} personal · ` +
+                      status.orgCredits.map((o) => `${o.credits} from ${o.name}`).join(' · ')
+                    : undefined
+                }
+              >
                 {status?.creditsRemaining ?? 0} credit{(status?.creditsRemaining ?? 0) === 1 ? '' : 's'}
+                {status && status.orgCredits.length > 0 && (
+                  <span style={{ color: T.emeraldDark }}>
+                    {' '}
+                    ({status.orgCredits.reduce((s, o) => s + o.credits, 0)} company)
+                  </span>
+                )}
               </span>
               <a href="/api/okr-ally/logout" style={{ color: T.emeraldDark, fontWeight: 600 }}>
                 Sign out
@@ -203,7 +230,7 @@ export default function OkrAllyClient() {
       <InstallAppBanner />
 
       {me?.authenticated && !showingReport && !showingAdmin && (
-        <TabBar tab={activeTab} onChange={setTab} isAdmin={isAdmin} />
+        <TabBar tab={activeTab} onChange={setTab} isAdmin={isAdmin} isOrgAdmin={isOrgAdmin} />
       )}
 
       {phase === 'signedout' && (
@@ -274,6 +301,10 @@ export default function OkrAllyClient() {
 
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'help' && <HelpTab />}
 
+      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'company' && isOrgAdmin && (
+        <OrgAdminScreen onPoolChange={() => refreshStatus()} />
+      )}
+
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'admin' && isAdmin && (
         <AdminList onOpen={(id) => setAdminId(id)} />
       )}
@@ -291,12 +322,23 @@ export default function OkrAllyClient() {
   )
 }
 
-function TabBar({ tab, onChange, isAdmin }: { tab: Tab; onChange: (t: Tab) => void; isAdmin: boolean }) {
+function TabBar({
+  tab,
+  onChange,
+  isAdmin,
+  isOrgAdmin,
+}: {
+  tab: Tab
+  onChange: (t: Tab) => void
+  isAdmin: boolean
+  isOrgAdmin: boolean
+}) {
   const tabs: [Tab, string][] = [
     ['ally', 'Ally'],
     ['pricing', 'Pricing & Plans'],
     ['history', 'History'],
     ['help', 'Help'],
+    ...(isOrgAdmin ? ([['company', 'Company']] as [Tab, string][]) : []),
     ...(isAdmin ? ([['admin', 'Admin']] as [Tab, string][]) : []),
   ]
   return (

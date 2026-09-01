@@ -33,6 +33,9 @@ export interface InvoiceRow {
   submission_id: string | null
   invoice_number: string
   gstin: string | null
+  /** Buyer's registered address — set for corporate invoices (migration 009),
+   *  null for individual purchases. */
+  buyer_address: string | null
   list_price: string
   discount_percent: string | null
   coupon_code: string | null
@@ -72,6 +75,9 @@ export interface CreateInvoiceInput {
   couponCode: string | null
   /** Buyer's GSTIN if they supplied one at checkout (optional). */
   buyerGstin: string | null
+  /** Buyer's registered address — passed for corporate invoices so the PDF is
+   *  addressed to the company; persisted to invoices.buyer_address. */
+  buyerAddress?: string | null
   /** Buyer's state (name or 2-digit code). Empty string => default to the
    *  supplier's own state (used for the ₹0 free-review invoice, which has no
    *  checkout step and where GST is nil regardless). */
@@ -214,6 +220,12 @@ export async function renderInvoicePdf(
   doc.setFontSize(9)
   doc.text(buyer.name, M, y)
   y += 4.5
+  if (inv.buyer_address) {
+    ;(doc.splitTextToSize(inv.buyer_address, PW - 2 * M) as string[]).forEach((line) => {
+      doc.text(line, M, y)
+      y += 4.5
+    })
+  }
   doc.text(buyer.email, M, y)
   y += 4.5
   if (inv.gstin) {
@@ -391,12 +403,12 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<C
         const number = await nextInvoiceNumber(client, ym(new Date()))
         const inserted = await client.query<InvoiceRow>(
           `INSERT INTO invoices (
-             user_id, razorpay_payment_id, submission_id, invoice_number, gstin,
+             user_id, razorpay_payment_id, submission_id, invoice_number, gstin, buyer_address,
              list_price, discount_percent, coupon_code,
              base_amount, gst_amount, total_amount, place_of_supply,
              cgst_amount, sgst_amount, igst_amount,
              supplier_name, supplier_gstin, supplier_pan, supplier_address, supplier_sac_code
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
            RETURNING *`,
           [
             input.userId,
@@ -404,6 +416,7 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<C
             input.submissionId ?? null,
             number,
             input.buyerGstin,
+            input.buyerAddress ?? null,
             input.listPrice,
             input.discountPercent,
             input.couponCode,

@@ -121,8 +121,18 @@ here.
 ### Credits / payments
 | Table | Key columns | Notes |
 |---|---|---|
-| `user_credit_balance` | `user_id pk→users ON DELETE CASCADE`, `credits_remaining int ≥ 0` | |
-| `credit_transactions` | `id`, `user_id→users`, `razorpay_payment_id`, `submission_id→submissions`, `amount int`, `type` ∈ `purchase`/`usage`/`refund_failed_generation`/`admin_grant`, `note` | Partial unique index `idx_credit_txn_purchase_payment (razorpay_payment_id) WHERE type='purchase'` = the double-credit guard. |
+| `user_credit_balance` | `user_id pk→users ON DELETE CASCADE`, `credits_remaining int ≥ 0` | Personal credits. |
+| `credit_transactions` | `id`, `user_id→users`, `organization_id→organizations` (nullable, migration 009), `razorpay_payment_id`, `submission_id→submissions`, `amount int`, `type` ∈ `purchase`/`usage`/`refund_failed_generation`/`admin_grant`/`org_purchase`, `note` | Partial unique `idx_credit_txn_purchase_payment (razorpay_payment_id) WHERE type='purchase'` = individual double-credit guard; `idx_credit_txn_org_purchase_payment … WHERE type='org_purchase'` = the corporate one. `organization_id` set on org-funded `usage`/`refund` rows + the `org_purchase` row. |
+| `coupon_redemptions` | `id`, `user_id→users`, `coupon_code`, `applied_to_submission→submissions`, `applied_to_order_id` | **Unique `(user_id, coupon_code)`** = one redemption per coupon per user. |
+| `okr_ally_daily_usage` | `(user_id, day) pk`, `calls int` | Durable per-UTC-day cap on the pre-payment Haiku endpoints (migration 004). |
+
+### Organizations / corporate credits (migration 009)
+| Table | Key columns | Notes |
+|---|---|---|
+| `organizations` | `id`, `name`, `gstin UNIQUE`, `registered_address`, `credits_purchased int ≥ 0`, `credits_allocated int ≥ 0`, `chk_org_alloc_le_purchased` | A company. `gstin` is the key — a second corporate purchase on the same GSTIN tops up `credits_purchased`. Pool available = `purchased − allocated`. |
+| `users` +cols | `organization_id→organizations` (nullable "home" org), `is_org_admin bool` | Set the first time an org allocates to / designates the user; never moved by a later allocation. `is_org_admin` gates the Company tab + every `/api/okr-ally/org/*` route (403 otherwise). |
+| `organization_allocations` | `id`, `organization_id→orgs ON DELETE CASCADE`, `user_id→users ON DELETE SET NULL`, `email`, `credits_allocated int` (**+N allocate, −N reclaim**), `allocated_at` | The per (org, email) ledger. `used = SUM(credits_allocated) − org_credit_balance.credits_remaining`. |
+| `org_credit_balance` | `(user_id, organization_id) pk`, `credits_remaining int ≥ 0` | Spendable org-allocated credits. **Distinct from `user_credit_balance` — the two never merge.** |
 | `coupon_redemptions` | `id`, `user_id→users`, `coupon_code`, `applied_to_submission→submissions`, `applied_to_order_id` | **Unique `(user_id, coupon_code)`** = one redemption per coupon per user. |
 | `okr_ally_daily_usage` | `(user_id, day) pk`, `calls int` | Durable per-UTC-day cap on the pre-payment Haiku endpoints (migration 004). |
 
@@ -130,7 +140,7 @@ here.
 | Table | Key columns | Notes |
 |---|---|---|
 | `invoice_counters` | `year_month pk` (`'26-08'`), `last_number int` | Atomic increment → invoice number `OKR/YY-MM/XXXX`. |
-| `invoices` | `id`, `user_id→users **ON DELETE SET NULL** (nullable)`, `razorpay_payment_id UNIQUE (nullable)`, `submission_id→submissions **ON DELETE SET NULL**`, `invoice_number UNIQUE`, `gstin` (buyer), `list_price NOT NULL`, `discount_percent`, `coupon_code`, `base_amount`, `gst_amount`, `total_amount`, `place_of_supply`, `cgst_amount`/`sgst_amount`/`igst_amount`, `supplier_{name,gstin,pan,address,sac_code}`, `pdf_url` | `chk_tax_split`: exactly CGST+SGST **or** IGST. `chk_invoice_key`: `razorpay_payment_id IS NOT NULL OR submission_id IS NOT NULL`. Partial-unique `idx_invoices_submission (submission_id) WHERE NOT NULL`. **Invoices are never deleted or cascaded** (migration 008 — GST retention). |
+| `invoices` | `id`, `user_id→users **ON DELETE SET NULL** (nullable)`, `razorpay_payment_id UNIQUE (nullable)`, `submission_id→submissions **ON DELETE SET NULL**`, `invoice_number UNIQUE`, `gstin` (buyer), `buyer_address` (nullable — set for corporate invoices, migration 009), `list_price NOT NULL`, `discount_percent`, `coupon_code`, `base_amount`, `gst_amount`, `total_amount`, `place_of_supply`, `cgst_amount`/`sgst_amount`/`igst_amount`, `supplier_{name,gstin,pan,address,sac_code}`, `pdf_url` | `chk_tax_split`: exactly CGST+SGST **or** IGST. `chk_invoice_key`: `razorpay_payment_id IS NOT NULL OR submission_id IS NOT NULL`. Partial-unique `idx_invoices_submission (submission_id) WHERE NOT NULL`. **Invoices are never deleted or cascaded** (migration 008 — GST retention). |
 
 ### Feedback
 | Table | Key columns | Notes |
@@ -216,6 +226,37 @@ noted. `[auth]` = 401 without a session; `[admin]` = 403 for non-admins.
 - **GST 18%** added on top: `gstBreakdown(base)` → `{base, gst=round(base*0.18),
   total, amountInPaise}`. Displayed totals: ₹118 / ₹443 / ₹590.
 - Credits never expire. `credits_remaining` has a `CHECK (>= 0)`.
+- **Deduction order on review submission** (`startSubmission`, atomic):
+  free-review coupon → **any org-allocated balance** (`org_credit_balance`, the
+  org with the most remaining, `FOR UPDATE SKIP LOCKED`) → personal
+  `user_credit_balance`. `/api/okr-ally/me` + `/status` return `creditsRemaining`
+  = personal + org (so "can I submit?" is right) plus a `personalCredits` /
+  `orgCredits[]` breakdown; the balances themselves stay separate in the DB.
+
+### Corporate / organization credits (`lib/okrAllyOrg.ts`, migration 009)
+- **Purchase** (`/okr-ally/corporate`, signed-in): three fixed bundles —
+  `b100` ₹6,000 / `b200` ₹11,000 / `b500` ₹25,000 (excl. GST). Nothing
+  self-serve above 500 (the page says email `pgs@embiggen.co.in`). Reuses the
+  Razorpay order → `verify-payment` / `webhook` path; the corporate branch keys
+  on `notes.kind === 'corporate'`. `fulfilCorporatePurchase` (idempotent on
+  `idx_credit_txn_org_purchase_payment`): upsert `organizations` by GSTIN
+  (create or `credits_purchased +=`), write the `org_purchase`
+  `credit_transactions` row, tag the **designated admin** (`resolveOrCreateUser`
+  then `is_org_admin = true`, `organization_id = COALESCE(existing, org)` — an
+  existing personal account keeps everything else), then a GST invoice addressed
+  to the company (`buyer_name` = org, `buyer_gstin`, `buyer_address`).
+- **Company Admin screen** (`_org.tsx`, Company tab, `is_org_admin` only):
+  pool status; **allocate** to an employee email (`allocateOrgCredits` — creates
+  the user, tags them with the org if unset, `+= organization_allocations` /
+  `org_credit_balance`, `−= pool`, emails them); **reclaim** unused
+  (`reclaimOrgCredits` — takes exactly the current `org_credit_balance`, never
+  spent credits, `−N` ledger row, back to pool); **per-employee usage report**
+  (`getEmployeeOrgReport` / `renderOrgReportPdf`) — sourced **only** from
+  `organization_allocations` + `org_credit_balance` for that org, never the
+  employee's personal `user_credit_balance` / `credit_transactions` /
+  submissions.
+- The first-ever review by an org employee still uses the **free-review
+  coupon** (cheaper for the company than an org credit).
 
 ### Coupons
 - Sanity `okrAllyCoupon` must be `active`, anchored to the `okr-ally` course,
