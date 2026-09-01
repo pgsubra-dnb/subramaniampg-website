@@ -86,6 +86,68 @@ export interface FulfilCorporateResult {
   organizationId?: string
   creditsPurchased?: number
   invoiceNumber?: string | null
+  /** True when the pool + admin tag succeeded but the invoice did NOT issue —
+   *  the one corporate step with no automatic retry. When true, PGS has been
+   *  emailed and the `org_purchase` ledger row is stamped. */
+  invoiceUnissued?: boolean
+}
+
+/**
+ * The GST invoice is created just after the guarded fulfilment transaction, so a
+ * failure here (Brevo / Blob / config) leaves the pool + admin tag correct but
+ * no invoice — and a webhook retry sees the guard row and skips the invoice.
+ * This is the only corporate step with no automatic recovery, so make it loud:
+ *  1. stamp the `org_purchase` ledger row (durable, queryable), and
+ *  2. email PGS directly with everything needed to re-issue it by hand.
+ */
+async function alertCorporateInvoiceUnissued(
+  input: FulfilCorporateInput,
+  organizationId: string | undefined,
+  reason: string
+): Promise<void> {
+  console.error('OKR Ally corporate invoice UNISSUED —', input.razorpayPaymentId, reason)
+
+  const detail =
+    `A corporate credit bundle was fulfilled but its GST invoice was NOT issued. Issue it by hand.\n\n` +
+    `Reason: ${reason}\n\n` +
+    `Re-run createAndSendInvoice (idempotent on the payment id, safe to repeat) with:\n` +
+    `  razorpayPaymentId : ${input.razorpayPaymentId}\n` +
+    `  razorpayOrderId   : ${input.razorpayOrderId ?? '(none)'}\n` +
+    `  organizationId    : ${organizationId ?? '(unknown)'}\n` +
+    `  companyName       : ${input.companyName}\n` +
+    `  gstin             : ${input.gstin}\n` +
+    `  registeredAddress : ${input.registeredAddress}\n` +
+    `  placeOfSupply     : ${input.placeOfSupply}\n` +
+    `  credits           : ${input.credits}\n` +
+    `  list / base / gst / total : ${input.listPrice} / ${input.baseAmount} / ${input.gstAmount} / ${input.totalAmount}\n` +
+    `  purchaser         : ${input.purchaserEmail} (user ${input.purchaserUserId})\n` +
+    `  designated admin  : ${input.adminEmail}\n`
+
+  try {
+    await query(
+      `UPDATE credit_transactions
+          SET note = COALESCE(note, '') || $2
+        WHERE razorpay_payment_id = $1 AND type = 'org_purchase'`,
+      [input.razorpayPaymentId, `  [INVOICE NOT ISSUED — ${reason}]`]
+    )
+  } catch (e) {
+    console.error('OKR Ally: could not stamp invoice-unissued note', e)
+  }
+
+  try {
+    await sendBrevoEmail({
+      to: 'pgs@embiggen.co.in',
+      toName: 'Subramaniam P G',
+      subject: `Action needed — OKR Ally corporate invoice not issued (${input.companyName})`,
+      htmlContent: `<pre style="font-family:ui-monospace,Menlo,monospace;font-size:13px;white-space:pre-wrap;color:#2C2C2A;">${detail
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')}</pre>`,
+      textContent: detail,
+      skipBcc: true,
+    })
+  } catch (e) {
+    console.error('OKR Ally: invoice-unissued alert email failed', e)
+  }
 }
 
 /**
@@ -187,9 +249,13 @@ export async function fulfilCorporatePurchase(
         emailDescriptor: `for ${input.companyName.trim()}'s OKR Ally credit bundle`,
       })
       if (inv.ok) invoiceNumber = inv.invoice.invoice_number
-      else console.error('OKR Ally corporate invoice soft-failed:', input.razorpayPaymentId, inv.reason)
+      else await alertCorporateInvoiceUnissued(input, txnResult.organizationId, `soft-fail (${inv.reason})`)
     } catch (err) {
-      console.error('OKR Ally corporate invoice threw:', input.razorpayPaymentId, err)
+      await alertCorporateInvoiceUnissued(
+        input,
+        txnResult.organizationId,
+        `threw: ${err instanceof Error ? err.message : String(err)}`
+      )
     }
   }
 
@@ -198,6 +264,7 @@ export async function fulfilCorporatePurchase(
     alreadyProcessed: txnResult.alreadyProcessed,
     organizationId: txnResult.organizationId,
     creditsPurchased: txnResult.creditsPurchased,
+    invoiceUnissued: !txnResult.alreadyProcessed && invoiceNumber === null,
     invoiceNumber,
   }
 }

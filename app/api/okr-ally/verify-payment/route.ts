@@ -90,6 +90,9 @@ export async function POST(req: NextRequest) {
         alreadyProcessed: r.alreadyProcessed,
         creditsPurchased: r.creditsPurchased,
         invoiceNumber: r.invoiceNumber ?? null,
+        // credits + admin tag are done; the invoice will be issued by hand
+        // (PGS is alerted automatically). Client softens its wording.
+        invoiceUnissued: r.invoiceUnissued ?? false,
       }, r.ok ? undefined : { status: 503 })
     }
 

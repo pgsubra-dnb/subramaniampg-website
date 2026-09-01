@@ -106,7 +106,9 @@ export default function CorporateClient() {
               text:
                 `Payment confirmed — ${order.credits} credits added to ${companyName.trim()}'s pool. ` +
                 `${adminEmail.trim()} is now the company admin and can allocate them from the Company tab in OKR Ally. ` +
-                `The GST invoice is on its way by email.`,
+                (vj.invoiceUnissued
+                  ? `Your GST invoice will follow shortly by email.`
+                  : `The GST invoice is on its way by email.`),
             })
           } else {
             setMsg({

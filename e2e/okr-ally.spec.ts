@@ -805,6 +805,7 @@ function corpFulfil(o: {
   companyName?: string
   credits?: number
   razorpayPaymentId?: string
+  placeOfSupply?: string
 }) {
   return fulfilCorporatePurchase({
     purchaserUserId: o.purchaserUserId,
@@ -814,7 +815,7 @@ function corpFulfil(o: {
     companyName: o.companyName ?? 'Test Corp LLP',
     gstin: o.gstin,
     registeredAddress: '1 Test Road, Bengaluru, Karnataka 560001',
-    placeOfSupply: 'Karnataka',
+    placeOfSupply: o.placeOfSupply ?? 'Karnataka',
     credits: o.credits ?? 100,
     listPrice: 6000,
     baseAmount: 6000,
@@ -859,6 +860,42 @@ test('corporate: purchase creates org + admin + company invoice; same GSTIN tops
   expect((await getOrgByGstin(gstin))!.credits_purchased).toBe(300)
   const n = await pool.query(`SELECT count(*) c FROM organizations WHERE gstin = $1`, [gstin])
   expect(Number(n.rows[0].c)).toBe(1)
+  expect(r1.invoiceUnissued).toBe(false)
+})
+
+test('corporate: an invoice failure flags the ledger + returns invoiceUnissued; pool + admin tag still fine', async ({ context }) => {
+  const buyer = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(buyer.userId)
+  const gstin = testGstin()
+  createdGstins.push(gstin)
+  const adminEmail = `okr-e2e-invfail-${Date.now()}@example.com`
+  const payId = rzId('pay')
+
+  // an unknown place of supply makes createAndSendInvoice soft-fail
+  const r = await corpFulfil({
+    purchaserUserId: buyer.userId,
+    gstin,
+    adminEmail,
+    credits: 100,
+    razorpayPaymentId: payId,
+    placeOfSupply: 'Nowhereland',
+  })
+  expect(r.ok).toBe(true)
+  expect(r.invoiceUnissued).toBe(true)
+
+  // pool + admin tag are correct regardless
+  expect((await getOrgByGstin(gstin))!.credits_purchased).toBe(100)
+  const admin = await resolveOrCreateUser(adminEmail)
+  createdUsers.push(admin.id)
+  expect((await getUserOrgFields(admin.id)).is_org_admin).toBe(true)
+
+  // no invoice row, and the ledger row is stamped for recovery
+  expect((await pool.query(`SELECT 1 FROM invoices WHERE razorpay_payment_id=$1`, [payId])).rows).toHaveLength(0)
+  const txn = await pool.query<{ note: string | null }>(
+    `SELECT note FROM credit_transactions WHERE razorpay_payment_id=$1 AND type='org_purchase'`,
+    [payId]
+  )
+  expect(txn.rows[0].note).toContain('INVOICE NOT ISSUED')
 })
 
 test('corporate: fulfilment is idempotent on the payment id', async ({ context }) => {
