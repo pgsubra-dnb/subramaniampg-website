@@ -898,6 +898,71 @@ test('corporate: an invoice failure flags the ledger + returns invoiceUnissued; 
   expect(txn.rows[0].note).toContain('INVOICE NOT ISSUED')
 })
 
+test('corporate: buyer ≠ admin — the admin gets the "you\'re the admin" email, BCC to PGS', async ({ context }) => {
+  test.setTimeout(120_000)
+  const buyer = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(buyer.userId)
+  const gstin = testGstin()
+  createdGstins.push(gstin)
+  const adminEmail = `okr-e2e-adminnote-${Date.now()}@example.com` // deliberately NOT the buyer
+
+  // Capture Brevo API calls without a real key/inbox: stub only api.brevo.com,
+  // pass everything else (Sanity, Blob) through to the real fetch.
+  const realFetch = global.fetch
+  const brevo: { to: string; bcc: string[]; subject: string; html: string; text: string }[] = []
+  process.env.BREVO_API_KEY = 'stub-key-for-capture'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  global.fetch = (async (url: any, opts: any) => {
+    if (String(url).includes('api.brevo.com')) {
+      const p = JSON.parse(opts.body)
+      brevo.push({
+        to: p.to?.[0]?.email,
+        bcc: (p.bcc ?? []).map((b: { email: string }) => b.email),
+        subject: p.subject,
+        html: p.htmlContent ?? '',
+        text: p.textContent ?? '',
+      })
+      return new Response(JSON.stringify({ messageId: 'stub' }), { status: 201 })
+    }
+    return realFetch(url, opts)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) as any
+
+  let r
+  try {
+    r = await corpFulfil({
+      purchaserUserId: buyer.userId,
+      purchaserEmail: buyer.email,
+      gstin,
+      adminEmail,
+      companyName: 'Northwind Trading LLP',
+      credits: 200,
+    })
+  } finally {
+    global.fetch = realFetch
+    delete process.env.BREVO_API_KEY
+  }
+  createdUsers.push((await resolveOrCreateUser(adminEmail)).id)
+
+  expect(r.ok).toBe(true)
+  expect(r.adminNotified).toBe(true)
+  expect(r.invoiceUnissued).toBe(false)
+
+  // the admin-notification email
+  const note = brevo.find((e) => e.to === adminEmail)
+  expect(note, `expected a Brevo email to ${adminEmail}; got ${JSON.stringify(brevo.map((e) => e.to))}`).toBeTruthy()
+  expect(note!.bcc).toContain('pgs@embiggen.co.in') // PGS copied, no skipBcc
+  expect(note!.subject).toContain('Northwind Trading LLP')
+  expect(note!.text).toContain('200') // pool size
+  expect(note!.text).toContain('subramaniampg.guru/okr-ally') // sign-in link
+  expect(note!.text).toMatch(/Company tab/i)
+
+  // and the GST invoice went to the buyer, also BCC PGS (unchanged behaviour)
+  const invMail = brevo.find((e) => e.to === buyer.email && /Tax invoice/i.test(e.subject))
+  expect(invMail).toBeTruthy()
+  expect(invMail!.bcc).toContain('pgs@embiggen.co.in')
+})
+
 test('corporate: fulfilment is idempotent on the payment id', async ({ context }) => {
   const buyer = await signIn(context, 'http://localhost:3200')
   createdUsers.push(buyer.userId)

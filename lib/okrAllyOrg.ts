@@ -90,6 +90,9 @@ export interface FulfilCorporateResult {
    *  the one corporate step with no automatic retry. When true, PGS has been
    *  emailed and the `org_purchase` ledger row is stamped. */
   invoiceUnissued?: boolean
+  /** Whether the "you're now the admin" email to the designated admin was
+   *  accepted by Brevo. Always BCCs PGS. */
+  adminNotified?: boolean
 }
 
 /**
@@ -259,6 +262,36 @@ export async function fulfilCorporatePurchase(
     }
   }
 
+  // Tell the designated admin they're now running the pool. Default
+  // sendBrevoEmail behaviour (no skipBcc) copies PGS, consistent with the
+  // invoice and allocation emails. Non-blocking.
+  let adminNotified = false
+  if (!txnResult.alreadyProcessed) {
+    try {
+      const company = input.companyName.trim()
+      const pool = txnResult.creditsPurchased ?? input.credits
+      const added = input.credits
+      adminNotified = await sendBrevoEmail({
+        to: input.adminEmail,
+        toName: company,
+        subject: `You're the OKR Ally admin for ${company}`,
+        htmlContent: `
+          <div style="font-family:Inter,Arial,sans-serif;color:#2C2C2A;line-height:1.6;">
+            <p>${company} has bought a pool of OKR Ally review credits, and this email address is its admin.</p>
+            <p>This purchase added <strong>${added}</strong> credit${added === 1 ? '' : 's'} &mdash; the pool now holds <strong>${pool}</strong>.</p>
+            <p>Sign in at <a href="https://subramaniampg.guru/okr-ally">subramaniampg.guru/okr-ally</a> with this email address, then open the <strong>Company</strong> tab to allocate credits to your team and see usage.</p>
+            <p style="font-size:13px;color:#6b6b66;">&mdash; Subramaniam P G</p>
+          </div>`,
+        textContent:
+          `${company} has bought a pool of OKR Ally review credits, and this email address is its admin. ` +
+          `This purchase added ${added} credit${added === 1 ? '' : 's'} — the pool now holds ${pool}. ` +
+          `Sign in at https://subramaniampg.guru/okr-ally with this email address, then open the Company tab to allocate credits and see usage.`,
+      })
+    } catch (err) {
+      console.error('OKR Ally corporate admin-notification failed:', input.razorpayPaymentId, err)
+    }
+  }
+
   return {
     ok: true,
     alreadyProcessed: txnResult.alreadyProcessed,
@@ -266,6 +299,7 @@ export async function fulfilCorporatePurchase(
     creditsPurchased: txnResult.creditsPurchased,
     invoiceUnissued: !txnResult.alreadyProcessed && invoiceNumber === null,
     invoiceNumber,
+    adminNotified,
   }
 }
 
