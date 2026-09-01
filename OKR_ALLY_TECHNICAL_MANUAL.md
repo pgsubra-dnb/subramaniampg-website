@@ -408,9 +408,12 @@ editable, debounced draft autosave, char counts.
 - Context steps run assess → (optional clarify) → (optional paraphrase:
   Confirm / Modify / Ignore).
 - `CTX_PROMPT` (in `_formState.ts`) holds the three questions. `ctx_business`:
-  *"How does this objective connect to your organisation's broader goals or
-  priorities, and what impact is it meant to have?"* The context **pipeline**
-  uses its own `FIELD_LABEL` map, independent of `CTX_PROMPT`.
+  *"Tell me about your company right now."* followed by four guiding bullets
+  (`BUSINESS_CONTEXT_GUIDES`: strategic direction / current challenges /
+  opportunities / trends) and a "answer any or all" note — display copy only,
+  still one free-text textarea, same 1000-char limit. The context **pipeline**
+  uses its own `FIELD_LABEL` map (`lib/okrAllyContext.ts`), independent of
+  `CTX_PROMPT`.
 - **Returning user with a full saved profile** (`companyName` + all 3 contexts):
   `mode:'summary'`, lands on `profile_summary` — one screen, fields editable
   inline, only edited context fields re-run assess/clarify/paraphrase. Partial

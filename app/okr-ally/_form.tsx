@@ -10,6 +10,7 @@ import {
   LIMITS,
   CTX_KIND,
   CTX_PROMPT,
+  BUSINESS_CONTEXT_GUIDES,
   ctxSnapshot,
   emptyForm,
   isCtxStep,
@@ -763,13 +764,27 @@ function CtxStep({
     <>
       <AllyRow>
         {CTX_PROMPT[kind]}
+        {kind === 'business' && (
+          <>
+            <ul style={{ margin: '8px 0 0', paddingLeft: 20, listStyle: 'disc' }}>
+              {BUSINESS_CONTEXT_GUIDES.map((g) => (
+                <li key={g} style={{ marginTop: 4, lineHeight: 1.5 }}>
+                  {g}
+                </li>
+              ))}
+            </ul>
+            <span style={{ display: 'block', marginTop: 8, fontSize: 12.5, opacity: 0.85 }}>
+              Answer any or all of these, whatever&apos;s most relevant to your objective.
+            </span>
+          </>
+        )}
         {prefilled && (
           <span style={{ display: 'block', marginTop: 6, fontSize: 12.5, opacity: 0.8 }}>
             I&apos;ve filled this from your profile — leave it as is if nothing&apos;s changed, or edit it.
           </span>
         )}
       </AllyRow>
-      {!prefilled && <ContextTips kind={kind} />}
+      {!prefilled && kind !== 'business' && <ContextTips kind={kind} />}
       <div className="mb-2">
         <Field value={state.raw} onChange={onRawChange} multiline max={LIMITS.context} autoFocus />
       </div>
