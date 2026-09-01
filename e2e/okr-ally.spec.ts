@@ -1,6 +1,7 @@
 import { test, expect, Page } from '@playwright/test'
 import { FAIL_BASE_URL } from '../playwright.config'
 import { validateReviewOutput } from '../lib/okrAllyReview'
+import { PACKS } from '../lib/okrAllyBilling'
 import {
   signIn,
   seedCredits,
@@ -524,7 +525,7 @@ test('free first review issues a ₹0 tax invoice with the full discount breakdo
   expect(inv.invoice_number).toMatch(/^OKR\/\d{2}-\d{2}\/\d{4}$/)
   expect(inv.razorpay_payment_id).toBeNull()
   expect(inv.submission_id).toBe(sub!.id)
-  expect(Number(inv.list_price)).toBe(50)
+  expect(Number(inv.list_price)).toBe(PACKS.single.basePrice)
   expect(Number(inv.discount_percent)).toBe(100)
   expect(inv.coupon_code).toBe('OKRALLY-FIRST-FREE')
   expect(Number(inv.base_amount)).toBe(0)

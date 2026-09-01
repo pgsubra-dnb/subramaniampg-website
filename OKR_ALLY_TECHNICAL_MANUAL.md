@@ -221,10 +221,10 @@ noted. `[auth]` = 401 without a session; `[admin]` = 403 for non-admins.
 ## 8. Business rules
 
 ### Credits & packs (`lib/okrAllyBilling.ts`, `lib/okrAllyPricing.ts`)
-- 1 credit = 1 review. Packs (base price, excl. GST): `single` ₹50 / 1 credit,
-  `pack5` ₹125 / 5, `pack10` ₹200 / 10.
+- 1 credit = 1 review. Packs (base price, excl. GST): `single` ₹100 / 1 credit,
+  `pack5` ₹375 / 5 (₹75 a review), `pack10` ₹500 / 10 (₹50 a review).
 - **GST 18%** added on top: `gstBreakdown(base)` → `{base, gst=round(base*0.18),
-  total, amountInPaise}`. Displayed totals: ₹59 / ₹147.50 / ₹236.
+  total, amountInPaise}`. Displayed totals: ₹118 / ₹443 / ₹590.
 - Credits never expire. `credits_remaining` has a `CHECK (>= 0)`.
 - **Deduction order on review submission** (`startSubmission`, atomic):
   free-review coupon → **any org-allocated balance** (`org_credit_balance`, the
