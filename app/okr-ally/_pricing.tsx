@@ -15,6 +15,8 @@ interface Pack {
 }
 interface Status {
   creditsRemaining: number
+  personalCredits: number
+  orgCredits: { name: string; credits: number }[]
   freeReviewAvailable: boolean
   packs: Pack[]
 }
@@ -181,6 +183,13 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
       <AllyRow>
         You have <strong>{status.creditsRemaining}</strong> review credit
         {status.creditsRemaining === 1 ? '' : 's'}.
+        {status.orgCredits.length > 0 && (
+          <span style={{ display: 'block', marginTop: 4, fontSize: 12.5, opacity: 0.85 }}>
+            {status.personalCredits} personal ·{' '}
+            {status.orgCredits.map((o) => `${o.credits} from ${o.name}`).join(' · ')}. Company credits are
+            spent first.
+          </span>
+        )}
         {status.freeReviewAvailable && ' Your first review is free — no credit needed.'}
       </AllyRow>
 
@@ -306,6 +315,30 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
       <p style={{ fontSize: 11.5, color: T.muted, marginTop: 12 }}>
         GST is 18%. A numbered GST invoice is emailed for every purchase. Your first review is free, one per account.
       </p>
+
+      <a
+        href="/okr-ally/corporate"
+        style={{
+          display: 'block',
+          marginTop: 18,
+          textDecoration: 'none',
+          background: T.emeraldTint,
+          border: `1px solid ${T.emeraldBorder}`,
+          borderRadius: 12,
+          padding: 16,
+        }}
+      >
+        <div style={{ fontFamily: 'var(--font-lora), serif', fontWeight: 600, fontSize: 15, color: T.bubbleText }}>
+          Looking for team or company credits?
+        </div>
+        <div style={{ fontSize: 12.5, color: T.bubbleText, opacity: 0.85, marginTop: 4 }}>
+          Buy a pool of 100, 200 or 500 credits against your company GSTIN and hand them to your team.
+          One GST invoice, one admin, clean cost reporting.
+        </div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: T.emeraldDark, marginTop: 8 }}>
+          See corporate bundles →
+        </div>
+      </a>
     </div>
   )
 }

@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import Razorpay from 'razorpay'
 import { getSessionUser, getSiteSettings } from '@/lib/okrAlly'
 import { grantCredits, getPack } from '@/lib/okrAllyBilling'
+import { fulfilCorporatePurchase } from '@/lib/okrAllyOrg'
 import { createAndSendInvoice } from '@/lib/okrAllyInvoice'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
@@ -55,6 +56,42 @@ export async function POST(req: NextRequest) {
     })
     const order = await razorpay.orders.fetch(razorpay_order_id)
     const notes = (order.notes || {}) as Record<string, string>
+
+    // ── Corporate bundle: fulfil the org pool, tag the admin, invoice the company.
+    // Idempotent with the webhook via the `org_purchase` unique index.
+    if (notes.app === 'okr-ally' && notes.kind === 'corporate') {
+      if (notes.purchaserUserId !== user.id) {
+        return NextResponse.json({ success: false, reason: 'Order does not belong to this user' }, { status: 403 })
+      }
+      const credits = Number(notes.credits)
+      if (!credits || credits < 1) {
+        return NextResponse.json({ success: false, reason: 'Order has no credits' }, { status: 400 })
+      }
+      const r = await fulfilCorporatePurchase({
+        purchaserUserId: user.id,
+        purchaserName: user.name,
+        purchaserEmail: user.email,
+        adminEmail: notes.adminEmail,
+        companyName: notes.companyName,
+        gstin: notes.gstin,
+        registeredAddress: notes.registeredAddress,
+        placeOfSupply: notes.placeOfSupply,
+        credits,
+        listPrice: Number(notes.listPrice) || Number(notes.base),
+        baseAmount: Number(notes.base),
+        gstAmount: Number(notes.gst),
+        totalAmount: Number(notes.total),
+        razorpayPaymentId: razorpay_payment_id,
+        razorpayOrderId: razorpay_order_id,
+      })
+      return NextResponse.json({
+        success: r.ok,
+        corporate: true,
+        alreadyProcessed: r.alreadyProcessed,
+        creditsPurchased: r.creditsPurchased,
+        invoiceNumber: r.invoiceNumber ?? null,
+      }, r.ok ? undefined : { status: 503 })
+    }
 
     if (notes.app !== 'okr-ally' || notes.userId !== user.id) {
       return NextResponse.json({ success: false, reason: 'Order does not belong to this user' }, { status: 403 })
