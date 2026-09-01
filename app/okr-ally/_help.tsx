@@ -58,7 +58,7 @@ const TOPICS: Topic[] = [
       },
       {
         q: 'What do the packs cost?',
-        a: 'A single review is ₹50, a 5-pack is ₹125, and a 10-pack is ₹200 — all plus 18% GST. The larger packs bring the price per review down.',
+        a: 'A single review is ₹100, a 5-pack is ₹375 (₹75 a review), and a 10-pack is ₹500 (₹50 a review) — all plus 18% GST. The larger packs bring the price per review down.',
       },
       {
         q: 'Do credits expire?',
