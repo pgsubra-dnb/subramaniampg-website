@@ -9,9 +9,10 @@ import PricingTab from './_pricing'
 import HistoryTab from './_history'
 import HelpTab from './_help'
 import { AdminList, AdminReviewScreen } from './_admin'
+import Walkthrough from './_walkthrough'
 import { FormState, emptyForm, CtxFieldState } from './_formState'
 
-type Phase = 'loading' | 'intro' | 'email' | 'app' | 'signedout'
+type Phase = 'loading' | 'intro' | 'walkthrough' | 'email' | 'app' | 'signedout'
 type Tab = 'ally' | 'pricing' | 'history' | 'help' | 'admin'
 
 interface Me {
@@ -214,7 +215,12 @@ export default function OkrAllyClient() {
           }}
         />
       )}
-      {phase === 'intro' && <Intro onStart={() => setPhase('email')} />}
+      {phase === 'intro' && (
+        <Intro onStart={() => setPhase('email')} onSeeHow={() => setPhase('walkthrough')} />
+      )}
+      {phase === 'walkthrough' && (
+        <Walkthrough onBack={() => setPhase('intro')} onStart={() => setPhase('email')} />
+      )}
       {phase === 'email' && <EmailGate error={verifyError} />}
 
       {phase === 'app' && showingReport && (
@@ -330,7 +336,7 @@ function TabBar({ tab, onChange, isAdmin }: { tab: Tab; onChange: (t: Tab) => vo
   )
 }
 
-function Intro({ onStart }: { onStart: () => void }) {
+function Intro({ onStart, onSeeHow }: { onStart: () => void; onSeeHow: () => void }) {
   return (
     <div style={{ textAlign: 'center', padding: '8px 0 24px' }}>
       <div style={{ width: 84, height: 84, borderRadius: '50%', overflow: 'hidden', margin: '0 auto 16px', border: `3px solid ${T.emerald}` }}>
@@ -349,8 +355,11 @@ function Intro({ onStart }: { onStart: () => void }) {
         and is a certified OKR and executive coach who has guided over 100 companies. I bring his rubric and his ear
         for a sharp goal to whatever you send me.
       </p>
-      <div style={{ marginTop: 22 }}>
+      <div style={{ marginTop: 22, display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
         <Btn onClick={onStart}>Say hi to Ally</Btn>
+        <Btn variant="ghost" onClick={onSeeHow}>
+          See how it works
+        </Btn>
       </div>
       <p style={{ marginTop: 12, fontSize: 12.5, color: T.muted }}>Your first review is free.</p>
       <div

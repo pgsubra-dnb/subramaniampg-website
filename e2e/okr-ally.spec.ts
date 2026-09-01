@@ -118,7 +118,7 @@ test('happy path: sign in, submit an OKR, get a scored report', async ({ page, c
   await fillContext(
     page,
     'Meridian Foods is a 45-store regional grocery chain in the US Southeast with roughly 2,400 employees and about $310M in annual revenue. It is privately held.',
-    /business situation this OKR sits inside/i
+    /broader goals or priorities/i
   )
   await fillContext(
     page,
@@ -139,7 +139,7 @@ test('happy path: sign in, submit an OKR, get a scored report', async ({ page, c
   )
   await expect(page.getByText(/Now your Key Results/i)).toBeVisible()
   await page.getByPlaceholder(/Raise activation rate/i).fill('Increase average monthly visits per top-tier loyalty member from 6.1 to 7.4')
-  await page.getByRole('button', { name: '+ add Key Result' }).click()
+  await page.getByRole('button', { name: '+ Add another Key Result' }).click()
   await page.getByPlaceholder(/Raise activation rate/i).last().fill('Grow top-tier members’ share of wallet from 60% to 66%')
   await page.getByRole('button', { name: 'Review everything' }).click()
 
@@ -330,13 +330,13 @@ test.describe(() => {
             await page.getByRole('button', { name: /Use Ally/ }).click()
             return 'confirmed'
           }
-          if (await page.getByText(/business situation this OKR sits inside/i).count()) return 'advanced'
+          if (await page.getByText(/broader goals or priorities/i).count()) return 'advanced'
           return 'waiting'
         },
         { timeout: 45_000, intervals: [500] }
       )
       .not.toBe('waiting')
-    await expect(page.getByText(/business situation this OKR sits inside/i)).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByText(/broader goals or priorities/i)).toBeVisible({ timeout: 20_000 })
 
     // ── remaining fields, straight through ──
     await fillContext(
@@ -770,4 +770,40 @@ test('install banner: appears on beforeinstallprompt and calls prompt() on click
   expect(await page.evaluate(() => (window as any).__promptCalled)).toBe(1)
   // banner dismisses itself after the prompt resolves
   await expect(installBtn).toHaveCount(0)
+})
+
+// ══════════════════════════════════════════════════════════
+// 15. "How it works" walkthrough — reachable before sign-in
+// ══════════════════════════════════════════════════════════
+test('walkthrough: intro → step every slide → CTA lands on the email gate', async ({ page }) => {
+  test.setTimeout(90_000)
+  await page.goto('/okr-ally')
+  await expect(page.getByRole('button', { name: /See how it works/i })).toBeVisible({ timeout: 45_000 })
+
+  await page.getByRole('button', { name: /See how it works/i }).click()
+  await expect(page.getByRole('heading', { name: 'How OKR Ally works' })).toBeVisible()
+  await expect(page.getByText('1 / 8')).toBeVisible()
+  await expect(page.getByText(/This is the front door/i)).toBeVisible()
+
+  // ← Back returns to the intro
+  await page.getByRole('button', { name: '← Back' }).click()
+  await expect(page.getByRole('button', { name: /Say hi to Ally/i })).toBeVisible()
+
+  // re-open and step through every slide with Next
+  await page.getByRole('button', { name: /See how it works/i }).click()
+  for (let i = 1; i < 8; i++) {
+    await expect(page.getByText(`${i} / 8`)).toBeVisible()
+    await page.getByRole('button', { name: 'Next', exact: true }).click()
+  }
+  await expect(page.getByText('8 / 8')).toBeVisible()
+
+  // a before/after comparison was shown on the way (slide 7)
+  await page.getByRole('button', { name: 'Back', exact: true }).click()
+  await expect(page.getByRole('heading', { name: /A vague Key Result vs a specified one/i })).toBeVisible()
+  await expect(page.getByText(/Raise onboarding NPS from 32 to 45 by 31 March/)).toBeVisible()
+  await page.getByRole('button', { name: 'Next', exact: true }).click()
+
+  // final slide CTA → email gate
+  await page.getByRole('button', { name: /Start my free review/i }).click()
+  await expect(page.getByPlaceholder('you@company.com')).toBeVisible()
 })
