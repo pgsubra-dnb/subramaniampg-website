@@ -149,8 +149,17 @@ export async function markReviewDelivered(args: {
   )
 }
 
+export type ChargeKind = 'credit' | 'coupon' | 'org'
+
 export type StartResult =
-  | { ok: true; submission: SubmissionRow; charge: 'credit' | 'coupon' }
+  | {
+      ok: true
+      submission: SubmissionRow
+      charge: ChargeKind
+      /** Set only when charge === 'org' — which organization's pool was drawn on,
+       *  so refundFailedSubmission returns the credit to the right place. */
+      organizationId?: string | null
+    }
   | { ok: false; status: number; error: string }
 
 interface StartArgs {
@@ -228,6 +237,36 @@ export async function startSubmission(args: StartArgs): Promise<StartResult> {
         return { ok: true, submission, charge: 'coupon' }
       }
 
+      // Org-allocated credits are spent before personal credits, and never
+      // merge with them. Pick the org with the most remaining; SKIP LOCKED so a
+      // concurrent submission by the same user targets a different pool rather
+      // than blocking. `credits_remaining > 0` on the outer UPDATE too, so a
+      // pool that hit zero between the pick and the lock falls through cleanly.
+      const orgDeduct = await client.query<{ organization_id: string }>(
+        `UPDATE org_credit_balance ocb
+           SET credits_remaining = credits_remaining - 1, updated_at = now()
+          FROM (
+            SELECT organization_id FROM org_credit_balance
+             WHERE user_id = $1 AND credits_remaining > 0
+             ORDER BY credits_remaining DESC, organization_id
+             LIMIT 1
+             FOR UPDATE SKIP LOCKED
+          ) pick
+         WHERE ocb.user_id = $1 AND ocb.organization_id = pick.organization_id
+           AND ocb.credits_remaining > 0
+         RETURNING ocb.organization_id`,
+        [userId]
+      )
+      if (orgDeduct.rowCount && orgDeduct.rows[0]) {
+        const organizationId = orgDeduct.rows[0].organization_id
+        await client.query(
+          `INSERT INTO credit_transactions (user_id, submission_id, organization_id, amount, type)
+           VALUES ($1, $2, $3, -1, 'usage')`,
+          [userId, submission.id, organizationId]
+        )
+        return { ok: true, submission, charge: 'org', organizationId }
+      }
+
       const deduct = await client.query<{ credits_remaining: number }>(
         `UPDATE user_credit_balance
            SET credits_remaining = credits_remaining - 1, updated_at = now()
@@ -289,10 +328,24 @@ export async function completeSubmission(args: {
 export async function refundFailedSubmission(args: {
   submissionId: string
   userId: string
-  charge: 'credit' | 'coupon'
+  charge: ChargeKind
+  /** Required when charge === 'org' — the pool the credit is returned to. */
+  organizationId?: string | null
 }): Promise<void> {
   await withTransaction(async (client) => {
-    if (args.charge === 'credit') {
+    if (args.charge === 'org' && args.organizationId) {
+      await client.query(
+        `UPDATE org_credit_balance
+           SET credits_remaining = credits_remaining + 1, updated_at = now()
+         WHERE user_id = $1 AND organization_id = $2`,
+        [args.userId, args.organizationId]
+      )
+      await client.query(
+        `INSERT INTO credit_transactions (user_id, submission_id, organization_id, amount, type)
+         VALUES ($1, $2, $3, 1, 'refund_failed_generation')`,
+        [args.userId, args.submissionId, args.organizationId]
+      )
+    } else if (args.charge === 'credit') {
       await client.query(
         `INSERT INTO user_credit_balance (user_id, credits_remaining, updated_at)
          VALUES ($1, 1, now())

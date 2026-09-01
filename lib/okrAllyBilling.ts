@@ -29,10 +29,12 @@ export interface Pack {
 }
 
 // Pricing table, section 5. Single source of truth — not read from Sanity.
+// basePrice is INR excl. GST; the Pricing tab and /api/okr-ally/status derive
+// every displayed figure from here (per-review, GST, total).
 export const PACKS: Record<PackId, Pack> = {
-  single: { id: 'single', label: 'Single review', credits: 1, basePrice: 50 },
-  pack5: { id: 'pack5', label: '5-pack', credits: 5, basePrice: 125 },
-  pack10: { id: 'pack10', label: '10-pack', credits: 10, basePrice: 200 },
+  single: { id: 'single', label: 'Single review', credits: 1, basePrice: 100 },
+  pack5: { id: 'pack5', label: '5-pack', credits: 5, basePrice: 375 },
+  pack10: { id: 'pack10', label: '10-pack', credits: 10, basePrice: 500 },
 }
 
 export function getPack(pack: unknown): Pack | null {

@@ -253,6 +253,8 @@ export async function cleanupUsers(userIds: string[]): Promise<void> {
     await pool.query(`DELETE FROM submissions WHERE user_id = $1`, [uid])
     await pool.query(`DELETE FROM okr_ally_daily_usage WHERE user_id = $1`, [uid])
     await pool.query(`DELETE FROM user_credit_balance WHERE user_id = $1`, [uid])
+    await pool.query(`DELETE FROM org_credit_balance WHERE user_id = $1`, [uid])
+    await pool.query(`DELETE FROM organization_allocations WHERE user_id = $1`, [uid])
     await pool.query(`DELETE FROM user_profile WHERE user_id = $1`, [uid])
     await pool.query(`DELETE FROM drafts WHERE user_id = $1`, [uid])
     await pool.query(`DELETE FROM users WHERE id = $1`, [uid])
@@ -276,4 +278,61 @@ export async function cleanupUsers(userIds: string[]): Promise<void> {
 /** Convenience: an APIRequestContext-style GET with a session cookie. */
 export async function apiGet(request: APIRequestContext, url: string, cookieHeader: string) {
   return request.get(url, { headers: { cookie: cookieHeader } })
+}
+
+// ─── Corporate / organization helpers (migration 009) ──────────────────────
+
+export const TEST_GSTIN_PREFIX = '29ZZTST'
+
+/** A unique GSTIN-shaped string for one test run — matches GSTIN_RE and starts
+ *  with TEST_GSTIN_PREFIX so cleanup can find it. */
+export function testGstin(): string {
+  const n = String(Math.floor(1000 + Math.random() * 9000))
+  return `${TEST_GSTIN_PREFIX}${n}F1Z5` // 29 ZZTST NNNN F 1 Z 5  → 15 chars
+}
+
+export interface OrgRow {
+  id: string
+  name: string
+  gstin: string
+  registered_address: string
+  credits_purchased: number
+  credits_allocated: number
+}
+
+export async function getOrgByGstin(gstin: string): Promise<OrgRow | null> {
+  const r = await pool.query<OrgRow>(`SELECT * FROM organizations WHERE gstin = $1`, [gstin.toUpperCase()])
+  return r.rows[0] ?? null
+}
+
+export async function getOrgBalance(userId: string, organizationId: string): Promise<number> {
+  const r = await pool.query<{ credits_remaining: number }>(
+    `SELECT credits_remaining FROM org_credit_balance WHERE user_id = $1 AND organization_id = $2`,
+    [userId, organizationId]
+  )
+  return r.rows[0]?.credits_remaining ?? 0
+}
+
+export async function getUserOrgFields(
+  userId: string
+): Promise<{ organization_id: string | null; is_org_admin: boolean }> {
+  const r = await pool.query<{ organization_id: string | null; is_org_admin: boolean }>(
+    `SELECT organization_id, is_org_admin FROM users WHERE id = $1`,
+    [userId]
+  )
+  return r.rows[0]
+}
+
+/** Delete test organizations (and their cascaded ledger / balance rows). Run
+ *  AFTER cleanupUsers so no users still reference the org. */
+export async function cleanupOrgs(gstins: string[]): Promise<void> {
+  for (const g of gstins) {
+    if (!g) continue
+    const org = await getOrgByGstin(g)
+    if (!org) continue
+    await pool.query(`UPDATE users SET organization_id = NULL, is_org_admin = FALSE WHERE organization_id = $1`, [org.id])
+    await pool.query(`DELETE FROM credit_transactions WHERE organization_id = $1`, [org.id])
+    await pool.query(`DELETE FROM invoices WHERE buyer_address IS NOT NULL AND gstin = $1`, [org.gstin])
+    await pool.query(`DELETE FROM organizations WHERE id = $1`, [org.id]) // CASCADEs allocations + balances
+  }
 }

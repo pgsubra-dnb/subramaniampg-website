@@ -1,6 +1,7 @@
 import { test, expect, Page } from '@playwright/test'
 import { FAIL_BASE_URL } from '../playwright.config'
 import { validateReviewOutput } from '../lib/okrAllyReview'
+import { PACKS } from '../lib/okrAllyBilling'
 import {
   signIn,
   seedCredits,
@@ -15,13 +16,31 @@ import {
   seedInvoice,
   getInvoicesForUser,
   cleanupUsers,
+  cleanupOrgs,
+  testGstin,
+  getOrgByGstin,
+  getOrgBalance,
+  getUserOrgFields,
   pool,
 } from './helpers'
+import { resolveOrCreateUser } from '../lib/okrAlly'
+import {
+  fulfilCorporatePurchase,
+  allocateOrgCredits,
+  reclaimOrgCredits,
+  getEmployeeOrgReport,
+} from '../lib/okrAllyOrg'
+
+// Spec 16 (corporate) calls the fulfilment/allocation libs directly, so opt
+// this test process past the non-prod fulfilment guard (the webServer has it).
+process.env.ALLOW_NONPROD_FULFILLMENT = '1'
 
 const createdUsers: string[] = []
+const createdGstins: string[] = []
 
 test.afterAll(async () => {
   await cleanupUsers(createdUsers)
+  await cleanupOrgs(createdGstins)
   await pool.end()
 })
 
@@ -506,7 +525,7 @@ test('free first review issues a ₹0 tax invoice with the full discount breakdo
   expect(inv.invoice_number).toMatch(/^OKR\/\d{2}-\d{2}\/\d{4}$/)
   expect(inv.razorpay_payment_id).toBeNull()
   expect(inv.submission_id).toBe(sub!.id)
-  expect(Number(inv.list_price)).toBe(50)
+  expect(Number(inv.list_price)).toBe(PACKS.single.basePrice)
   expect(Number(inv.discount_percent)).toBe(100)
   expect(inv.coupon_code).toBe('OKRALLY-FIRST-FREE')
   expect(Number(inv.base_amount)).toBe(0)
@@ -770,4 +789,366 @@ test('install banner: appears on beforeinstallprompt and calls prompt() on click
   expect(await page.evaluate(() => (window as any).__promptCalled)).toBe(1)
   // banner dismisses itself after the prompt resolves
   await expect(installBtn).toHaveCount(0)
+})
+
+// ══════════════════════════════════════════════════════════
+// 16. Corporate credits — purchase, allocate/reclaim, org-first deduction,
+//     access control, report isolation, existing-account safety.
+// ══════════════════════════════════════════════════════════
+
+const rzId = (p: string) => `${p}_${(Math.random().toString(36) + '0'.repeat(14)).slice(2, 16)}`
+
+function corpFulfil(o: {
+  purchaserUserId: string
+  purchaserEmail?: string
+  gstin: string
+  adminEmail: string
+  companyName?: string
+  credits?: number
+  razorpayPaymentId?: string
+  placeOfSupply?: string
+}) {
+  return fulfilCorporatePurchase({
+    purchaserUserId: o.purchaserUserId,
+    purchaserName: 'Buyer',
+    purchaserEmail: o.purchaserEmail ?? 'okr-e2e-buyer@example.com',
+    adminEmail: o.adminEmail,
+    companyName: o.companyName ?? 'Test Corp LLP',
+    gstin: o.gstin,
+    registeredAddress: '1 Test Road, Bengaluru, Karnataka 560001',
+    placeOfSupply: o.placeOfSupply ?? 'Karnataka',
+    credits: o.credits ?? 100,
+    listPrice: 6000,
+    baseAmount: 6000,
+    gstAmount: 1080,
+    totalAmount: 7080,
+    razorpayPaymentId: o.razorpayPaymentId ?? rzId('pay'),
+    razorpayOrderId: rzId('order'),
+  })
+}
+
+test('corporate: purchase creates org + admin + company invoice; same GSTIN tops up', async ({ context }) => {
+  test.setTimeout(120_000)
+  const buyer = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(buyer.userId)
+  const gstin = testGstin()
+  createdGstins.push(gstin)
+  const adminEmail = `okr-e2e-orgadmin-${Date.now()}@example.com`
+
+  const r1 = await corpFulfil({ purchaserUserId: buyer.userId, purchaserEmail: buyer.email, gstin, adminEmail, credits: 100 })
+  expect(r1.ok).toBe(true)
+  expect(r1.alreadyProcessed).toBe(false)
+
+  const org = await getOrgByGstin(gstin)
+  expect(org).toBeTruthy()
+  expect(org!.credits_purchased).toBe(100)
+
+  const admin = await resolveOrCreateUser(adminEmail)
+  createdUsers.push(admin.id)
+  const af = await getUserOrgFields(admin.id)
+  expect(af.is_org_admin).toBe(true)
+  expect(af.organization_id).toBe(org!.id)
+
+  const inv = await pool.query(`SELECT gstin, buyer_address, total_amount FROM invoices WHERE user_id = $1`, [buyer.userId])
+  expect(inv.rows).toHaveLength(1)
+  expect(inv.rows[0].gstin).toBe(gstin)
+  expect(inv.rows[0].buyer_address).toContain('Test Road')
+  expect(Number(inv.rows[0].total_amount)).toBe(7080)
+
+  // fresh payment id, SAME gstin → top up, not a duplicate org
+  const r2 = await corpFulfil({ purchaserUserId: buyer.userId, gstin, adminEmail, credits: 200 })
+  expect(r2.alreadyProcessed).toBe(false)
+  expect((await getOrgByGstin(gstin))!.credits_purchased).toBe(300)
+  const n = await pool.query(`SELECT count(*) c FROM organizations WHERE gstin = $1`, [gstin])
+  expect(Number(n.rows[0].c)).toBe(1)
+  expect(r1.invoiceUnissued).toBe(false)
+})
+
+test('corporate: an invoice failure flags the ledger + returns invoiceUnissued; pool + admin tag still fine', async ({ context }) => {
+  const buyer = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(buyer.userId)
+  const gstin = testGstin()
+  createdGstins.push(gstin)
+  const adminEmail = `okr-e2e-invfail-${Date.now()}@example.com`
+  const payId = rzId('pay')
+
+  // an unknown place of supply makes createAndSendInvoice soft-fail
+  const r = await corpFulfil({
+    purchaserUserId: buyer.userId,
+    gstin,
+    adminEmail,
+    credits: 100,
+    razorpayPaymentId: payId,
+    placeOfSupply: 'Nowhereland',
+  })
+  expect(r.ok).toBe(true)
+  expect(r.invoiceUnissued).toBe(true)
+
+  // pool + admin tag are correct regardless
+  expect((await getOrgByGstin(gstin))!.credits_purchased).toBe(100)
+  const admin = await resolveOrCreateUser(adminEmail)
+  createdUsers.push(admin.id)
+  expect((await getUserOrgFields(admin.id)).is_org_admin).toBe(true)
+
+  // no invoice row, and the ledger row is stamped for recovery
+  expect((await pool.query(`SELECT 1 FROM invoices WHERE razorpay_payment_id=$1`, [payId])).rows).toHaveLength(0)
+  const txn = await pool.query<{ note: string | null }>(
+    `SELECT note FROM credit_transactions WHERE razorpay_payment_id=$1 AND type='org_purchase'`,
+    [payId]
+  )
+  expect(txn.rows[0].note).toContain('INVOICE NOT ISSUED')
+})
+
+test('corporate: buyer ≠ admin — the admin gets the "you\'re the admin" email, BCC to PGS', async ({ context }) => {
+  test.setTimeout(120_000)
+  const buyer = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(buyer.userId)
+  const gstin = testGstin()
+  createdGstins.push(gstin)
+  const adminEmail = `okr-e2e-adminnote-${Date.now()}@example.com` // deliberately NOT the buyer
+
+  // Capture Brevo API calls without a real key/inbox: stub only api.brevo.com,
+  // pass everything else (Sanity, Blob) through to the real fetch.
+  const realFetch = global.fetch
+  const brevo: { to: string; bcc: string[]; subject: string; html: string; text: string }[] = []
+  process.env.BREVO_API_KEY = 'stub-key-for-capture'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  global.fetch = (async (url: any, opts: any) => {
+    if (String(url).includes('api.brevo.com')) {
+      const p = JSON.parse(opts.body)
+      brevo.push({
+        to: p.to?.[0]?.email,
+        bcc: (p.bcc ?? []).map((b: { email: string }) => b.email),
+        subject: p.subject,
+        html: p.htmlContent ?? '',
+        text: p.textContent ?? '',
+      })
+      return new Response(JSON.stringify({ messageId: 'stub' }), { status: 201 })
+    }
+    return realFetch(url, opts)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) as any
+
+  let r
+  try {
+    r = await corpFulfil({
+      purchaserUserId: buyer.userId,
+      purchaserEmail: buyer.email,
+      gstin,
+      adminEmail,
+      companyName: 'Northwind Trading LLP',
+      credits: 200,
+    })
+  } finally {
+    global.fetch = realFetch
+    delete process.env.BREVO_API_KEY
+  }
+  createdUsers.push((await resolveOrCreateUser(adminEmail)).id)
+
+  expect(r.ok).toBe(true)
+  expect(r.adminNotified).toBe(true)
+  expect(r.invoiceUnissued).toBe(false)
+
+  // the admin-notification email
+  const note = brevo.find((e) => e.to === adminEmail)
+  expect(note, `expected a Brevo email to ${adminEmail}; got ${JSON.stringify(brevo.map((e) => e.to))}`).toBeTruthy()
+  expect(note!.bcc).toContain('pgs@embiggen.co.in') // PGS copied, no skipBcc
+  expect(note!.subject).toContain('Northwind Trading LLP')
+  expect(note!.text).toContain('200') // pool size
+  expect(note!.text).toContain('subramaniampg.guru/okr-ally') // sign-in link
+  expect(note!.text).toMatch(/Company tab/i)
+
+  // and the GST invoice went to the buyer, also BCC PGS (unchanged behaviour)
+  const invMail = brevo.find((e) => e.to === buyer.email && /Tax invoice/i.test(e.subject))
+  expect(invMail).toBeTruthy()
+  expect(invMail!.bcc).toContain('pgs@embiggen.co.in')
+})
+
+test('corporate: fulfilment is idempotent on the payment id', async ({ context }) => {
+  const buyer = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(buyer.userId)
+  const gstin = testGstin()
+  createdGstins.push(gstin)
+  const adminEmail = `okr-e2e-orgadmin2-${Date.now()}@example.com`
+  const payId = rzId('pay')
+  await corpFulfil({ purchaserUserId: buyer.userId, gstin, adminEmail, credits: 200, razorpayPaymentId: payId })
+  const dup = await corpFulfil({ purchaserUserId: buyer.userId, gstin, adminEmail, credits: 200, razorpayPaymentId: payId })
+  expect(dup.alreadyProcessed).toBe(true)
+  expect((await getOrgByGstin(gstin))!.credits_purchased).toBe(200)
+  createdUsers.push((await resolveOrCreateUser(adminEmail)).id)
+})
+
+test('corporate: allocate then reclaim, exact org-specific figures both ways', async ({ context }) => {
+  const buyer = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(buyer.userId)
+  const gstin = testGstin()
+  createdGstins.push(gstin)
+  const adminEmail = `okr-e2e-cadmin-${Date.now()}@example.com`
+  await corpFulfil({ purchaserUserId: buyer.userId, gstin, adminEmail, credits: 100 })
+  const admin = await resolveOrCreateUser(adminEmail)
+  createdUsers.push(admin.id)
+  const org = (await getOrgByGstin(gstin))!
+
+  const empEmail = `okr-e2e-emp-${Date.now()}@example.com`
+  const alloc = await allocateOrgCredits(admin, { email: empEmail, credits: 5 })
+  expect(alloc.ok).toBe(true)
+  const emp = await resolveOrCreateUser(empEmail)
+  createdUsers.push(emp.id)
+
+  expect(await getOrgBalance(emp.id, org.id)).toBe(5)
+  let o = await getOrgByGstin(gstin)
+  expect(o!.credits_allocated).toBe(5)
+  expect(o!.credits_purchased - o!.credits_allocated).toBe(95)
+  const ef = await getUserOrgFields(emp.id)
+  expect(ef.organization_id).toBe(org.id) // tagged with the org
+  expect(ef.is_org_admin).toBe(false) // but NOT an admin
+
+  const rec = await reclaimOrgCredits(admin, { email: empEmail })
+  expect(rec.ok && rec.reclaimed).toBe(5)
+  expect(await getOrgBalance(emp.id, org.id)).toBe(0)
+  o = await getOrgByGstin(gstin)
+  expect(o!.credits_allocated).toBe(0)
+  const led = await pool.query(
+    `SELECT credits_allocated FROM organization_allocations WHERE organization_id=$1 AND lower(email)=lower($2) ORDER BY allocated_at`,
+    [org.id, empEmail]
+  )
+  expect(led.rows.map((r) => r.credits_allocated)).toEqual([5, -5])
+})
+
+test('corporate: a review spends the org balance first, personal untouched until org is empty', async ({ context }) => {
+  test.setTimeout(300_000)
+  const buyer = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(buyer.userId)
+  const gstin = testGstin()
+  createdGstins.push(gstin)
+  const adminEmail = `okr-e2e-dadmin-${Date.now()}@example.com`
+  await corpFulfil({ purchaserUserId: buyer.userId, gstin, adminEmail, credits: 100 })
+  const admin = await resolveOrCreateUser(adminEmail)
+  createdUsers.push(admin.id)
+  const org = (await getOrgByGstin(gstin))!
+
+  const emp = await signIn(context, 'http://localhost:3200', `okr-e2e-both-${Date.now()}@example.com`)
+  createdUsers.push(emp.userId)
+  await seedCredits(emp.userId, 2)
+  await allocateOrgCredits(admin, { email: emp.email, credits: 2 })
+  expect(await getOrgBalance(emp.userId, org.id)).toBe(2)
+
+  const body = {
+    objective: 'New enterprise customers reach production use without a services engagement.',
+    krs: [{ text: 'Raise 60-day activation from 44% to 70%', initiatives: [] }],
+    context_snapshot: {
+      company_context: { final_text: 'A 60-person infra SaaS, ~$7M ARR, Series A, ~400 mid-market customers.' },
+      business_context: { final_text: 'Board goal is NRR 104% to 115%; the compliance module is the retention lever.' },
+      role_context: { final_text: 'VP Customer Success; I own onboarding and renewals, not pricing or the roadmap.' },
+    },
+  }
+  const review = async (n: number) => {
+    const r = await context.request.post('http://localhost:3200/api/okr-ally/review', {
+      headers: { cookie: emp.cookieHeader },
+      data: { idempotencyKey: `e2e-orgded-${Date.now()}-${n}`, ...body },
+    })
+    const j = await r.json()
+    expect(r.status(), JSON.stringify(j)).toBe(200)
+    expect(j.status).toBe('complete')
+  }
+
+  await review(1)
+  expect(await getOrgBalance(emp.userId, org.id)).toBe(1)
+  expect(await getBalance(emp.userId)).toBe(2)
+
+  await review(2)
+  expect(await getOrgBalance(emp.userId, org.id)).toBe(0)
+  expect(await getBalance(emp.userId)).toBe(2)
+
+  await review(3) // org empty → personal
+  expect(await getOrgBalance(emp.userId, org.id)).toBe(0)
+  expect(await getBalance(emp.userId)).toBe(1)
+
+  const usage = await pool.query(
+    `SELECT organization_id FROM credit_transactions WHERE user_id=$1 AND type='usage' ORDER BY created_at`,
+    [emp.userId]
+  )
+  expect(usage.rows.map((r) => (r.organization_id ? 'org' : 'personal'))).toEqual(['org', 'org', 'personal'])
+})
+
+test('corporate: org routes 403 for a non-admin employee of the same org', async ({ context }) => {
+  const buyer = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(buyer.userId)
+  const gstin = testGstin()
+  createdGstins.push(gstin)
+  const adminEmail = `okr-e2e-gadmin-${Date.now()}@example.com`
+  await corpFulfil({ purchaserUserId: buyer.userId, gstin, adminEmail, credits: 100 })
+  const admin = await resolveOrCreateUser(adminEmail)
+  createdUsers.push(admin.id)
+
+  const emp = await signIn(context, 'http://localhost:3200', `okr-e2e-nonadmin-${Date.now()}@example.com`)
+  createdUsers.push(emp.userId)
+  await allocateOrgCredits(admin, { email: emp.email, credits: 2 })
+
+  for (const path of ['org/status', 'org/report?email=x%40y.com']) {
+    const r = await context.request.get(`http://localhost:3200/api/okr-ally/${path}`, { headers: { cookie: emp.cookieHeader } })
+    expect(r.status()).toBe(403)
+  }
+  const alloc = await context.request.post('http://localhost:3200/api/okr-ally/org/allocate', {
+    headers: { cookie: emp.cookieHeader },
+    data: { email: 'x@y.com', credits: 1 },
+  })
+  expect(alloc.status()).toBe(403)
+
+  const me = await (
+    await context.request.get('http://localhost:3200/api/okr-ally/me', { headers: { cookie: emp.cookieHeader } })
+  ).json()
+  expect(me.user.isOrgAdmin).toBe(false)
+
+  const adminSession = await signIn(context, 'http://localhost:3200', adminEmail)
+  const ok = await context.request.get('http://localhost:3200/api/okr-ally/org/status', { headers: { cookie: adminSession.cookieHeader } })
+  expect(ok.status()).toBe(200)
+})
+
+test('corporate: report is org-scoped; a pre-existing personal account is left fully intact', async ({ context }) => {
+  test.setTimeout(180_000)
+  const emp = await signIn(context, 'http://localhost:3200', `okr-e2e-existing-${Date.now()}@example.com`)
+  createdUsers.push(emp.userId)
+  await seedCredits(emp.userId, 4)
+  await seedProfile(emp.userId, {
+    name: 'Existing Person',
+    companyName: 'Their Co',
+    companyContext: 'ctx a',
+    businessContext: 'ctx b',
+    roleContext: 'ctx c',
+  })
+  const { submissionId } = await seedCompletedReview(emp.userId, 'A pre-existing objective of theirs')
+  const balBefore = await getBalance(emp.userId)
+  const profBefore = (await pool.query(`SELECT * FROM user_profile WHERE user_id=$1`, [emp.userId])).rows[0]
+
+  const buyer = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(buyer.userId)
+  const gstin = testGstin()
+  createdGstins.push(gstin)
+  const adminEmail = `okr-e2e-radmin-${Date.now()}@example.com`
+  await corpFulfil({ purchaserUserId: buyer.userId, gstin, adminEmail, credits: 100 })
+  const admin = await resolveOrCreateUser(adminEmail)
+  createdUsers.push(admin.id)
+  await allocateOrgCredits(admin, { email: emp.email, credits: 10 })
+
+  expect(await getBalance(emp.userId)).toBe(balBefore)
+  expect((await pool.query(`SELECT * FROM user_profile WHERE user_id=$1`, [emp.userId])).rows[0]).toEqual(profBefore)
+  expect((await pool.query(`SELECT id FROM submissions WHERE id=$1`, [submissionId])).rows).toHaveLength(1)
+
+  const rep = await getEmployeeOrgReport(admin, emp.email)
+  expect(rep).toBeTruthy()
+  expect({ allocated: rep!.allocated, used: rep!.used, remaining: rep!.remaining, reclaimed: rep!.reclaimed }).toEqual({
+    allocated: 10,
+    used: 0,
+    remaining: 10,
+    reclaimed: 0,
+  })
+
+  const adminSession = await signIn(context, 'http://localhost:3200', adminEmail)
+  const dl = await context.request.get(
+    `http://localhost:3200/api/okr-ally/org/report/pdf?email=${encodeURIComponent(emp.email)}`,
+    { headers: { cookie: adminSession.cookieHeader } }
+  )
+  expect(dl.status()).toBe(200)
+  expect(dl.headers()['content-type']).toContain('application/pdf')
 })

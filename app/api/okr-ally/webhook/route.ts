@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import Razorpay from 'razorpay'
 import { getUserById } from '@/lib/okrAlly'
 import { grantCredits, getPack } from '@/lib/okrAllyBilling'
+import { fulfilCorporatePurchase } from '@/lib/okrAllyOrg'
 import { createAndSendInvoice } from '@/lib/okrAllyInvoice'
 import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
 
@@ -68,11 +69,43 @@ export async function POST(req: NextRequest) {
       notes = (order.notes || {}) as Record<string, string>
     }
 
-    if (!notes || notes.app !== 'okr-ally' || !notes.userId) {
+    if (!notes || notes.app !== 'okr-ally') {
       return NextResponse.json({ ok: true, ignored: 'not an okr-ally order' })
     }
     if (!paymentId) {
       return NextResponse.json({ ok: true, ignored: 'no payment id' })
+    }
+
+    // ── Corporate bundle — the silent fallback for the closed-tab case.
+    // Idempotent with verify-payment via the `org_purchase` unique index.
+    if (notes.kind === 'corporate') {
+      const credits = Number(notes.credits)
+      if (!credits || credits < 1) {
+        return NextResponse.json({ ok: true, ignored: 'corporate order has no credits' })
+      }
+      const purchaser = notes.purchaserUserId ? await getUserById(notes.purchaserUserId) : null
+      const r = await fulfilCorporatePurchase({
+        purchaserUserId: notes.purchaserUserId,
+        purchaserName: purchaser?.name ?? notes.companyName,
+        purchaserEmail: purchaser?.email ?? notes.adminEmail,
+        adminEmail: notes.adminEmail,
+        companyName: notes.companyName,
+        gstin: notes.gstin,
+        registeredAddress: notes.registeredAddress,
+        placeOfSupply: notes.placeOfSupply,
+        credits,
+        listPrice: Number(notes.listPrice) || Number(notes.base),
+        baseAmount: Number(notes.base),
+        gstAmount: Number(notes.gst),
+        totalAmount: Number(notes.total),
+        razorpayPaymentId: paymentId,
+        razorpayOrderId: orderId,
+      })
+      return NextResponse.json({ ok: true, corporate: true, granted: r.ok && !r.alreadyProcessed })
+    }
+
+    if (!notes.userId) {
+      return NextResponse.json({ ok: true, ignored: 'not an okr-ally order' })
     }
 
     try {
