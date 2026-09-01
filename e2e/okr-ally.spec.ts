@@ -118,7 +118,7 @@ test('happy path: sign in, submit an OKR, get a scored report', async ({ page, c
   await fillContext(
     page,
     'Meridian Foods is a 45-store regional grocery chain in the US Southeast with roughly 2,400 employees and about $310M in annual revenue. It is privately held.',
-    /business situation this OKR sits inside/i
+    /company right now/i
   )
   await fillContext(
     page,
@@ -139,7 +139,7 @@ test('happy path: sign in, submit an OKR, get a scored report', async ({ page, c
   )
   await expect(page.getByText(/Now your Key Results/i)).toBeVisible()
   await page.getByPlaceholder(/Raise activation rate/i).fill('Increase average monthly visits per top-tier loyalty member from 6.1 to 7.4')
-  await page.getByRole('button', { name: '+ add Key Result' }).click()
+  await page.getByRole('button', { name: '+ Add another Key Result' }).click()
   await page.getByPlaceholder(/Raise activation rate/i).last().fill('Grow top-tier members’ share of wallet from 60% to 66%')
   await page.getByRole('button', { name: 'Review everything' }).click()
 
@@ -330,13 +330,13 @@ test.describe(() => {
             await page.getByRole('button', { name: /Use Ally/ }).click()
             return 'confirmed'
           }
-          if (await page.getByText(/business situation this OKR sits inside/i).count()) return 'advanced'
+          if (await page.getByText(/company right now/i).count()) return 'advanced'
           return 'waiting'
         },
         { timeout: 45_000, intervals: [500] }
       )
       .not.toBe('waiting')
-    await expect(page.getByText(/business situation this OKR sits inside/i)).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByText(/company right now/i)).toBeVisible({ timeout: 20_000 })
 
     // ── remaining fields, straight through ──
     await fillContext(
