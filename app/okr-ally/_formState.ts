@@ -128,11 +128,19 @@ export const CTX_KIND: Record<'ctx_company' | 'ctx_business' | 'ctx_role', 'comp
 export const CTX_PROMPT: Record<'company' | 'business' | 'role', string> = {
   company:
     "Tell me about your company or organisation — what it does, who it serves, roughly how big it is. A few sentences is plenty.",
-  business:
-    "How does this objective connect to your organisation's broader goals or priorities, and what impact is it meant to have?",
+  business: 'Tell me about your company right now.',
   role:
     "And your own role — what you're accountable for, and what you can and can't directly influence.",
 }
+
+/** Guiding questions shown as bullets under the `business` prompt (display copy
+ *  only — the field stays one free-text textarea, same limit, same pipeline). */
+export const BUSINESS_CONTEXT_GUIDES = [
+  'What strategic direction is your company taking?',
+  'What are the current challenges in business and operations?',
+  'What opportunities does the organization see?',
+  'What trends are affecting your operations?',
+]
 
 /** Build the context_snapshot payload for the review API from a finished field. */
 export function ctxSnapshot(c: CtxFieldState) {

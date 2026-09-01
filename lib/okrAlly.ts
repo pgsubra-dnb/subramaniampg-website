@@ -67,8 +67,15 @@ export interface OkrAllyUser {
   phone: string | null
   name: string
   is_admin: boolean
+  /** The user's "home" organization, or null. Set the first time an org
+   *  allocates credits to them or designates them admin (migration 009). */
+  organization_id: string | null
+  /** Company Admin screen gate — strictly this flag (migration 009). */
+  is_org_admin: boolean
   created_at: string
 }
+
+const USER_COLS = 'id, email, phone, name, is_admin, organization_id, is_org_admin, created_at'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -89,7 +96,7 @@ export async function resolveOrCreateUser(email: string): Promise<OkrAllyUser> {
   const normalized = email.trim().toLowerCase()
 
   const existing = await query<OkrAllyUser>(
-    'SELECT id, email, phone, name, is_admin, created_at FROM users WHERE email = $1',
+    `SELECT ${USER_COLS} FROM users WHERE email = $1`,
     [normalized]
   )
   if (existing.rows[0]) return existing.rows[0]
@@ -98,7 +105,7 @@ export async function resolveOrCreateUser(email: string): Promise<OkrAllyUser> {
     `INSERT INTO users (email, name)
      VALUES ($1, $2)
      ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
-     RETURNING id, email, phone, name, is_admin, created_at`,
+     RETURNING ${USER_COLS}`,
     [normalized, placeholderName(normalized)]
   )
   return inserted.rows[0]
@@ -107,7 +114,7 @@ export async function resolveOrCreateUser(email: string): Promise<OkrAllyUser> {
 export async function getUserById(id: string): Promise<OkrAllyUser | null> {
   if (!UUID_RE.test(id)) return null
   const res = await query<OkrAllyUser>(
-    'SELECT id, email, phone, name, is_admin, created_at FROM users WHERE id = $1',
+    `SELECT ${USER_COLS} FROM users WHERE id = $1`,
     [id]
   )
   return res.rows[0] ?? null
@@ -120,13 +127,54 @@ export async function getSessionUser(req: NextRequest): Promise<OkrAllyUser | nu
   return getUserById(id)
 }
 
-/** Credits available to a user; 0 when no balance row exists yet. */
+/** Personal credits only; 0 when no balance row exists yet. Used by the paid
+ *  purchase / invoice paths, which are personal-only. */
 export async function getCreditsRemaining(userId: string): Promise<number> {
   const res = await query<{ credits_remaining: number }>(
     'SELECT credits_remaining FROM user_credit_balance WHERE user_id = $1',
     [userId]
   )
   return res.rows[0]?.credits_remaining ?? 0
+}
+
+export interface AvailableCredits {
+  /** Personal `user_credit_balance`. */
+  personal: number
+  /** Per-organization allocated balances the user can spend (>0 only). */
+  org: { organizationId: string; organizationName: string; credits: number }[]
+  /** personal + Σ org — what "can I run a review?" should check. */
+  total: number
+}
+
+/**
+ * Everything a user can spend on a review: their personal balance plus every
+ * organization-allocated balance. The two are always tracked separately in the
+ * DB (org credits never merge into personal) — this only sums them for display
+ * and for the "can submit?" check. Deduction order is enforced in
+ * lib/okrAllySubmission.ts (coupon → org → personal).
+ */
+export async function getAvailableCredits(userId: string): Promise<AvailableCredits> {
+  const [personalRes, orgRes] = await Promise.all([
+    query<{ credits_remaining: number }>(
+      'SELECT credits_remaining FROM user_credit_balance WHERE user_id = $1',
+      [userId]
+    ),
+    query<{ organization_id: string; name: string; credits_remaining: number }>(
+      `SELECT ocb.organization_id, o.name, ocb.credits_remaining
+         FROM org_credit_balance ocb
+         JOIN organizations o ON o.id = ocb.organization_id
+        WHERE ocb.user_id = $1 AND ocb.credits_remaining > 0
+        ORDER BY ocb.credits_remaining DESC, o.name`,
+      [userId]
+    ),
+  ])
+  const personal = personalRes.rows[0]?.credits_remaining ?? 0
+  const org = orgRes.rows.map((r) => ({
+    organizationId: r.organization_id,
+    organizationName: r.name,
+    credits: r.credits_remaining,
+  }))
+  return { personal, org, total: personal + org.reduce((s, x) => s + x.credits, 0) }
 }
 
 // ─── Sanity okrAllySettings (footer/branding + GST invoice compliance) ───

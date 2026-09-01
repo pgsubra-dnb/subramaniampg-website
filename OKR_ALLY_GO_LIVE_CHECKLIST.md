@@ -204,6 +204,14 @@ fresh `main` checkout → `subramaniampg.guru`. `main` = production from here.
 
 ## Notes / risks carried from the build
 
+- **Migration 009 (2026-09-01, applied to Neon).** `okr-ally-schema-migration-009.sql` in the
+  design-package folder — self-serve corporate credits. New tables `organizations`,
+  `organization_allocations`, `org_credit_balance`; `users` +`organization_id` +`is_org_admin`;
+  `credit_transactions` +`organization_id`, `type` CHECK widened with `org_purchase` (+ its
+  partial-unique idempotency index); `invoices` +`buyer_address`. **No new env vars.** The
+  corporate purchase reuses `RAZORPAY_KEY_ID/SECRET` + `RAZORPAY_WEBHOOK_SECRET` (already
+  Production-only). Ship after the individual-price PR (`fix/okr-ally-individual-pricing`,
+  independent) — no ordering dependency, but both touch pricing docs.
 - **Migration 007 (2026-08-30, applied to Neon).** `okr-ally-schema-migration-007.sql` in the
   design-package folder. (a) `invoices` gains `list_price`, `discount_percent`, `coupon_code`,
   `submission_id`; `razorpay_payment_id` is now nullable; `idx_invoices_submission` (partial unique)

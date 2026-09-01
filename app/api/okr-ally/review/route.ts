@@ -116,6 +116,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { submission, charge } = start
+  const organizationId = start.organizationId ?? null
 
   const result = await runReview({
     objective: parsed.value.objective,
@@ -124,7 +125,7 @@ export async function POST(req: NextRequest) {
   })
 
   if (!result.ok) {
-    await refundFailedSubmission({ submissionId: submission.id, userId: user.id, charge })
+    await refundFailedSubmission({ submissionId: submission.id, userId: user.id, charge, organizationId })
     console.error('OKR Ally review failed:', submission.id, result.reason)
     return NextResponse.json(
       {
