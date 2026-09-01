@@ -24,7 +24,8 @@ export type ContextFieldKind = 'company' | 'business' | 'role'
 
 const FIELD_LABEL: Record<ContextFieldKind, string> = {
   company: 'the company / organisation',
-  business: 'the business situation or goal this OKR sits inside',
+  business:
+    "the company's current strategic direction, business and operational challenges, opportunities, and relevant trends",
   role: "the user's own role and what they can influence",
 }
 
