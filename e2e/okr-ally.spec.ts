@@ -792,6 +792,42 @@ test('install banner: appears on beforeinstallprompt and calls prompt() on click
 })
 
 // ══════════════════════════════════════════════════════════
+// 15. "How it works" walkthrough — reachable before sign-in
+// ══════════════════════════════════════════════════════════
+test('walkthrough: intro → step every slide → CTA lands on the email gate', async ({ page }) => {
+  test.setTimeout(90_000)
+  await page.goto('/okr-ally')
+  await expect(page.getByRole('button', { name: /See how it works/i })).toBeVisible({ timeout: 45_000 })
+
+  await page.getByRole('button', { name: /See how it works/i }).click()
+  await expect(page.getByRole('heading', { name: 'How OKR Ally works' })).toBeVisible()
+  await expect(page.getByText('1 / 8')).toBeVisible()
+  await expect(page.getByText(/This is the front door/i)).toBeVisible()
+
+  // ← Back returns to the intro
+  await page.getByRole('button', { name: '← Back' }).click()
+  await expect(page.getByRole('button', { name: /Say hi to Ally/i })).toBeVisible()
+
+  // re-open and step through every slide with Next
+  await page.getByRole('button', { name: /See how it works/i }).click()
+  for (let i = 1; i < 8; i++) {
+    await expect(page.getByText(`${i} / 8`)).toBeVisible()
+    await page.getByRole('button', { name: 'Next', exact: true }).click()
+  }
+  await expect(page.getByText('8 / 8')).toBeVisible()
+
+  // a before/after comparison was shown on the way (slide 7)
+  await page.getByRole('button', { name: 'Back', exact: true }).click()
+  await expect(page.getByRole('heading', { name: /A vague Key Result vs a specified one/i })).toBeVisible()
+  await expect(page.getByText(/Raise onboarding NPS from 32 to 45 by 31 March/)).toBeVisible()
+  await page.getByRole('button', { name: 'Next', exact: true }).click()
+
+  // final slide CTA → email gate
+  await page.getByRole('button', { name: /Start my free review/i }).click()
+  await expect(page.getByPlaceholder('you@company.com')).toBeVisible()
+})
+
+// ══════════════════════════════════════════════════════════
 // 16. Corporate credits — purchase, allocate/reclaim, org-first deduction,
 //     access control, report isolation, existing-account safety.
 // ══════════════════════════════════════════════════════════
