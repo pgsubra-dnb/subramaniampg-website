@@ -84,16 +84,16 @@ const SLIDES: Slide[] = [
   },
   {
     kind: 'compare',
-    heading: 'A thin business-context answer vs a full one',
+    heading: 'A thin company answer vs a full one',
     inAnswerTo:
-      "“How does this objective connect to your organisation's broader goals or priorities, and what impact is it meant to have?”",
-    worse: { label: 'Thin', text: "It's one of our company priorities this quarter." },
+      '“Tell me about your company right now” — strategic direction, the current challenges in business and operations, the opportunities you see, and the trends affecting you.',
+    worse: { label: 'Thin', text: "We're a mid-size SaaS company and we're growing." },
     better: {
       label: 'Full',
-      text: 'Our board goal for the year is to lift net revenue retention from 104% to 115%. The biggest lever is getting customers onto our compliance module — they renew at nearly double the rate. This objective is meant to make that module the default, not an add-on people discover late.',
+      text: "We're moving upmarket from SMB to mid-market this year. The blocker is that onboarding takes 12 weeks and first-year churn is 22%. A competitor just left the mid-market, so there's an opening — and new EU compliance rules are driving demand for our audit module.",
     },
     caption:
-      'The full answer tells me which company goal your objective ladders up to, the mechanism you’re betting on, and the impact you expect. That is what lets me judge whether your Key Results measure the thing that actually matters.',
+      'A full answer covers where the company is heading, what’s slowing it down, and what’s shifting around it. That context is what lets me judge whether your objective and Key Results are aimed at what actually matters right now.',
   },
   {
     kind: 'compare',
