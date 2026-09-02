@@ -1918,15 +1918,23 @@ Review this OKR now. Call submit_okr_review with your complete assessment.`
   )
 })
 
-test('review prompt: goal_ally never instructs the model with OKR vocabulary', () => {
+test('review prompt: goal_ally uses only Goal-Plan vocabulary (bar one explicit guard line)', () => {
   const sys = buildSystemPrompt('goal_ally')
   const usr = buildUserContent(SAMPLE_INPUT, 'goal_ally')
-  for (const text of [sys, usr]) {
-    expect(text).not.toMatch(/\bObjective\b/)
-    expect(text).not.toMatch(/\bKey Results?\b/)
-    // "OKR" only ever legitimately appears inside the tool name submit_okr_review.
-    expect(text.replace(/submit_okr_review/g, '')).not.toMatch(/\bOKRs?\b/)
+
+  // The system prompt carries exactly one sentence that names the forbidden
+  // terms — the guard that tells the model never to use them. Every other line
+  // must be pure Goal-Plan vocabulary. Strip that one sentence, then scan.
+  const guard =
+    'Never write the words "objective", "key result", "KR", or "OKR" anywhere in your output.'
+  expect(sys).toContain(guard)
+  const sysBody = sys.replace(guard, '').replace(/submit_okr_review/g, '')
+
+  for (const text of [sysBody, usr]) {
+    expect(text).not.toMatch(/\bObjectives?\b/i)
+    expect(text).not.toMatch(/\bKey Results?\b/i)
     expect(text).not.toMatch(/\bKRs?\b/)
+    expect(text).not.toMatch(/\bOKRs?\b/)
   }
   expect(sys).toContain('You are Goal Ally, an expert Goal Plan reviewer')
   expect(sys).toContain('EVERY Sub-goal')
