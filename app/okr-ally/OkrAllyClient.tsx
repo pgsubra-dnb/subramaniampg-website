@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import Image from 'next/image'
 import { Page, TopBar, InstallAppBanner, AllyRow, Btn, Field, ShareCard, T, AVATAR, keyframes } from './_ui'
 import StepForm from './_form'
@@ -9,9 +9,11 @@ import PricingTab from './_pricing'
 import HistoryTab from './_history'
 import HelpTab from './_help'
 import { AdminList, AdminReviewScreen } from './_admin'
-import Walkthrough from './_walkthrough'
+import Walkthrough, { OrgAdminWalkthrough, EmployeeWalkthrough } from './_walkthrough'
 import OrgAdminScreen from './_org'
 import { FormState, emptyForm, CtxFieldState, OrgContext } from './_formState'
+
+type RoleWalkthrough = 'org_admin' | 'employee'
 
 type Phase = 'loading' | 'intro' | 'walkthrough' | 'email' | 'app' | 'signedout'
 type Tab = 'ally' | 'pricing' | 'history' | 'help' | 'admin' | 'company'
@@ -27,6 +29,7 @@ interface Me {
     organizationId: string | null
   }
   orgContext?: OrgContext | null
+  seenWalkthroughs?: string[]
 }
 interface Status {
   creditsRemaining: number
@@ -54,10 +57,33 @@ export default function OkrAllyClient() {
   const [report, setReport] = useState<FullReport | null>(null)
   const [adminId, setAdminId] = useState<string | null>(null)
   const [verifyError, setVerifyError] = useState<string | null>(null)
+  const [roleWalkthrough, setRoleWalkthrough] = useState<RoleWalkthrough | null>(null)
 
   const isAdmin = !!me?.user?.isAdmin
   const isOrgAdmin = !!me?.user?.isOrgAdmin
   const orgCtx = me?.orgContext ?? null
+  const seenWalkthroughs = me?.seenWalkthroughs
+  const hasSeen = (k: RoleWalkthrough) => !!seenWalkthroughs?.includes(k)
+
+  // Dismiss a role walkthrough — record it (idempotent) so it won't auto-pop
+  // again, and reflect that locally. It stays reopenable from the "see this
+  // again" link, which calls setRoleWalkthrough directly.
+  const dismissRoleWalkthrough = useCallback(
+    (k: RoleWalkthrough) => {
+      setRoleWalkthrough(null)
+      setMe((m) =>
+        m && !m.seenWalkthroughs?.includes(k)
+          ? { ...m, seenWalkthroughs: [...(m.seenWalkthroughs ?? []), k] }
+          : m
+      )
+      fetch('/api/okr-ally/walkthrough-seen', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ key: k }),
+      }).catch(() => {})
+    },
+    []
+  )
 
   // Register the minimal service worker — the last PWA-installability criterion
   // (Chrome/Edge, desktop + Android). It does no caching.
@@ -124,6 +150,22 @@ export default function OkrAllyClient() {
       }
     })()
   }, [refreshStatus])
+
+  // Org-admin walkthrough — auto once, the first time the Company tab is opened.
+  useEffect(() => {
+    if (
+      phase === 'app' &&
+      tab === 'company' &&
+      isOrgAdmin &&
+      seenWalkthroughs !== undefined &&
+      !hasSeen('org_admin') &&
+      !roleWalkthrough
+    ) {
+      setRoleWalkthrough('org_admin')
+    }
+    // hasSeen is derived from seenWalkthroughs; roleWalkthrough guards re-trigger
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, tab, isOrgAdmin, seenWalkthroughs, roleWalkthrough])
 
   // load the full report when reportId is set
   useEffect(() => {
@@ -208,6 +250,19 @@ export default function OkrAllyClient() {
   return (
     <Page>
       <style>{keyframes}</style>
+
+      {roleWalkthrough && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: T.cream, overflowY: 'auto' }}>
+          <div style={{ maxWidth: 640, margin: '0 auto', padding: '28px 24px 80px' }}>
+            {roleWalkthrough === 'org_admin' ? (
+              <OrgAdminWalkthrough onClose={() => dismissRoleWalkthrough('org_admin')} />
+            ) : (
+              <EmployeeWalkthrough onClose={() => dismissRoleWalkthrough('employee')} />
+            )}
+          </div>
+        </div>
+      )}
+
       <TopBar
         right={
           me?.authenticated ? (
@@ -301,14 +356,24 @@ export default function OkrAllyClient() {
       )}
 
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'ally' && !(orgCtx && !orgCtx.confirmed) && !resumeOffer && (
-        <StepForm
-          initialForm={draft}
-          orgContext={orgCtx}
-          onSubmitted={(r) => {
-            setReportId(r.submissionId)
-            refreshStatus()
-          }}
-        />
+        <>
+          {orgCtx?.confirmed && (
+            <SeeAgainLink onClick={() => setRoleWalkthrough('employee')}>
+              See how OKR Ally works at your company
+            </SeeAgainLink>
+          )}
+          <StepForm
+            initialForm={draft}
+            orgContext={orgCtx}
+            onReachedContextScreens={() => {
+              if (!hasSeen('employee')) setRoleWalkthrough('employee')
+            }}
+            onSubmitted={(r) => {
+              setReportId(r.submissionId)
+              refreshStatus()
+            }}
+          />
+        </>
       )}
 
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'pricing' && (
@@ -322,12 +387,17 @@ export default function OkrAllyClient() {
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'help' && <HelpTab />}
 
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'company' && isOrgAdmin && (
-        <OrgAdminScreen
-          onPoolChange={() => {
-            refreshStatus()
-            refreshMe()
-          }}
-        />
+        <>
+          <SeeAgainLink onClick={() => setRoleWalkthrough('org_admin')}>
+            See the admin walkthrough again
+          </SeeAgainLink>
+          <OrgAdminScreen
+            onPoolChange={() => {
+              refreshStatus()
+              refreshMe()
+            }}
+          />
+        </>
       )}
 
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'admin' && isAdmin && (
@@ -445,6 +515,27 @@ function Intro({ onStart, onSeeHow }: { onStart: () => void; onSeeHow: () => voi
         </a>
       </div>
     </div>
+  )
+}
+
+function SeeAgainLink({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'block',
+        marginBottom: 12,
+        background: 'none',
+        border: 'none',
+        padding: 0,
+        cursor: 'pointer',
+        fontSize: 12.5,
+        color: T.emeraldDark,
+        textDecoration: 'underline',
+      }}
+    >
+      {children}
+    </button>
   )
 }
 

@@ -29,6 +29,9 @@ interface Props {
   /** Set for a corporate member: company + business context are the org's,
    *  read-only. Role context stays personal. */
   orgContext?: OrgContext | null
+  /** Fires once, when an org member first reaches the context screens
+   *  (the profile summary, or the first context step). */
+  onReachedContextScreens?: () => void
   onSubmitted: (result: ReviewResult) => void
 }
 
@@ -54,7 +57,7 @@ const STEP_LABEL: Record<StepId, string> = {
   confirm: 'Review & submit',
 }
 
-export default function StepForm({ initialForm, orgContext, onSubmitted }: Props) {
+export default function StepForm({ initialForm, orgContext, onReachedContextScreens, onSubmitted }: Props) {
   const [form, setForm] = useState<FormState>(() => {
     const base = initialForm ?? emptyForm()
     return orgContext ? applyOrgContext(base, orgContext) : { ...base, orgManaged: false }
@@ -63,6 +66,20 @@ export default function StepForm({ initialForm, orgContext, onSubmitted }: Props
   const [error, setError] = useState<string | null>(null)
   const [submitState, setSubmitState] = useState<'idle' | 'running' | 'failed'>('idle')
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  // Tell the parent the first time an org member reaches the context screens
+  // (the profile summary, or a context step) — it fires the employee walkthrough.
+  const reachedCtxRef = useRef(false)
+  useEffect(() => {
+    if (
+      !reachedCtxRef.current &&
+      form.orgManaged &&
+      (form.step === 'profile_summary' || isCtxStep(form.step))
+    ) {
+      reachedCtxRef.current = true
+      onReachedContextScreens?.()
+    }
+  }, [form.orgManaged, form.step, onReachedContextScreens])
 
   // ── autosave (debounced) ────────────────────────────────
   const saveTimer = useRef<ReturnType<typeof setTimeout>>()

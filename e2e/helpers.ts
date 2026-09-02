@@ -344,6 +344,42 @@ export async function getOrgByGstin(gstin: string): Promise<OrgRow | null> {
   return r.rows[0] ?? null
 }
 
+/** Create a bare organization (no fake payment). Returns id + gstin (push the
+ *  gstin to your createdGstins so cleanupOrgs tears it down). */
+export async function seedOrg(name: string): Promise<{ id: string; gstin: string }> {
+  const gstin = ('33ORG' + Date.now().toString(36) + Math.random().toString(36).slice(2))
+    .slice(0, 15)
+    .toUpperCase()
+  const r = await pool.query<{ id: string }>(
+    `INSERT INTO organizations (name, gstin, registered_address, credits_purchased, credits_allocated)
+     VALUES ($1, $2, '1 Test Road, Chennai, Tamil Nadu 600001', 100, 0) RETURNING id`,
+    [name, gstin]
+  )
+  return { id: r.rows[0].id, gstin }
+}
+
+export async function makeOrgAdmin(userId: string, orgId: string): Promise<void> {
+  await pool.query(`UPDATE users SET is_org_admin = true, organization_id = $2 WHERE id = $1`, [userId, orgId])
+}
+
+/** Put a user in an org as a plain member (+ give them 5 org credits). */
+export async function joinOrg(userId: string, orgId: string): Promise<void> {
+  await pool.query(`UPDATE users SET organization_id = $2 WHERE id = $1`, [userId, orgId])
+  await pool.query(
+    `INSERT INTO org_credit_balance (user_id, organization_id, credits_remaining) VALUES ($1, $2, 5)
+     ON CONFLICT (user_id, organization_id) DO UPDATE SET credits_remaining = 5`,
+    [userId, orgId]
+  )
+}
+
+export async function getSeenWalkthroughs(userId: string): Promise<string[]> {
+  const r = await pool.query<{ seen_walkthroughs: string[] }>(
+    `SELECT seen_walkthroughs FROM users WHERE id = $1`,
+    [userId]
+  )
+  return r.rows[0]?.seen_walkthroughs ?? []
+}
+
 /** Simulate an org admin's "Confirm and publish" (migration 011): store the
  *  shared company/business context AND stamp context_confirmed_at. Call again to
  *  simulate a later edit + reconfirmation. */

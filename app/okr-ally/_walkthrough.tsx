@@ -5,13 +5,15 @@ import Image from 'next/image'
 import { T, Btn, AVATAR } from './_ui'
 
 /**
- * "How it works" — a slideshow the visitor can open from the intro screen,
- * before signing in. Every slide is a real product screenshot (captured into
- * public/okr-ally/walkthrough/ against the live deployed flow) and the slides
- * follow the exact order a user experiences: intro → sign-in → the three
- * context questions → Objective → Key Results → confirm → report.
+ * Reusable slideshow used for three walkthroughs:
+ *  - "How OKR Ally works" — opened from the intro screen before sign-in.
+ *  - Org-admin — shown once on the first Company-tab visit, revisitable.
+ *  - Employee — shown once when an org member first reaches the context screens.
  *
- * Entirely static — no API calls, no video, no external assets.
+ * `Carousel` is the shared shell (dots, nav, keyboard, framing, Ally caption
+ * bubble). Slides are `shot` (a product screenshot + caption), `note` (a short
+ * headed message) or `cta` (the "How it works" closer with its own button).
+ * Entirely static — no API calls.
  */
 
 type Shot = {
@@ -22,10 +24,94 @@ type Shot = {
   alt: string
   caption: string
 }
+type Note = { kind: 'note'; heading: string; body: string }
 type Cta = { kind: 'cta'; heading: string; body: string }
-type Slide = Shot | Cta
+type Slide = Shot | Note | Cta
 
-const SLIDES: Slide[] = [
+// ─── shared shell ─────────────────────────────────────────────────────────
+
+function Carousel({
+  title,
+  slides,
+  onDismiss,
+  dismissLabel = '← Back',
+  doneLabel = 'Got it',
+  ctaAction,
+}: {
+  title: string
+  slides: Slide[]
+  onDismiss: () => void
+  dismissLabel?: string
+  doneLabel?: string
+  ctaAction?: () => void
+}) {
+  const [idx, setIdx] = useState(0)
+  const last = slides.length - 1
+  const slide = slides[idx]
+
+  const go = useCallback((d: number) => setIdx((i) => Math.max(0, Math.min(last, i + d))), [last])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight') go(1)
+      else if (e.key === 'ArrowLeft') go(-1)
+      else if (e.key === 'Escape') onDismiss()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [go, onDismiss])
+
+  return (
+    <div style={{ animation: 'okraIn .3s ease both' }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
+        <button
+          onClick={onDismiss}
+          style={{ background: 'none', border: 'none', color: T.emeraldDark, fontWeight: 600, cursor: 'pointer', fontSize: 13, padding: 0 }}
+        >
+          {dismissLabel}
+        </button>
+        <span style={{ fontSize: 12, color: T.muted }}>
+          {idx + 1} / {slides.length}
+        </span>
+      </div>
+
+      <h1
+        style={{
+          fontFamily: 'var(--font-lora), serif',
+          fontSize: 20,
+          fontWeight: 600,
+          color: T.charcoal,
+          margin: '0 0 14px',
+        }}
+      >
+        {title}
+      </h1>
+
+      <div style={{ minHeight: 320 }}>
+        {slide.kind === 'shot' && <ShotView key={idx} slide={slide} />}
+        {slide.kind === 'note' && <NoteView key={idx} slide={slide} />}
+        {slide.kind === 'cta' && <CtaView key={idx} slide={slide} onAction={ctaAction} />}
+      </div>
+
+      <Dots idx={idx} count={slides.length} onDot={setIdx} />
+
+      <div className="flex items-center justify-between" style={{ marginTop: 16 }}>
+        <Btn variant="ghost" onClick={() => go(-1)} disabled={idx === 0}>
+          Back
+        </Btn>
+        {idx !== last ? (
+          <Btn onClick={() => go(1)}>Next</Btn>
+        ) : slide.kind !== 'cta' ? (
+          <Btn onClick={onDismiss}>{doneLabel}</Btn>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+// ─── the three walkthroughs ───────────────────────────────────────────────
+
+const HOW_IT_WORKS: Slide[] = [
   {
     kind: 'shot',
     img: '/okr-ally/walkthrough/01-intro.png',
@@ -114,68 +200,76 @@ const SLIDES: Slide[] = [
   },
 ]
 
+const ORG_ADMIN: Slide[] = [
+  {
+    kind: 'note',
+    heading: 'The credit pool',
+    body: "Your company bought a pool of review credits. This tab shows how many were purchased, how many you've handed out, and how many are still available. The pool is the company's — it's tracked completely separately from anyone's personal credits and never touches them.",
+  },
+  {
+    kind: 'note',
+    heading: 'Handing credits to your team',
+    body: "Allocate any number of credits to a teammate by email. If they don't have an account yet, allocating creates one and emails them. Their reviews spend company credits first, and only fall back to personal credits once yours run out. You can reclaim whatever a person hasn't spent back into the pool at any time.",
+  },
+  {
+    kind: 'note',
+    heading: 'Set the company context — and publish it',
+    body: 'Everyone on your team runs their review on the company and business context you write here — they can\'t change it. Nothing goes live until you press "Confirm and publish". Until you do, no one on the team can submit a review, so set this up first. Republishing later applies to future reviews only; reviews already run keep the context they were run with.',
+  },
+  {
+    kind: 'note',
+    heading: 'Seeing usage',
+    body: "The usage report shows, per person, what you allocated, what they've used on reviews, what's been reclaimed, and what's left — and gives you a PDF. Every figure is scoped to your company and is independent of that person's own OKR Ally account.",
+  },
+]
+
+const EMPLOYEE: Slide[] = [
+  {
+    kind: 'note',
+    heading: 'Your company sets part of the context',
+    body: "Your company admin has written the company and business context once, for the whole team. You'll see it as you go, but it's read-only — that's deliberate, so every review at your company runs on the same footing. You don't need to write it.",
+  },
+  {
+    kind: 'note',
+    heading: 'Your role is yours',
+    body: "The one context question that's yours to answer is your own role — what you're accountable for, and what you can and can't directly move. Fill it in as fully as you can; alongside the company context, it's what makes the review specific to you rather than generic.",
+  },
+  {
+    kind: 'note',
+    heading: 'Everything else is the same',
+    body: "From there it works exactly as it does for anyone: your Objective, your Key Results, a confirm screen, then a scored report with feedback and two rewrites — on screen and in your inbox. Your company credits are spent first.",
+  },
+]
+
 export default function Walkthrough({ onBack, onStart }: { onBack: () => void; onStart: () => void }) {
-  const [idx, setIdx] = useState(0)
-  const last = SLIDES.length - 1
-  const slide = SLIDES[idx]
-
-  const go = useCallback(
-    (d: number) => setIdx((i) => Math.max(0, Math.min(last, i + d))),
-    [last]
-  )
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight') go(1)
-      else if (e.key === 'ArrowLeft') go(-1)
-      else if (e.key === 'Escape') onBack()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [go, onBack])
-
   return (
-    <div style={{ animation: 'okraIn .3s ease both' }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
-        <button
-          onClick={onBack}
-          style={{ background: 'none', border: 'none', color: T.emeraldDark, fontWeight: 600, cursor: 'pointer', fontSize: 13, padding: 0 }}
-        >
-          ← Back
-        </button>
-        <span style={{ fontSize: 12, color: T.muted }}>
-          {idx + 1} / {SLIDES.length}
-        </span>
-      </div>
-
-      <h1
-        style={{
-          fontFamily: 'var(--font-lora), serif',
-          fontSize: 20,
-          fontWeight: 600,
-          color: T.charcoal,
-          margin: '0 0 14px',
-        }}
-      >
-        How OKR Ally works
-      </h1>
-
-      <div style={{ minHeight: 420 }}>
-        {slide.kind === 'shot' && <ShotView key={idx} slide={slide} />}
-        {slide.kind === 'cta' && <CtaView key={idx} slide={slide} onStart={onStart} />}
-      </div>
-
-      <Dots idx={idx} count={SLIDES.length} onDot={setIdx} />
-
-      <div className="flex items-center justify-between" style={{ marginTop: 16 }}>
-        <Btn variant="ghost" onClick={() => go(-1)} disabled={idx === 0}>
-          Back
-        </Btn>
-        {idx !== last && <Btn onClick={() => go(1)}>Next</Btn>}
-      </div>
-    </div>
+    <Carousel title="How OKR Ally works" slides={HOW_IT_WORKS} onDismiss={onBack} ctaAction={onStart} />
   )
 }
+
+export function OrgAdminWalkthrough({ onClose }: { onClose: () => void }) {
+  return (
+    <Carousel
+      title="Running OKR Ally for your company"
+      slides={ORG_ADMIN}
+      onDismiss={onClose}
+      dismissLabel="← Close"
+    />
+  )
+}
+
+export function EmployeeWalkthrough({ onClose }: { onClose: () => void }) {
+  return (
+    <Carousel
+      title="OKR Ally at your company"
+      slides={EMPLOYEE}
+      onDismiss={onClose}
+      dismissLabel="← Close"
+    />
+  )
+}
+
+// ─── slide renderers ──────────────────────────────────────────────────────
 
 function Frame({ children }: { children: React.ReactNode }) {
   return (
@@ -210,7 +304,26 @@ function ShotView({ slide }: { slide: Shot }) {
   )
 }
 
-function CtaView({ slide, onStart }: { slide: Cta; onStart: () => void }) {
+function NoteView({ slide }: { slide: Note }) {
+  return (
+    <div style={{ animation: 'okraIn .3s ease both', padding: '8px 0' }}>
+      <h2
+        style={{
+          fontFamily: 'var(--font-lora), serif',
+          fontSize: 18,
+          fontWeight: 600,
+          color: T.charcoal,
+          margin: '0 0 4px',
+        }}
+      >
+        {slide.heading}
+      </h2>
+      <CaptionBubble>{slide.body}</CaptionBubble>
+    </div>
+  )
+}
+
+function CtaView({ slide, onAction }: { slide: Cta; onAction?: () => void }) {
   return (
     <div style={{ textAlign: 'center', padding: '28px 0', animation: 'okraIn .3s ease both' }}>
       <div style={{ width: 68, height: 68, borderRadius: '50%', overflow: 'hidden', margin: '0 auto 16px', border: `3px solid ${T.emerald}` }}>
@@ -222,10 +335,14 @@ function CtaView({ slide, onStart }: { slide: Cta; onStart: () => void }) {
       <p style={{ color: T.muted, marginTop: 10, lineHeight: 1.6, maxWidth: 420, marginLeft: 'auto', marginRight: 'auto', fontSize: 14 }}>
         {slide.body}
       </p>
-      <div style={{ marginTop: 20 }}>
-        <Btn onClick={onStart}>Start my free review</Btn>
-      </div>
-      <p style={{ marginTop: 10, fontSize: 12.5, color: T.muted }}>Your first review is free.</p>
+      {onAction && (
+        <>
+          <div style={{ marginTop: 20 }}>
+            <Btn onClick={onAction}>Start my free review</Btn>
+          </div>
+          <p style={{ marginTop: 10, fontSize: 12.5, color: T.muted }}>Your first review is free.</p>
+        </>
+      )}
     </div>
   )
 }
