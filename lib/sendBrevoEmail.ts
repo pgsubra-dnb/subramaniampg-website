@@ -37,6 +37,13 @@ export async function sendBrevoEmail({
     payload.attachment = attachments
   }
 
+  // Make the BCC decision observable in prod logs (the address is PGS's own, not
+  // third-party data) so the "only invoice/payment emails copy PGS" rule can be
+  // spot-checked live without an inbox.
+  console.log(
+    `Brevo send: subject="${subject}" to=${to} bcc=${payload.bcc ? 'pgs@embiggen.co.in' : 'none'}`
+  )
+
   const res = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {

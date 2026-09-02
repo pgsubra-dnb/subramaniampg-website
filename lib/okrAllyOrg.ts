@@ -91,7 +91,7 @@ export interface FulfilCorporateResult {
    *  emailed and the `org_purchase` ledger row is stamped. */
   invoiceUnissued?: boolean
   /** Whether the "you're now the admin" email to the designated admin was
-   *  accepted by Brevo. Always BCCs PGS. */
+   *  accepted by Brevo. BCCs PGS — it confirms a corporate payment landed. */
   adminNotified?: boolean
 }
 
@@ -263,8 +263,10 @@ export async function fulfilCorporatePurchase(
   }
 
   // Tell the designated admin they're now running the pool. Default
-  // sendBrevoEmail behaviour (no skipBcc) copies PGS, consistent with the
-  // invoice and allocation emails. Non-blocking.
+  // sendBrevoEmail behaviour (no skipBcc) copies PGS — this email, like the
+  // invoice, is a direct signal that a corporate payment landed correctly.
+  // (Allocations from the pool afterwards are not payments and do NOT copy
+  // him.) Non-blocking.
   let adminNotified = false
   if (!txnResult.alreadyProcessed) {
     try {
@@ -435,6 +437,10 @@ export async function allocateOrgCredits(
       `${ctx.organization.name} has given you ${credits} OKR Ally review ${plural}. ` +
       `Sign in at https://subramaniampg.guru/okr-ally with this email address to use them. ` +
       `They are separate from any personal credits; your reviews spend the company credits first.`,
+    // An org admin allocating from their own pool is not a payment event —
+    // PGS is not copied. The corporate purchase itself (invoice + the
+    // "you're the admin" email) already copied him.
+    skipBcc: true,
   })
 
   return {

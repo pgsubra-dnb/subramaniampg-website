@@ -30,6 +30,9 @@ import {
   reclaimOrgCredits,
   getEmployeeOrgReport,
 } from '../lib/okrAllyOrg'
+import { grantCreditsAsAdmin, sendImprovementEmail } from '../lib/okrAllyAdmin'
+import { generateStoreAndEmailReport } from '../lib/okrAllyReport'
+import { getReviewForSubmission } from '../lib/okrAllySubmission'
 
 // Spec 16 (corporate) calls the fulfilment/allocation libs directly, so opt
 // this test process past the non-prod fulfilment guard (the webServer has it).
@@ -998,6 +1001,110 @@ test('corporate: buyer ≠ admin — the admin gets the "you\'re the admin" emai
   const invMail = brevo.find((e) => e.to === buyer.email && /Tax invoice/i.test(e.subject))
   expect(invMail).toBeTruthy()
   expect(invMail!.bcc).toContain('pgs@embiggen.co.in')
+})
+
+test('email BCC scope: invoice + payment emails copy PGS; the other five do not', async ({ context }) => {
+  test.setTimeout(180_000)
+
+  // Same in-process Brevo capture as the corporate admin-email test — these
+  // paths call the send functions directly, so a fetch stub here is enough.
+  const realFetch = global.fetch
+  const brevo: { to: string; bcc: string[]; subject: string }[] = []
+  process.env.BREVO_API_KEY = 'stub-key-for-capture'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  global.fetch = (async (url: any, opts: any) => {
+    if (String(url).includes('api.brevo.com')) {
+      const p = JSON.parse(opts.body)
+      brevo.push({
+        to: p.to?.[0]?.email,
+        bcc: (p.bcc ?? []).map((b: { email: string }) => b.email),
+        subject: p.subject,
+      })
+      return new Response(JSON.stringify({ messageId: 'stub' }), { status: 201 })
+    }
+    return realFetch(url, opts)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) as any
+
+  const pgs = 'pgs@embiggen.co.in'
+  const bccFor = (re: RegExp) => {
+    const hit = brevo.find((e) => re.test(e.subject))
+    expect(hit, `no captured email matching ${re} — got ${JSON.stringify(brevo.map((e) => e.subject))}`).toBeTruthy()
+    return hit!.bcc
+  }
+
+  const admin = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(admin.userId)
+
+  try {
+    await setAdmin(admin.userId, true)
+    const adminUser = await resolveOrCreateUser(admin.email)
+
+    // ── REMOVE 1: the review-ready email ────────────────────────────────
+    const seeded = await seedCompletedReview(admin.userId, 'BCC-scope objective')
+    const stored = await getReviewForSubmission(seeded.submissionId)
+    await generateStoreAndEmailReport({
+      reviewId: seeded.reviewId,
+      submissionId: seeded.submissionId,
+      userName: adminUser.name,
+      userEmail: adminUser.email,
+      objective: 'BCC-scope objective',
+      krs: [{ text: 'Seed KR from 10 to 20', initiatives: [] }],
+      contextSnapshot: {},
+      review: stored!.review,
+    })
+
+    // ── REMOVE 2: PGS's personal "A note on your OKR" ───────────────────
+    await pool.query(
+      `INSERT INTO improvement_emails (review_id, draft_text) VALUES ($1, $2)
+       ON CONFLICT (review_id) DO UPDATE SET draft_text = EXCLUDED.draft_text`,
+      [seeded.reviewId, 'A short personal note about your OKR from PGS.']
+    )
+    const noteRes = await sendImprovementEmail(adminUser, seeded.reviewId)
+    expect(noteRes.sent).toBe(true)
+
+    // ── REMOVE 3: the admin credit-grant notification ───────────────────
+    const granteeEmail = `okr-e2e-bccgrant-${Date.now()}@example.com`
+    const grantee = await resolveOrCreateUser(granteeEmail)
+    createdUsers.push(grantee.id)
+    const grant = await grantCreditsAsAdmin(adminUser, { email: granteeEmail, credits: 2, note: 'e2e' })
+    expect(grant.ok).toBe(true)
+
+    // ── REMOVE 4 + KEEP: corporate purchase (invoice + "you're the admin")
+    //    then REMOVE 5: an org allocation ────────────────────────────────
+    const gstin = testGstin()
+    createdGstins.push(gstin)
+    const corpAdminEmail = `okr-e2e-bccadmin-${Date.now()}@example.com`
+    const fulfil = await corpFulfil({
+      purchaserUserId: admin.userId,
+      purchaserEmail: admin.email,
+      gstin,
+      adminEmail: corpAdminEmail,
+      companyName: 'BCC Scope LLP',
+      credits: 100,
+    })
+    expect(fulfil.ok).toBe(true)
+    const corpAdmin = await resolveOrCreateUser(corpAdminEmail)
+    createdUsers.push(corpAdmin.id)
+    const empEmail = `okr-e2e-bccemp-${Date.now()}@example.com`
+    const alloc = await allocateOrgCredits(corpAdmin, { email: empEmail, credits: 3 })
+    expect(alloc.ok).toBe(true)
+    createdUsers.push((await resolveOrCreateUser(empEmail)).id)
+  } finally {
+    global.fetch = realFetch
+    delete process.env.BREVO_API_KEY
+    await setAdmin(admin.userId, false).catch(() => {})
+  }
+
+  // KEEP — money landed:
+  expect(bccFor(/^Tax invoice /)).toContain(pgs)
+  expect(bccFor(/you're the OKR Ally admin for/i)).toContain(pgs)
+
+  // REMOVE — not a payment event:
+  expect(bccFor(/^Your OKR Ally review$/)).not.toContain(pgs)
+  expect(bccFor(/^A note on your OKR/)).not.toContain(pgs)
+  expect(bccFor(/added to your OKR Ally account$/)).not.toContain(pgs)
+  expect(bccFor(/OKR Ally review credits? from /i)).not.toContain(pgs)
 })
 
 test('corporate: fulfilment is idempotent on the payment id', async ({ context }) => {
