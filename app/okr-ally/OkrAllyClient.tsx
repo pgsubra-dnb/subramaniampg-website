@@ -63,7 +63,18 @@ export default function OkrAllyClient() {
   const isOrgAdmin = !!me?.user?.isOrgAdmin
   const orgCtx = me?.orgContext ?? null
   const seenWalkthroughs = me?.seenWalkthroughs
-  const hasSeen = (k: RoleWalkthrough) => !!seenWalkthroughs?.includes(k)
+  // "Seen" is authoritative from the server (`/me`), but we also stamp
+  // localStorage on dismiss so an immediate reload can't race the POST and
+  // re-pop the walkthrough on the same device.
+  const localSeenKey = (k: RoleWalkthrough) => `okr_ally_wt_seen_${k}`
+  const localSeen = (k: RoleWalkthrough) => {
+    try {
+      return localStorage.getItem(localSeenKey(k)) === '1'
+    } catch {
+      return false
+    }
+  }
+  const hasSeen = (k: RoleWalkthrough) => !!seenWalkthroughs?.includes(k) || localSeen(k)
 
   // Dismiss a role walkthrough — record it (idempotent) so it won't auto-pop
   // again, and reflect that locally. It stays reopenable from the "see this
@@ -71,6 +82,11 @@ export default function OkrAllyClient() {
   const dismissRoleWalkthrough = useCallback(
     (k: RoleWalkthrough) => {
       setRoleWalkthrough(null)
+      try {
+        localStorage.setItem(`okr_ally_wt_seen_${k}`, '1')
+      } catch {
+        /* private mode / storage blocked — the server POST still covers it */
+      }
       setMe((m) =>
         m && !m.seenWalkthroughs?.includes(k)
           ? { ...m, seenWalkthroughs: [...(m.seenWalkthroughs ?? []), k] }
@@ -80,6 +96,7 @@ export default function OkrAllyClient() {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ key: k }),
+        keepalive: true,
       }).catch(() => {})
     },
     []
