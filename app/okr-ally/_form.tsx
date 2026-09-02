@@ -359,7 +359,7 @@ export default function StepForm({ initialForm, orgContext, onReachedContextScre
       {error && (
         <div
           className="mb-4 text-sm rounded-lg px-4 py-3"
-          style={{ background: T.errorLight, color: T.error, border: `1px solid ` }}
+          style={{ background: T.errorLight, color: T.error, border: `1px solid ${T.errorBorder}` }}
         >
           {error}
         </div>

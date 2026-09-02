@@ -714,7 +714,7 @@ function EmailGate({ error }: { error: string | null }) {
           <p style={{ fontSize: 12.5, color: T.emeraldDark, marginTop: 4 }}>New link sent to {email}.</p>
         )}
         {localErr && (
-          <div className="mt-2 mb-1 text-sm rounded-lg px-4 py-3" style={{ background: T.errorLight, color: T.error, border: `1px solid ` }}>
+          <div className="mt-2 mb-1 text-sm rounded-lg px-4 py-3" style={{ background: T.errorLight, color: T.error, border: `1px solid ${T.errorBorder}` }}>
             {localErr}
           </div>
         )}
@@ -744,7 +744,7 @@ function EmailGate({ error }: { error: string | null }) {
         your reviews and credits stay with you.
       </AllyRow>
       {(error || localErr) && (
-        <div className="mb-3 text-sm rounded-lg px-4 py-3" style={{ background: T.errorLight, color: T.error, border: `1px solid ` }}>
+        <div className="mb-3 text-sm rounded-lg px-4 py-3" style={{ background: T.errorLight, color: T.error, border: `1px solid ${T.errorBorder}` }}>
           {localErr || error}
         </div>
       )}

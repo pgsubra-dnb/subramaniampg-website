@@ -199,7 +199,7 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
           style={
             msg.kind === 'ok'
               ? { background: T.emeraldTint, color: T.emeraldDark, border: `1px solid ${T.emeraldBorder}` }
-              : { background: T.errorLight, color: T.error, border: `1px solid ` }
+              : { background: T.errorLight, color: T.error, border: `1px solid ${T.errorBorder}` }
           }
         >
           {msg.text}
