@@ -373,7 +373,7 @@ export default function StepForm({ initialForm, orgContext, brand = DEFAULT_BRAN
       )}
 
       {submitState === 'running' ? (
-        <GeneratingIndicator />
+        <GeneratingIndicator brand={brand} />
       ) : form.step === 'profile_summary' ? (
         <ProfileSummaryStep form={form} busy={busy} onContinue={applyProfileSummary} />
       ) : form.step === 'confirm' ? (

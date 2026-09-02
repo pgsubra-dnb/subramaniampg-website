@@ -407,16 +407,17 @@ export function ScoreInfographic({
  * advance on a timer that roughly tracks the real phases — a static screen for
  * that long reads as broken.
  */
-const GENERATING_STEPS: { at: number; text: string }[] = [
-  { at: 0, text: 'Reading your objective and the context you gave me…' },
+const generatingSteps = (v: ReturnType<typeof vocab>): { at: number; text: string }[] => [
+  { at: 0, text: `Reading your ${v.objectiveLower} and the context you gave me…` },
   { at: 8000, text: 'Scoring it against the five rubric criteria…' },
-  { at: 22000, text: 'Weighing each Key Result on its own…' },
+  { at: 22000, text: `Weighing each ${v.kr} on its own…` },
   { at: 40000, text: 'Working through the Refined Original…' },
   { at: 58000, text: 'Drafting the Fresh Rewrite…' },
   { at: 76000, text: 'Almost there — putting your report together…' },
 ]
 
-export function GeneratingIndicator() {
+export function GeneratingIndicator({ brand = DEFAULT_BRAND }: { brand?: Brand }) {
+  const GENERATING_STEPS = generatingSteps(vocab(brand))
   const [idx, setIdx] = useState(0)
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
   useEffect(() => {
