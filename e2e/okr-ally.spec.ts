@@ -811,25 +811,27 @@ test('walkthrough: intro → step every slide → CTA lands on the email gate', 
 
   await page.getByRole('button', { name: /See how it works/i }).click()
   await expect(page.getByRole('heading', { name: 'How OKR Ally works' })).toBeVisible()
-  await expect(page.getByText('1 / 8')).toBeVisible()
+  await expect(page.getByText('1 / 10')).toBeVisible()
   await expect(page.getByText(/This is the front door/i)).toBeVisible()
 
   // ← Back returns to the intro
   await page.getByRole('button', { name: '← Back' }).click()
   await expect(page.getByRole('button', { name: /Say hi to Ally/i })).toBeVisible()
 
-  // re-open and step through every slide with Next
+  // re-open and step through every slide with Next — the slides follow the real
+  // conversation order (intro → sign-in → context → objective → KRs → confirm → report)
   await page.getByRole('button', { name: /See how it works/i }).click()
-  for (let i = 1; i < 8; i++) {
-    await expect(page.getByText(`${i} / 8`)).toBeVisible()
+  for (let i = 1; i < 10; i++) {
+    await expect(page.getByText(`${i} / 10`)).toBeVisible()
     await page.getByRole('button', { name: 'Next', exact: true }).click()
   }
-  await expect(page.getByText('8 / 8')).toBeVisible()
+  await expect(page.getByText('10 / 10')).toBeVisible()
 
-  // a before/after comparison was shown on the way (slide 7)
-  await page.getByRole('button', { name: 'Back', exact: true }).click()
-  await expect(page.getByRole('heading', { name: /A vague Key Result vs a specified one/i })).toBeVisible()
-  await expect(page.getByText(/Raise onboarding NPS from 32 to 45 by 31 March/)).toBeVisible()
+  // no good-vs-bad comparison slides any more — every slide before the CTA is a
+  // real product screenshot
+  await page.getByRole('button', { name: 'Back', exact: true }).click() // slide 9 — the report
+  await expect(page.getByText(/an overall score, how it breaks down across the five criteria/i)).toBeVisible()
+  await expect(page.getByRole('heading', { name: /vs a strong one|vs a full one|vs a specified one/i })).toHaveCount(0)
   await page.getByRole('button', { name: 'Next', exact: true }).click()
 
   // final slide CTA → email gate

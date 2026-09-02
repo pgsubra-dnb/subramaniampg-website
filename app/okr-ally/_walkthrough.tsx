@@ -6,12 +6,12 @@ import { T, Btn, AVATAR } from './_ui'
 
 /**
  * "How it works" — a slideshow the visitor can open from the intro screen,
- * before signing in. Real product screenshots (captured into
- * public/okr-ally/walkthrough/) walk the flow end to end; the last few slides
- * are before/after pairs that make the "write with more detail" point concrete.
+ * before signing in. Every slide is a real product screenshot (captured into
+ * public/okr-ally/walkthrough/ against the live deployed flow) and the slides
+ * follow the exact order a user experiences: intro → sign-in → the three
+ * context questions → Objective → Key Results → confirm → report.
  *
- * Entirely static — no API calls, no video, no external assets. Caption and
- * comparison copy is a first draft in Ally's voice, meant to be edited here.
+ * Entirely static — no API calls, no video, no external assets.
  */
 
 type Shot = {
@@ -22,90 +22,94 @@ type Shot = {
   alt: string
   caption: string
 }
-type Compare = {
-  kind: 'compare'
-  heading: string
-  /** optional context line shown above the two cards (e.g. the question being answered) */
-  inAnswerTo?: string
-  worse: { label: string; text: string }
-  better: { label: string; text: string }
-  caption: string
-}
 type Cta = { kind: 'cta'; heading: string; body: string }
-type Slide = Shot | Compare | Cta
+type Slide = Shot | Cta
 
 const SLIDES: Slide[] = [
   {
     kind: 'shot',
     img: '/okr-ally/walkthrough/01-intro.png',
     w: 1284,
-    h: 1520,
+    h: 1392,
     alt: 'The OKR Ally intro screen',
     caption:
       "This is the front door. Bring the Objective and Key Results you've already drafted — I don't write them from scratch. I score them against a fixed five-part rubric, tell you honestly what's working and what isn't, and hand back two rewrites. Your first review is free.",
   },
   {
     kind: 'shot',
-    img: '/okr-ally/walkthrough/02-context.png',
+    img: '/okr-ally/walkthrough/02-signin.png',
     w: 1284,
-    h: 958,
-    alt: 'Answering the company-context question, with a worked example typed in',
+    h: 604,
+    alt: 'The email sign-in step',
     caption:
-      'First I ask about your company, how the objective ladders up, and your own role. Detail is everything here — the more specific you are, the sharper my review. This is what a strong company answer looks like: what you do, who you serve, your size and stage, all in a few lines.',
+      "First, your email. I send a one-time sign-in link — no password to set or remember. It's how your reviews, credits and saved context stay tied to you between visits.",
   },
   {
     kind: 'shot',
-    img: '/okr-ally/walkthrough/03-clarify.png',
+    img: '/okr-ally/walkthrough/03-context-company.png',
     w: 1284,
-    h: 886,
-    alt: 'Ally asking a follow-up question when an answer is too thin',
+    h: 838,
+    alt: 'The first context question — about your company',
     caption:
-      "If an answer is too thin to work with, I ask one focused follow-up before we move on. You can always Skip — but answering it is usually what lifts a review from generic to genuinely useful.",
+      'Once you\'re in, a couple of quick basics — your name, your company — then three context questions. First: what your company does, who it serves, how big it is. The more detail here, the sharper the review, and I save it to your profile so you only write it once.',
   },
   {
     kind: 'shot',
-    img: '/okr-ally/walkthrough/04-report.png',
+    img: '/okr-ally/walkthrough/04-context-business.png',
     w: 1284,
-    h: 3280,
-    alt: 'The report screen: score ring, criteria radar, feedback, and two rewrites',
+    h: 842,
+    alt: 'The second context question — where the company is right now',
     caption:
-      "At the end you get an overall score, a breakdown across all five criteria, what works and what to tighten on the objective and every Key Result, and two full rewrites — one that repairs your draft, one built fresh from the outcome. It's on screen and in your inbox as a PDF.",
+      'Next, where the company is right now — its strategic direction, the challenges it\'s facing, the openings it sees, and the trends around it. Answer whichever of these matter to your objective. This is the context that lets me judge whether your OKR is aimed at what actually counts this quarter.',
   },
   {
-    kind: 'compare',
-    heading: 'A weak Objective vs a strong one',
-    worse: { label: 'Weaker', text: 'Improve the customer onboarding experience.' },
-    better: {
-      label: 'Stronger',
-      text: 'New customers reach first value on their own, without needing to contact support.',
-    },
+    kind: 'shot',
+    img: '/okr-ally/walkthrough/05-role-followup.png',
+    w: 1284,
+    h: 720,
+    alt: 'The third context question, with Ally asking a follow-up',
     caption:
-      'An Objective names the outcome you want — the state of the world once you’ve succeeded — not an activity or a direction of travel. "Improve" is a direction. The stronger version says what is actually different when the quarter goes well.',
+      "The last context question is your own role — what you're accountable for, and what you can and can't directly move. If any answer is too thin to work with, I ask one focused follow-up before we continue. You can always Skip, but answering is usually what lifts a review from generic to genuinely useful.",
   },
   {
-    kind: 'compare',
-    heading: 'A thin company answer vs a full one',
-    inAnswerTo:
-      '“Tell me about your company right now” — strategic direction, the current challenges in business and operations, the opportunities you see, and the trends affecting you.',
-    worse: { label: 'Thin', text: "We're a mid-size SaaS company and we're growing." },
-    better: {
-      label: 'Full',
-      text: "We're moving upmarket from SMB to mid-market this year. The blocker is that onboarding takes 12 weeks and first-year churn is 22%. A competitor just left the mid-market, so there's an opening — and new EU compliance rules are driving demand for our audit module.",
-    },
+    kind: 'shot',
+    img: '/okr-ally/walkthrough/06-objective.png',
+    w: 1284,
+    h: 574,
+    alt: 'Entering the Objective',
     caption:
-      'A full answer covers where the company is heading, what’s slowing it down, and what’s shifting around it. That context is what lets me judge whether your objective and Key Results are aimed at what actually matters right now.',
+      'Now the Objective — one sentence naming the outcome you want by the end of the cycle, not an activity or a direction of travel. Send me the one you already drafted.',
   },
   {
-    kind: 'compare',
-    heading: 'A vague Key Result vs a specified one',
-    worse: { label: 'Vague', text: 'Significantly increase customer satisfaction.' },
-    better: { label: 'Specified', text: 'Raise onboarding NPS from 32 to 45 by 31 March.' },
+    kind: 'shot',
+    img: '/okr-ally/walkthrough/07-key-results.png',
+    w: 1284,
+    h: 836,
+    alt: 'Entering the Key Results',
     caption:
-      'A Key Result needs a metric, a starting point, a target and a date. Without the baseline I can’t tell whether your target is ambitious or trivial — and nor can your team in week six.',
+      'Then one to six Key Results, each a measurable result in baseline-and-target form: a metric, where it starts, where you want it, and by when. You can add a few initiatives under any Key Result.',
+  },
+  {
+    kind: 'shot',
+    img: '/okr-ally/walkthrough/08-confirm.png',
+    w: 1284,
+    h: 2118,
+    alt: 'The confirm screen before submitting',
+    caption:
+      "One last look at everything I'm about to review — every line is still editable here. Then submit: one review, one credit, and it runs. A failed generation refunds automatically.",
+  },
+  {
+    kind: 'shot',
+    img: '/okr-ally/walkthrough/09-report.png',
+    w: 1284,
+    h: 5366,
+    alt: 'The report: score, criteria breakdown, feedback, and two rewrites',
+    caption:
+      "At the end you get an overall score, how it breaks down across the five criteria, what works and what to tighten on the Objective and every Key Result, and two full rewrites — one that repairs your draft, one built fresh from the outcome. It's on screen and in your inbox as a PDF.",
   },
   {
     kind: 'cta',
-    heading: "That's the whole loop.",
+    heading: "That's the whole conversation.",
     body: "Bring an Objective and its Key Results, plus a few minutes for the context questions. I'll take it from there.",
   },
 ]
@@ -158,7 +162,6 @@ export default function Walkthrough({ onBack, onStart }: { onBack: () => void; o
 
       <div style={{ minHeight: 420 }}>
         {slide.kind === 'shot' && <ShotView key={idx} slide={slide} />}
-        {slide.kind === 'compare' && <CompareView key={idx} slide={slide} />}
         {slide.kind === 'cta' && <CtaView key={idx} slide={slide} onStart={onStart} />}
       </div>
 
@@ -203,55 +206,6 @@ function ShotView({ slide }: { slide: Shot }) {
         />
       </Frame>
       <CaptionBubble>{slide.caption}</CaptionBubble>
-    </div>
-  )
-}
-
-function CompareView({ slide }: { slide: Compare }) {
-  return (
-    <div style={{ animation: 'okraIn .3s ease both' }}>
-      <h2 style={{ fontFamily: 'var(--font-lora), serif', fontSize: 17, fontWeight: 600, color: T.charcoal, margin: '0 0 6px' }}>
-        {slide.heading}
-      </h2>
-      {slide.inAnswerTo && (
-        <p style={{ fontSize: 12.5, color: T.muted, fontStyle: 'italic', margin: '0 0 12px', lineHeight: 1.5 }}>
-          In answer to: {slide.inAnswerTo}
-        </p>
-      )}
-      <div className="flex" style={{ gap: 12, flexWrap: 'wrap', marginTop: slide.inAnswerTo ? 0 : 6 }}>
-        <CompareCard tone="worse" label={slide.worse.label} text={slide.worse.text} />
-        <CompareCard tone="better" label={slide.better.label} text={slide.better.text} />
-      </div>
-      <CaptionBubble>{slide.caption}</CaptionBubble>
-    </div>
-  )
-}
-
-function CompareCard({ tone, label, text }: { tone: 'worse' | 'better'; label: string; text: string }) {
-  const better = tone === 'better'
-  return (
-    <div
-      style={{
-        flex: '1 1 220px',
-        border: `1px solid ${better ? T.emeraldBorder : '#F0D9D9'}`,
-        background: better ? T.emeraldTint : '#FBF1F1',
-        borderRadius: 12,
-        padding: 14,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 10.5,
-          fontWeight: 700,
-          letterSpacing: '.08em',
-          textTransform: 'uppercase',
-          color: better ? T.emeraldDark : '#A23B3B',
-          marginBottom: 6,
-        }}
-      >
-        {label}
-      </div>
-      <div style={{ fontSize: 13.5, lineHeight: 1.5, color: T.charcoal }}>{text}</div>
     </div>
   )
 }
