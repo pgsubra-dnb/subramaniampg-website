@@ -4,6 +4,7 @@ import { getPdfBytes } from '@/lib/okrAllyBlob'
 import { renderReportPdf, reportDateText } from '@/lib/okrAllyReport'
 import { getSubmissionById, getReviewForSubmission, getReviewDelivery } from '@/lib/okrAllySubmission'
 import type { SubmittedKR, ReviewContextSnapshot } from '@/lib/okrAllyReview'
+import { toBrand, vocab } from '@/lib/okrAllyBrand'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,6 +29,7 @@ export async function GET(req: NextRequest, { params }: { params: { submissionId
   // pdf_url is a private Blob reference — used here only to fetch bytes, never
   // returned to the client. Falls through to regeneration if the blob is
   // missing or Blob is unconfigured.
+  const brand = toBrand(submission.brand)
   const delivery = await getReviewDelivery(submission.id)
   let bytes: Buffer | null = delivery?.pdfUrl ? await getPdfBytes(delivery.pdfUrl) : null
   if (!bytes) {
@@ -40,13 +42,14 @@ export async function GET(req: NextRequest, { params }: { params: { submissionId
       contextSnapshot: submission.context_snapshot as ReviewContextSnapshot,
       review: stored.review,
       settings,
+      brand,
     })
   }
 
   return new NextResponse(new Uint8Array(bytes), {
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="OKR-Review-${submission.id.slice(0, 8)}.pdf"`,
+      'Content-Disposition': `attachment; filename="${vocab(brand).plan.replace(/\s+/g, '-')}-Review-${submission.id.slice(0, 8)}.pdf"`,
       'Cache-Control': 'private, no-store',
     },
   })

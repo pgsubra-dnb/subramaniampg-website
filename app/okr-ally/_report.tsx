@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { AllyRow, Btn, ScoreInfographic, ShareCard, Stars, T } from './_ui'
+import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
 
 export interface OkrOption {
   label: string
@@ -16,6 +17,7 @@ export interface FullReport {
   objective: string
   krs: { text: string; initiatives?: string[] }[]
   createdAt: string
+  brand: Brand
   emailed: boolean
   rating: number | null
   feedbackText: string | null
@@ -71,17 +73,20 @@ function FB({ works, improve }: { works: string; improve: string }) {
 
 export default function ReportScreen({
   report,
+  brand = DEFAULT_BRAND,
   onStartAnother,
   bookingUrl,
   substackUrl,
   linkedinUrl,
 }: {
   report: FullReport
+  brand?: Brand
   onStartAnother: () => void
   bookingUrl: string | null
   substackUrl: string | null
   linkedinUrl: string | null
 }) {
+  const v = vocab(brand)
   const r = report.review
   const [rating, setRating] = useState(report.rating ?? 0)
   const [text, setText] = useState(report.feedbackText ?? '')
@@ -123,7 +128,7 @@ export default function ReportScreen({
   return (
     <div>
       <AllyRow>
-        Done. Your OKR scored <strong>{r.overall_score.toFixed(1)} / 10</strong>. Here&apos;s the breakdown,
+        Done. Your {v.plan} scored <strong>{r.overall_score.toFixed(1)} / 10</strong>. Here&apos;s the breakdown,
         the feedback, and two ways to tighten it.
       </AllyRow>
 
@@ -136,11 +141,11 @@ export default function ReportScreen({
       </div>
 
       <div style={{ ...card, marginBottom: 18 }}>
-        <Section title="Objective">
+        <Section title={v.objective}>
           <FB works={r.objective_feedback.what_works} improve={r.objective_feedback.what_to_improve} />
         </Section>
 
-        <Section title="Key Results">
+        <Section title={v.krPlural}>
           {r.key_result_feedback.map((f, i) => (
             <div key={i} style={{ marginBottom: 12 }}>
               <div style={{ fontWeight: 700, fontSize: 13, color: T.charcoal, marginBottom: 3 }}>{f.kr_reference}</div>
@@ -173,7 +178,7 @@ export default function ReportScreen({
             <Btn>Download PDF</Btn>
           </a>
           <Btn variant="ghost" onClick={onStartAnother}>
-            Review another OKR
+            Review another {v.plan}
           </Btn>
         </div>
       </div>
@@ -185,7 +190,7 @@ export default function ReportScreen({
             <div style={{ fontSize: 13.5, color: T.charcoal, marginBottom: 6 }}>
               Thanks — you rated this <Stars value={rating} readOnly />
             </div>
-            <ExitLinks bookingUrl={bookingUrl} substackUrl={substackUrl} linkedinUrl={linkedinUrl} />
+            <ExitLinks brand={brand} bookingUrl={bookingUrl} substackUrl={substackUrl} linkedinUrl={linkedinUrl} />
           </>
         ) : (
           <>
@@ -268,10 +273,12 @@ export function OptionCard({ option, featured }: { option: OkrOption; featured?:
 }
 
 function ExitLinks({
+  brand = DEFAULT_BRAND,
   bookingUrl,
   substackUrl,
   linkedinUrl,
 }: {
+  brand?: Brand
   bookingUrl: string | null
   substackUrl: string | null
   linkedinUrl: string | null
@@ -283,7 +290,7 @@ function ExitLinks({
   )
   return (
     <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.hairline}`, fontSize: 13.5, lineHeight: 2 }}>
-      <ShareCard />
+      <ShareCard brand={brand} />
       <div style={{ color: T.muted, margin: '14px 0 4px' }}>If you want to go further:</div>
       <div className="flex flex-col">
         {bookingUrl && link(bookingUrl, 'Book a conversation with PGS →')}

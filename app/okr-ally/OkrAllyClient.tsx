@@ -12,6 +12,7 @@ import { AdminList, AdminReviewScreen } from './_admin'
 import Walkthrough, { OrgAdminWalkthrough, EmployeeWalkthrough } from './_walkthrough'
 import OrgAdminScreen from './_org'
 import { FormState, emptyForm, CtxFieldState, OrgContext } from './_formState'
+import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
 
 type RoleWalkthrough = 'org_admin' | 'employee'
 
@@ -45,7 +46,8 @@ const VERIFY_ERROR: Record<string, string> = {
   'server-error': 'Something went wrong signing you in. Try again below.',
 }
 
-export default function OkrAllyClient() {
+export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand }) {
+  const v = vocab(brand)
   const [phase, setPhase] = useState<Phase>('loading')
   const [tab, setTab] = useState<Tab>('ally')
   const [me, setMe] = useState<Me | null>(null)
@@ -106,9 +108,9 @@ export default function OkrAllyClient() {
   // (Chrome/Edge, desktop + Android). It does no caching.
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/okr-ally/sw.js', { scope: '/okr-ally' }).catch(() => {})
+      navigator.serviceWorker.register(`${v.path}/sw.js`, { scope: v.path }).catch(() => {})
     }
-  }, [])
+  }, [v.path])
 
   const refreshStatus = useCallback(() => {
     fetch('/api/okr-ally/status')
@@ -136,11 +138,11 @@ export default function OkrAllyClient() {
     const err = params.get('error')
     if (err) {
       setVerifyError(VERIFY_ERROR[err] || VERIFY_ERROR['invalid-link'])
-      window.history.replaceState({}, '', '/okr-ally')
+      window.history.replaceState({}, '', v.path)
     }
     // `?tab=company` — the corporate admin-welcome email links here directly.
     const wantsCompanyTab = params.get('tab') === 'company'
-    if (params.has('tab')) window.history.replaceState({}, '', '/okr-ally')
+    if (params.has('tab')) window.history.replaceState({}, '', v.path)
     ;(async () => {
       try {
         const m: Me = await (await fetch('/api/okr-ally/me')).json()
@@ -176,7 +178,7 @@ export default function OkrAllyClient() {
         setPhase('intro')
       }
     })()
-  }, [refreshStatus])
+  }, [refreshStatus, v.path])
 
   // Org-admin walkthrough — auto once, the first time the Company tab is opened.
   useEffect(() => {
@@ -261,7 +263,7 @@ export default function OkrAllyClient() {
     return (
       <Page>
         <style>{keyframes}</style>
-        <TopBar />
+        <TopBar brand={brand} />
         <p style={{ color: T.muted, fontSize: 14 }}>Loading…</p>
       </Page>
     )
@@ -291,6 +293,7 @@ export default function OkrAllyClient() {
       )}
 
       <TopBar
+        brand={brand}
         right={
           me?.authenticated ? (
             <>
@@ -311,7 +314,7 @@ export default function OkrAllyClient() {
                   </span>
                 )}
               </span>
-              <a href="/api/okr-ally/logout" style={{ color: T.emeraldDark, fontWeight: 600 }}>
+              <a href={`/api/okr-ally/logout?brand=${brand}`} style={{ color: T.emeraldDark, fontWeight: 600 }}>
                 Sign out
               </a>
             </>
@@ -319,7 +322,7 @@ export default function OkrAllyClient() {
         }
       />
 
-      <InstallAppBanner />
+      <InstallAppBanner brand={brand} />
 
       {me?.authenticated && !showingReport && !showingAdmin && (
         <TabBar tab={activeTab} onChange={setTab} isAdmin={isAdmin} isOrgAdmin={isOrgAdmin} />
@@ -327,19 +330,20 @@ export default function OkrAllyClient() {
 
       {phase === 'signedout' && (
         <SignedOut
+          brand={brand}
           onContinue={() => {
-            window.history.replaceState({}, '', '/okr-ally')
+            window.history.replaceState({}, '', v.path)
             setPhase('intro')
           }}
         />
       )}
       {phase === 'intro' && (
-        <Intro onStart={() => setPhase('email')} onSeeHow={() => setPhase('walkthrough')} />
+        <Intro brand={brand} onStart={() => setPhase('email')} onSeeHow={() => setPhase('walkthrough')} />
       )}
       {phase === 'walkthrough' && (
         <Walkthrough onBack={() => setPhase('intro')} onStart={() => setPhase('email')} />
       )}
-      {phase === 'email' && <EmailGate error={verifyError} />}
+      {phase === 'email' && <EmailGate error={verifyError} brand={brand} />}
 
       {phase === 'app' && showingReport && (
         <>
@@ -355,6 +359,7 @@ export default function OkrAllyClient() {
           {report ? (
             <ReportScreen
               report={report}
+              brand={report.brand ?? brand}
               onStartAnother={() => startForm(null)}
               bookingUrl={status?.links.booking ?? null}
               substackUrl={status?.links.substack ?? null}
@@ -367,7 +372,7 @@ export default function OkrAllyClient() {
       )}
 
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'ally' && orgCtx && !orgCtx.confirmed && (
-        <OrgContextPending orgCtx={orgCtx} isOrgAdmin={isOrgAdmin} onGoToCompany={() => setTab('company')} />
+        <OrgContextPending orgCtx={orgCtx} isOrgAdmin={isOrgAdmin} brand={brand} onGoToCompany={() => setTab('company')} />
       )}
 
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'ally' && !(orgCtx && !orgCtx.confirmed) && resumeOffer && (
@@ -386,12 +391,13 @@ export default function OkrAllyClient() {
         <>
           {orgCtx?.confirmed && (
             <SeeAgainLink onClick={() => setRoleWalkthrough('employee')}>
-              See how OKR Ally works at your company
+              See how {v.product} works at your company
             </SeeAgainLink>
           )}
           <StepForm
             initialForm={draft}
             orgContext={orgCtx}
+            brand={brand}
             onReachedContextScreens={() => {
               if (!hasSeen('employee')) setRoleWalkthrough('employee')
             }}
@@ -494,17 +500,18 @@ function TabBar({
   )
 }
 
-function Intro({ onStart, onSeeHow }: { onStart: () => void; onSeeHow: () => void }) {
+function Intro({ brand, onStart, onSeeHow }: { brand: Brand; onStart: () => void; onSeeHow: () => void }) {
+  const v = vocab(brand)
   return (
     <div style={{ textAlign: 'center', padding: '8px 0 24px' }}>
       <div style={{ width: 84, height: 84, borderRadius: '50%', overflow: 'hidden', margin: '0 auto 16px', border: `3px solid ${T.emerald}` }}>
-        <Image src={AVATAR} alt="OKR Ally" width={84} height={84} />
+        <Image src={AVATAR} alt={v.product} width={84} height={84} />
       </div>
       <h1 style={{ fontFamily: 'var(--font-inter), sans-serif', fontSize: 24, fontWeight: 600, color: T.charcoal, margin: 0 }}>
         Hi, I&apos;m Ally.
       </h1>
       <p style={{ color: T.muted, marginTop: 12, lineHeight: 1.6, maxWidth: 460, marginLeft: 'auto', marginRight: 'auto' }}>
-        Send me the Objective and Key Results you wrote, and I&apos;ll tell you honestly where they&apos;re strong,
+        Send me the {v.objective} and {v.krPlural} you wrote, and I&apos;ll tell you honestly where they&apos;re strong,
         where they&apos;re not, score them against a clear rubric, and rewrite them two ways.
       </p>
       <p style={{ color: T.muted, marginTop: 14, fontSize: 13.5, maxWidth: 460, marginLeft: 'auto', marginRight: 'auto' }}>
@@ -569,16 +576,18 @@ function SeeAgainLink({ onClick, children }: { onClick: () => void; children: Re
 function OrgContextPending({
   orgCtx,
   isOrgAdmin,
+  brand,
   onGoToCompany,
 }: {
   orgCtx: OrgContext
   isOrgAdmin: boolean
+  brand: Brand
   onGoToCompany: () => void
 }) {
   return (
     <div>
       <AllyRow>
-        <strong>{orgCtx.organizationName}</strong> runs OKR Ally on a shared company context, and it hasn&apos;t
+        <strong>{orgCtx.organizationName}</strong> runs {vocab(brand).product} on a shared company context, and it hasn&apos;t
         been published yet. Until it is, reviews are on hold for everyone on the team.
       </AllyRow>
       {isOrgAdmin ? (
@@ -600,11 +609,11 @@ function OrgContextPending({
   )
 }
 
-function SignedOut({ onContinue }: { onContinue: () => void }) {
+function SignedOut({ brand, onContinue }: { brand: Brand; onContinue: () => void }) {
   return (
     <div style={{ textAlign: 'center', padding: '8px 0 24px' }}>
       <div style={{ width: 72, height: 72, borderRadius: '50%', overflow: 'hidden', margin: '0 auto 14px', border: `3px solid ${T.emerald}` }}>
-        <Image src={AVATAR} alt="OKR Ally" width={72} height={72} />
+        <Image src={AVATAR} alt={vocab(brand).product} width={72} height={72} />
       </div>
       <h1 style={{ fontFamily: 'var(--font-inter), sans-serif', fontSize: 22, fontWeight: 600, color: T.charcoal, margin: 0 }}>
         You&apos;re signed out.
@@ -625,7 +634,7 @@ function SignedOut({ onContinue }: { onContinue: () => void }) {
           background: T.card,
         }}
       >
-        <ShareCard />
+        <ShareCard brand={brand} />
       </div>
       <div style={{ marginTop: 20 }}>
         <Btn variant="ghost" onClick={onContinue}>
@@ -639,7 +648,7 @@ function SignedOut({ onContinue }: { onContinue: () => void }) {
 const RESEND_COOLDOWN_S = 60
 const MAX_RESENDS = 3
 
-function EmailGate({ error }: { error: string | null }) {
+function EmailGate({ error, brand }: { error: string | null; brand: Brand }) {
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -673,7 +682,7 @@ function EmailGate({ error }: { error: string | null }) {
       const r = await fetch('/api/okr-ally/magic-link', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, brand }),
       })
       if (r.status === 429) {
         const j = await r.json().catch(() => ({}))
@@ -714,7 +723,7 @@ function EmailGate({ error }: { error: string | null }) {
           <p style={{ fontSize: 12.5, color: T.emeraldDark, marginTop: 4 }}>New link sent to {email}.</p>
         )}
         {localErr && (
-          <div className="mt-2 mb-1 text-sm rounded-lg px-4 py-3" style={{ background: T.errorLight, color: T.error, border: `1px solid ` }}>
+          <div className="mt-2 mb-1 text-sm rounded-lg px-4 py-3" style={{ background: T.errorLight, color: T.error, border: `1px solid ${T.errorBorder}` }}>
             {localErr}
           </div>
         )}
@@ -744,7 +753,7 @@ function EmailGate({ error }: { error: string | null }) {
         your reviews and credits stay with you.
       </AllyRow>
       {(error || localErr) && (
-        <div className="mb-3 text-sm rounded-lg px-4 py-3" style={{ background: T.errorLight, color: T.error, border: `1px solid ` }}>
+        <div className="mb-3 text-sm rounded-lg px-4 py-3" style={{ background: T.errorLight, color: T.error, border: `1px solid ${T.errorBorder}` }}>
           {localErr || error}
         </div>
       )}

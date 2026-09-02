@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AllyRow, UserRow, Btn, Field, CharCount, GeneratingIndicator, T } from './_ui'
+import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
 import {
   FormState,
   StepId,
@@ -29,6 +30,9 @@ interface Props {
   /** Set for a corporate member: company + business context are the org's,
    *  read-only. Role context stays personal. */
   orgContext?: OrgContext | null
+  /** Surface vocabulary — 'okr_ally' (Objective/Key Result/OKR) or 'goal_ally'
+   *  (Goal/Sub-goal/Goal Plan). Also sent on the review + context-assess calls. */
+  brand?: Brand
   /** Fires once, when an org member first reaches the context screens
    *  (the profile summary, or the first context step). */
   onReachedContextScreens?: () => void
@@ -44,7 +48,7 @@ export interface ReviewResult {
   review: unknown
 }
 
-const STEP_LABEL: Record<StepId, string> = {
+const stepLabels = (v: ReturnType<typeof vocab>): Record<StepId, string> => ({
   profile_summary: 'Your details',
   name: 'Your name',
   phone: 'Phone (optional)',
@@ -52,12 +56,14 @@ const STEP_LABEL: Record<StepId, string> = {
   ctx_company: 'Company context',
   ctx_business: 'Business context',
   ctx_role: 'Your role',
-  objective: 'Objective',
-  krs: 'Key Results',
+  objective: v.objective,
+  krs: v.krPlural,
   confirm: 'Review & submit',
-}
+})
 
-export default function StepForm({ initialForm, orgContext, onReachedContextScreens, onSubmitted }: Props) {
+export default function StepForm({ initialForm, orgContext, brand = DEFAULT_BRAND, onReachedContextScreens, onSubmitted }: Props) {
+  const v = vocab(brand)
+  const STEP_LABEL = stepLabels(v)
   const [form, setForm] = useState<FormState>(() => {
     const base = initialForm ?? emptyForm()
     return orgContext ? applyOrgContext(base, orgContext) : { ...base, orgManaged: false }
@@ -134,7 +140,7 @@ export default function StepForm({ initialForm, orgContext, onReachedContextScre
       const r = await fetch('/api/okr-ally/context/assess', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ field: kind, text, lastCheckedText: cs.lastCheckedText || undefined }),
+        body: JSON.stringify({ field: kind, text, brand, lastCheckedText: cs.lastCheckedText || undefined }),
       })
       const j = await r.json()
       if (j.skipped) {
@@ -309,6 +315,7 @@ export default function StepForm({ initialForm, orgContext, onReachedContextScre
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           idempotencyKey,
+          brand,
           objective: form.objective.trim(),
           krs: form.krs
             .filter((k) => k.text.trim())
@@ -354,12 +361,12 @@ export default function StepForm({ initialForm, orgContext, onReachedContextScre
 
   return (
     <div>
-      <Transcript form={form} onEdit={editStep} />
+      <Transcript form={form} brand={brand} onEdit={editStep} />
 
       {error && (
         <div
           className="mb-4 text-sm rounded-lg px-4 py-3"
-          style={{ background: T.errorLight, color: T.error, border: `1px solid ` }}
+          style={{ background: T.errorLight, color: T.error, border: `1px solid ${T.errorBorder}` }}
         >
           {error}
         </div>
@@ -373,6 +380,7 @@ export default function StepForm({ initialForm, orgContext, onReachedContextScre
         <ConfirmStep
           form={form}
           busy={false}
+          brand={brand}
           onEdit={editStep}
           onToggleSave={(v) => update({ saveProfile: v })}
           onSubmit={submit}
@@ -381,11 +389,12 @@ export default function StepForm({ initialForm, orgContext, onReachedContextScre
       ) : form.step === 'krs' ? (
         <KrStep
           krs={form.krs}
+          brand={brand}
           onChange={(krs) => update({ krs })}
           onNext={() => {
             const clean = form.krs.map((k) => ({ text: k.text.trim(), initiatives: k.initiatives.map((i) => i.trim()).filter(Boolean) })).filter((k) => k.text)
-            if (clean.length < LIMITS.krsMin) return setError('Add at least one Key Result.')
-            if (clean.some((k) => k.text.length > LIMITS.kr)) return setError(`Each Key Result must be ${LIMITS.kr} characters or fewer.`)
+            if (clean.length < LIMITS.krsMin) return setError(`Add at least one ${v.kr}.`)
+            if (clean.some((k) => k.text.length > LIMITS.kr)) return setError(`Each ${v.kr} must be ${LIMITS.kr} characters or fewer.`)
             update({ krs: clean.length ? clean : form.krs, step: 'confirm' })
           }}
         />
@@ -398,6 +407,7 @@ export default function StepForm({ initialForm, orgContext, onReachedContextScre
           kind={ctxKind}
           state={c}
           busy={busy}
+          brand={brand}
           onRawChange={(v) =>
             update((f) => ({ ...f, ctx: { ...f.ctx, [ctxKind]: { ...f.ctx[ctxKind], raw: v } } }))
           }
@@ -421,7 +431,7 @@ export default function StepForm({ initialForm, orgContext, onReachedContextScre
               : form.step === 'company_name'
               ? "What's the name of your company or team?"
               : form.step === 'objective'
-              ? "Here's the important one — your Objective for this cycle. One sentence, just the outcome you want."
+              ? `Here's the important one — your ${v.objective} for this cycle. One sentence, just the outcome you want.`
               : ''
           }
           value={
@@ -451,8 +461,8 @@ export default function StepForm({ initialForm, orgContext, onReachedContextScre
             if (form.step === 'name' && !form.name.trim()) return setError('I need a name to address you by.')
             if (form.step === 'company_name' && !form.companyName.trim()) return setError('A company or team name, please.')
             if (form.step === 'objective') {
-              if (!form.objective.trim()) return setError('The Objective is required.')
-              if (form.objective.length > LIMITS.objective) return setError(`The Objective must be ${LIMITS.objective} characters or fewer.`)
+              if (!form.objective.trim()) return setError(`The ${v.objective} is required.`)
+              if (form.objective.length > LIMITS.objective) return setError(`The ${v.objective} must be ${LIMITS.objective} characters or fewer.`)
             }
             next()
           }}
@@ -465,7 +475,8 @@ export default function StepForm({ initialForm, orgContext, onReachedContextScre
 }
 
 // ── transcript of committed answers ───────────────────────
-function Transcript({ form, onEdit }: { form: FormState; onEdit: (s: StepId) => void }) {
+function Transcript({ form, brand = DEFAULT_BRAND, onEdit }: { form: FormState; brand?: Brand; onEdit: (s: StepId) => void }) {
+  const v = vocab(brand)
   const rows: { q: string; a: string; step: StepId; readOnly?: boolean }[] = []
   const at = STEP_ORDER.indexOf(form.step)
   const done = (s: StepId) => STEP_ORDER.indexOf(s) < at
@@ -497,10 +508,10 @@ function Transcript({ form, onEdit }: { form: FormState; onEdit: (s: StepId) => 
       }
     })
   }
-  if (done('objective')) rows.push({ q: 'Your Objective?', a: form.objective, step: 'objective' })
+  if (done('objective')) rows.push({ q: `Your ${v.objective}?`, a: form.objective, step: 'objective' })
   if (done('krs'))
     rows.push({
-      q: 'Your Key Results?',
+      q: `Your ${v.krPlural}?`,
       a: form.krs.map((k, i) => `${i + 1}. ${k.text}`).join('\n'),
       step: 'krs',
     })
@@ -724,7 +735,8 @@ export function ContextForwardNotice({ style }: { style?: React.CSSProperties })
 }
 
 /** Short guidance shown under the prompt on a fresh context field (beta feedback). */
-function ContextTips({ kind }: { kind: 'company' | 'business' | 'role' }) {
+function ContextTips({ kind, brand = DEFAULT_BRAND }: { kind: 'company' | 'business' | 'role'; brand?: Brand }) {
+  const v = vocab(brand)
   return (
     <div
       style={{
@@ -744,7 +756,7 @@ function ContextTips({ kind }: { kind: 'company' | 'business' | 'role' }) {
         <> A fast way to fill this well: paste a paragraph or two from your company&apos;s website or
         About page.</>
       )}{' '}
-      I&apos;ll save this to your profile and reuse it for your next objective, so you only write it
+      I&apos;ll save this to your profile and reuse it for your next {v.objectiveLower}, so you only write it
       once.
     </div>
   )
@@ -754,6 +766,7 @@ function CtxStep({
   kind,
   state,
   busy,
+  brand = DEFAULT_BRAND,
   onRawChange,
   onSubmitRaw,
   onAnswer,
@@ -763,12 +776,14 @@ function CtxStep({
   kind: 'company' | 'business' | 'role'
   state: CtxFieldState
   busy: boolean
+  brand?: Brand
   onRawChange: (v: string) => void
   onSubmitRaw: () => void
   onAnswer: (a: string) => void
   onSkipClarify: () => void
   onParaphrase: (action: ParaphraseAction, text: string) => void
 }) {
+  const v = vocab(brand)
   const [answer, setAnswer] = useState('')
   const [editText, setEditText] = useState('')
   useEffect(() => {
@@ -845,7 +860,7 @@ function CtxStep({
               ))}
             </ul>
             <span style={{ display: 'block', marginTop: 8, fontSize: 12.5, opacity: 0.85 }}>
-              Answer any or all of these, whatever&apos;s most relevant to your objective.
+              Answer any or all of these, whatever&apos;s most relevant to your {v.objectiveLower}.
             </span>
           </>
         )}
@@ -855,7 +870,7 @@ function CtxStep({
           </span>
         )}
       </AllyRow>
-      {!prefilled && kind !== 'business' && <ContextTips kind={kind} />}
+      {!prefilled && kind !== 'business' && <ContextTips kind={kind} brand={brand} />}
       <div className="mb-2">
         <Field value={state.raw} onChange={onRawChange} multiline max={LIMITS.context} autoFocus />
       </div>
@@ -874,26 +889,29 @@ function CtxStep({
 // ── KR builder ────────────────────────────────────────────
 function KrStep({
   krs,
+  brand = DEFAULT_BRAND,
   onChange,
   onNext,
 }: {
   krs: { text: string; initiatives: string[] }[]
+  brand?: Brand
   onChange: (krs: { text: string; initiatives: string[] }[]) => void
   onNext: () => void
 }) {
+  const v = vocab(brand)
   const setKr = (i: number, patch: Partial<{ text: string; initiatives: string[] }>) =>
     onChange(krs.map((k, j) => (j === i ? { ...k, ...patch } : k)))
 
   return (
     <>
       <AllyRow>
-        Now your Key Results — one to six of them. Each should be a measurable result, in baseline-and-target
-        form. Add up to three initiatives under any KR if you want to.
+        Now your {v.krPlural} — one to six of them. Each should be a measurable result, in baseline-and-target
+        form. Add up to three initiatives under any {v.krShort} if you want to.
       </AllyRow>
       {krs.map((kr, i) => (
         <div key={i} className="mb-4 rounded-lg p-4" style={{ background: T.card, border: `1px solid ${T.hairline}` }}>
           <div className="flex items-start gap-2">
-            <span style={{ fontWeight: 700, color: T.emeraldDark, fontSize: 14, marginTop: 10 }}>KR{i + 1}</span>
+            <span style={{ fontWeight: 700, color: T.emeraldDark, fontSize: 14, marginTop: 10 }}>{v.krShort}{brand === 'okr_ally' ? '' : ' '}{i + 1}</span>
             <div className="flex-1">
               <Field
                 value={kr.text}
@@ -908,7 +926,7 @@ function KrStep({
                     onClick={() => onChange(krs.filter((_, j) => j !== i))}
                     style={{ fontSize: 11.5, color: T.error, background: 'none', border: 'none', cursor: 'pointer' }}
                   >
-                    remove KR
+                    remove {v.krShort}
                   </button>
                 )}
               </div>
@@ -924,7 +942,7 @@ function KrStep({
                     color: T.muted,
                   }}
                 >
-                  Initiatives for KR{i + 1}{' '}
+                  Initiatives for {v.krShort}{brand === 'okr_ally' ? '' : ' '}{i + 1}{' '}
                   <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
                 </div>
                 {kr.initiatives.map((init, k) => (
@@ -962,7 +980,7 @@ function KrStep({
                       padding: 0,
                     }}
                   >
-                    + Add an initiative for KR{i + 1}
+                    + Add an initiative for {v.krShort}{brand === 'okr_ally' ? '' : ' '}{i + 1}
                   </button>
                 )}
               </div>
@@ -988,11 +1006,11 @@ function KrStep({
               cursor: 'pointer',
             }}
           >
-            + Add another Key Result
+            + Add another {v.kr}
           </button>
         ) : (
           <div style={{ fontSize: 11.5, color: T.muted, textAlign: 'center', padding: 8 }}>
-            6 Key Results is the maximum.
+            6 {v.krPlural} is the maximum.
           </div>
         )}
       </div>
@@ -1007,6 +1025,7 @@ function KrStep({
 // ── confirm step ──────────────────────────────────────────
 function ConfirmStep({
   form,
+  brand = DEFAULT_BRAND,
   onEdit,
   onToggleSave,
   onSubmit,
@@ -1014,12 +1033,14 @@ function ConfirmStep({
   busy,
 }: {
   form: FormState
+  brand?: Brand
   onEdit: (s: StepId) => void
   onToggleSave: (v: boolean) => void
   onSubmit: () => void
   failed: boolean
   busy: boolean
 }) {
+  const vv = vocab(brand)
   const row = (label: string, value: string, step: StepId, readOnly?: boolean) => (
     <div className="py-2.5" style={{ borderBottom: `1px solid ${T.hairline}` }}>
       <div className="flex justify-between items-baseline">
@@ -1048,9 +1069,9 @@ function ConfirmStep({
         {row('Company context', form.ctx.company.finalText, 'ctx_company', form.orgManaged)}
         {row('Business context', form.ctx.business.finalText, 'ctx_business', form.orgManaged)}
         {row('Your role', form.ctx.role.finalText, 'ctx_role')}
-        {row('Objective', form.objective, 'objective')}
+        {row(vv.objective, form.objective, 'objective')}
         {row(
-          'Key Results',
+          vv.krPlural,
           form.krs
             .map(
               (k, i) =>

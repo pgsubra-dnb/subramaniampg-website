@@ -7,6 +7,7 @@ import { putPdf } from '@/lib/okrAllyBlob'
 import { markReviewDelivered } from '@/lib/okrAllySubmission'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 import { tokens, rgb } from '@/lib/okrAllyTokens'
+import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
 
 /**
  * OKR Ally review report PDF (build sequence step 7).
@@ -30,6 +31,8 @@ export interface ReportData {
   contextSnapshot: ReviewContextSnapshot
   review: ReviewOutput
   settings: OkrAllySiteSettings
+  /** Vocabulary + header treatment. Omitted → 'okr_ally' (unchanged). */
+  brand?: Brand
 }
 
 // Palette — all from lib/okrAllyTokens.ts so the PDF can't drift from the web
@@ -127,6 +130,7 @@ export function pdfSafe(input: string | null | undefined): string {
 }
 
 export async function renderReportPdf(data: ReportData): Promise<Buffer> {
+  const v = vocab(data.brand ?? DEFAULT_BRAND)
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
 
@@ -313,24 +317,36 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
   }
 
   // ── Logo ───────────────────────────────────────────────────
-  {
+  if ((data.brand ?? DEFAULT_BRAND) === 'okr_ally') {
     const lw = 64
     const lh = (lw * REPORT_LOGO_H) / REPORT_LOGO_W
     doc.addImage(REPORT_LOGO_JPEG, 'JPEG', (PW - lw) / 2, y, lw, lh)
     y += lh + 12
+  } else {
+    // Goal Ally — a typographic wordmark (no image asset yet). Icon-mark logo
+    // to follow in Tier 2.
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(20)
+    doc.setTextColor(...EMERALD_DARK)
+    doc.text(v.product, PW / 2, y + 6, { align: 'center' })
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    doc.setTextColor(...MUTE)
+    doc.text('POWERED BY AI', PW / 2, y + 12, { align: 'center' })
+    y += 24
   }
 
   // ── Cover ───────────────────────────────────────────────────
   doc.setFontSize(9)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(...MUTE)
-  doc.text('OKR ALLY  ·  OKR REVIEW', M, y)
+  doc.text(`${v.product.toUpperCase()}  ·  ${v.plan.toUpperCase()} REVIEW`, M, y)
   y += 11
 
   doc.setFontSize(22)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(...CHARCOAL)
-  doc.text('Your OKR Review', M, y)
+  doc.text(`Your ${v.plan} Review`, M, y)
   y += 11
   doc.setFontSize(11)
   doc.setFont('helvetica', 'normal')
@@ -344,12 +360,12 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
   y = drawScoreInfographic(y)
   y += 4
 
-  // ── Submitted OKR (verbatim) ────────────────────────────────
-  heading('Your OKR, as submitted')
-  subLabel('Objective')
+  // ── Submitted plan (verbatim) ──────────────────────────────
+  heading(`Your ${v.plan}, as submitted`)
+  subLabel(v.objective)
   body(data.objective)
   y += 3
-  subLabel('Key Results')
+  subLabel(v.krPlural)
   data.krs.forEach((kr, i) => {
     body(`${i + 1}. ${kr.text}`)
     for (const it of kr.initiatives || []) body(`– ${it}`, 6)
@@ -371,14 +387,14 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
   // per-criterion rationale is intentionally not shown to the end user.
 
   // ── Feedback ────────────────────────────────────────────────
-  heading('Objective feedback')
+  heading(`${v.objective} feedback`)
   subLabel('What works')
   body(data.review.objective_feedback.what_works)
   y += 2
   subLabel('What to improve')
   body(data.review.objective_feedback.what_to_improve)
 
-  heading('Key Result feedback')
+  heading(`${v.kr} feedback`)
   data.review.key_result_feedback.forEach((f) => {
     guard(14)
     doc.setFontSize(10.5)
@@ -398,11 +414,11 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
 
   // ── Suggested options ───────────────────────────────────────
   for (const opt of data.review.suggested_okr_options) {
-    heading(`Suggested OKR — ${opt.label}`)
-    subLabel('Objective')
+    heading(`Suggested ${v.plan} — ${opt.label}`)
+    subLabel(v.objective)
     body(opt.objective)
     y += 2
-    subLabel('Key Results')
+    subLabel(v.krPlural)
     opt.key_results.forEach((kr, i) => {
       body(`${i + 1}. ${kr.text}   [${kr.status}]`)
       for (const it of kr.initiatives || []) body(`– ${it.action}  (${it.owning_team})`, 6)
@@ -465,9 +481,12 @@ export async function generateStoreAndEmailReport(args: {
   krs: SubmittedKR[]
   contextSnapshot: ReviewContextSnapshot
   review: ReviewOutput
+  brand?: Brand
 }): Promise<{ pdfUrl: string | null; emailed: boolean }> {
   let pdfUrl: string | null = null
   let emailed = false
+  const brand = args.brand ?? DEFAULT_BRAND
+  const v = vocab(brand)
   try {
     const settings = await getSiteSettings()
     const pdf = await renderReportPdf({
@@ -478,6 +497,7 @@ export async function generateStoreAndEmailReport(args: {
       contextSnapshot: args.contextSnapshot,
       review: args.review,
       settings,
+      brand,
     })
 
     pdfUrl = await putPdf(`reports/${args.submissionId}.pdf`, pdf)
@@ -486,17 +506,17 @@ export async function generateStoreAndEmailReport(args: {
       emailed = await sendBrevoEmail({
         to: args.userEmail,
         toName: args.userName,
-        subject: 'Your OKR Ally review',
+        subject: `Your ${v.product} review`,
         htmlContent: `
           <div style="font-family:Inter,Arial,sans-serif;color:${tokens.textPrimary};line-height:1.6;">
-            <p>Your OKR review is ready — the full report is attached as a PDF.</p>
-            <p>Overall score: <strong>${args.review.overall_score.toFixed(1)} / 10</strong>. It includes the score breakdown, feedback on your Objective and each Key Result, and two suggested rewrites.</p>
+            <p>Your ${v.planLower} review is ready — the full report is attached as a PDF.</p>
+            <p>Overall score: <strong>${args.review.overall_score.toFixed(1)} / 10</strong>. It includes the score breakdown, feedback on your ${v.objective} and each ${v.kr}, and two suggested rewrites.</p>
             <p style="font-size:13px;color:${tokens.textSecondary};">This review reflects the quality of the context you provided.</p>
           </div>`,
         textContent:
-          `Your OKR review is ready (attached, PDF). Overall score ${args.review.overall_score.toFixed(1)}/10. ` +
-          `Includes the score breakdown, Objective + Key Result feedback, and two suggested rewrites.`,
-        attachments: [{ name: `OKR-Review-${args.submissionId.slice(0, 8)}.pdf`, content: pdf.toString('base64') }],
+          `Your ${v.planLower} review is ready (attached, PDF). Overall score ${args.review.overall_score.toFixed(1)}/10. ` +
+          `Includes the score breakdown, ${v.objective} + ${v.kr} feedback, and two suggested rewrites.`,
+        attachments: [{ name: `${v.plan.replace(/\s+/g, '-')}-Review-${args.submissionId.slice(0, 8)}.pdf`, content: pdf.toString('base64') }],
         // Delivering the review is not a payment event — PGS is not copied.
         // (The ₹0 free-review invoice, sent separately, still BCCs him.)
         skipBcc: true,

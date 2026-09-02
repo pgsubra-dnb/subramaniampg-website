@@ -13,6 +13,8 @@
  * adaptive thinking, so tool_choice is forced for deterministic structured output.
  */
 
+import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
+
 export const CONTEXT_MODEL = 'claude-haiku-4-5'
 const ANTHROPIC_VERSION = '2023-06-01'
 const ATTEMPT_TIMEOUT_MS = 30_000
@@ -149,17 +151,25 @@ export function normalizeForCompare(text: string): string {
 
 export async function assessField(
   fieldKind: ContextFieldKind,
-  text: string
+  text: string,
+  brand: Brand = DEFAULT_BRAND
 ): Promise<AssessResult | { ok: false; reason: string }> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return { ok: false, reason: 'ANTHROPIC_API_KEY not configured' }
+  const v = vocab(brand)
 
   const trimmed = text.trim()
   if (!trimmed) {
     return { ok: true, thin: true, needsParaphrase: false, question: `Tell me a little about ${FIELD_LABEL[fieldKind]}.` }
   }
 
-  const system = `You help an OKR reviewer decide whether a piece of user-supplied context is specific enough to be useful, and whether it is already clearly written. The field describes ${FIELD_LABEL[fieldKind]}. ${GROUNDING} "Specific enough" means concrete enough that feedback on an OKR could actually lean on it — names, numbers, constraints, or a clear situation, not just adjectives. "Already clear" means it reads as complete, well-structured sentences that a rewrite would not improve. If it is not specific enough, ask exactly one question that would add the most — never more than one. Call record_assessment.`
+  // okr_ally keeps its exact original prompt. goal_ally swaps the vocabulary
+  // and adds a guard so a generated clarifying question never says "objective"
+  // or "key result".
+  const system =
+    brand === 'okr_ally'
+      ? `You help an OKR reviewer decide whether a piece of user-supplied context is specific enough to be useful, and whether it is already clearly written. The field describes ${FIELD_LABEL[fieldKind]}. ${GROUNDING} "Specific enough" means concrete enough that feedback on an OKR could actually lean on it — names, numbers, constraints, or a clear situation, not just adjectives. "Already clear" means it reads as complete, well-structured sentences that a rewrite would not improve. If it is not specific enough, ask exactly one question that would add the most — never more than one. Call record_assessment.`
+      : `You help ${v.product}, a ${v.plan} reviewer, decide whether a piece of user-supplied context is specific enough to be useful, and whether it is already clearly written. The field describes ${FIELD_LABEL[fieldKind]}. ${GROUNDING} "Specific enough" means concrete enough that feedback on a ${v.plan} could actually lean on it — names, numbers, constraints, or a clear situation, not just adjectives. "Already clear" means it reads as complete, well-structured sentences that a rewrite would not improve. If it is not specific enough, ask exactly one question that would add the most — never more than one. Any clarifying question you write is about the context itself; never use the words "objective" or "key result". Call record_assessment.`
 
   const r = await callTool(
     apiKey,

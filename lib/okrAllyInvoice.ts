@@ -6,6 +6,7 @@ import { PACKS } from '@/lib/okrAllyBilling'
 import { GST_STATES, stateCode, stateCodeFromGstin } from '@/lib/indiaGstStates'
 import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
 import { tokens } from '@/lib/okrAllyTokens'
+import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
 
 /**
  * OKR Ally GST invoice generation (build sequence step 5, extended in migration
@@ -96,6 +97,11 @@ export interface CreateInvoiceInput {
   emailDescriptor?: string
   /** Suffix on the email subject after the invoice number. Default " — OKR Ally". */
   emailSubjectTag?: string
+  /** Which review surface this invoice is for — sets the product name in the
+   *  default email copy and subject tag. 'okr_ally' (default) is unchanged;
+   *  'goal_ally' says "Goal Ally". Consulting invoices pass their own labels
+   *  and ignore this. */
+  brand?: Brand
 }
 
 export type CreateInvoiceResult =
@@ -469,12 +475,13 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<C
         row.pdf_url = blobUrl
       }
 
+      const brandName = vocab(input.brand ?? DEFAULT_BRAND).product
       const isFree = Number(row.total_amount) === 0
       const forWhat =
         input.emailDescriptor ??
         (isFree
-          ? `for your first OKR Ally review${row.coupon_code ? ` (covered in full by coupon ${row.coupon_code})` : ''}`
-          : 'for your OKR Ally purchase')
+          ? `for your first ${brandName} review${row.coupon_code ? ` (covered in full by coupon ${row.coupon_code})` : ''}`
+          : `for your ${brandName} purchase`)
       const amountLine = isFree
         ? `Amount: <strong>${money(0)}</strong> — this review was free; the invoice is for your records.`
         : `Amount: <strong>${money(row.total_amount)}</strong> (incl. GST). Place of supply: ${row.place_of_supply}.`
@@ -485,7 +492,7 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<C
       await sendBrevoEmail({
         to: input.buyerEmail,
         toName: input.buyerName,
-        subject: `Tax invoice ${row.invoice_number}${input.emailSubjectTag ?? ' — OKR Ally'}`,
+        subject: `Tax invoice ${row.invoice_number}${input.emailSubjectTag ?? ` — ${brandName}`}`,
         htmlContent: `
           <div style="font-family:Inter,Arial,sans-serif;color:${tokens.textPrimary};line-height:1.6;">
             <p>Your GST invoice <strong>${row.invoice_number}</strong> ${forWhat} is attached (PDF).</p>
@@ -524,7 +531,10 @@ export async function createAndSendFreeReviewInvoice(input: {
   couponCode: string
   buyerName: string
   buyerEmail: string
+  brand?: Brand
 }): Promise<CreateInvoiceResult> {
+  const brand = input.brand ?? DEFAULT_BRAND
+  const v = vocab(brand)
   return createAndSendInvoice({
     userId: input.userId,
     razorpayPaymentId: null,
@@ -539,5 +549,11 @@ export async function createAndSendFreeReviewInvoice(input: {
     placeOfSupply: '',
     buyerName: input.buyerName,
     buyerEmail: input.buyerEmail,
+    brand,
+    // okr_ally keeps its historical default line item ("OKR Ally — OKR review");
+    // Goal Ally's is spelled out per spec.
+    ...(brand === 'goal_ally'
+      ? { serviceLabel: `${v.product} — ${v.objective} review credits` }
+      : {}),
   })
 }

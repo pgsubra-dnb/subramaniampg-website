@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { generateToken, storeMagicToken } from '@/lib/okrAllySanity'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 import { allow } from '@/lib/okrAllyRateLimit'
+import { tokens } from '@/lib/okrAllyTokens'
+import { toBrand, vocab } from '@/lib/okrAllyBrand'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +23,8 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+    const brand = toBrand(body.brand)
+    const v = vocab(brand)
 
     if (!EMAIL_RE.test(email)) {
       return NextResponse.json({ error: 'A valid email is required' }, { status: 400 })
@@ -41,26 +45,28 @@ export async function POST(req: NextRequest) {
     await storeMagicToken(email, token)
 
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://subramaniampg.guru'
-    const magicLink = `${siteUrl}/api/okr-ally/verify?token=${token}`
+    const magicLink =
+      `${siteUrl}/api/okr-ally/verify?token=${token}` +
+      (brand === 'okr_ally' ? '' : `&brand=${brand}`)
 
     await sendBrevoEmail({
       to: email,
       toName: email.split('@')[0] || 'there',
-      subject: 'Your OKR Ally sign-in link',
+      subject: `Your ${v.product} sign-in link`,
       htmlContent: `
-        <div style="font-family:Inter,Arial,sans-serif;color:#2C2C2A;line-height:1.6;">
-          <p>Here is your link to continue with <strong>OKR Ally</strong>. It expires in 15 minutes and can be used once.</p>
+        <div style="font-family:Inter,Arial,sans-serif;color:${tokens.textPrimary};line-height:1.6;">
+          <p>Here is your link to continue with <strong>${v.product}</strong>. It expires in 15 minutes and can be used once.</p>
           <p>
-            <a href="${magicLink}" style="background:#1F6F54;color:#FAF8F5;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
-              Continue to OKR Ally
+            <a href="${magicLink}" style="background:${tokens.primary};color:${tokens.onPrimary};padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
+              Continue to ${v.product}
             </a>
           </p>
-          <p style="font-size:13px;color:#6b6b66;">If you did not request this link, you can ignore this email.</p>
-          <p style="font-size:13px;color:#6b6b66;">Subramaniam P G &middot; Embiggen Consulting LLP</p>
+          <p style="font-size:13px;color:${tokens.textSecondary};">If you did not request this link, you can ignore this email.</p>
+          <p style="font-size:13px;color:${tokens.textSecondary};">Subramaniam P G &middot; Embiggen Consulting LLP</p>
         </div>
       `,
       textContent:
-        `Here is your link to continue with OKR Ally. It expires in 15 minutes and can be used once.\n\n` +
+        `Here is your link to continue with ${v.product}. It expires in 15 minutes and can be used once.\n\n` +
         `${magicLink}\n\nIf you did not request this link, you can ignore this email.`,
       // Sign-in links are not a payment event — PGS is not copied. Only
       // invoice / payment-confirmation emails BCC pgs@embiggen.co.in.

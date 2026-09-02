@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 import { test, expect, Page } from '@playwright/test'
 import { FAIL_BASE_URL } from '../playwright.config'
-import { validateReviewOutput } from '../lib/okrAllyReview'
+import { validateReviewOutput, buildSystemPrompt, buildUserContent } from '../lib/okrAllyReview'
 import { PACKS } from '../lib/okrAllyBilling'
 import {
   signIn,
@@ -1851,4 +1851,87 @@ test('magic link API: rate-limited after repeated requests for one email', async
   expect(codes.slice(6).every((c) => c === 429)).toBe(true)
   const last = await (await request.post('http://localhost:3200/api/okr-ally/magic-link', { data: { email } })).json()
   expect(last.error).toMatch(/too many sign-in links/i)
+})
+
+// ── Brand vocabulary (Goal Ally) ──────────────────────────────────────────
+// The review prompt threads the surface's vocabulary into what Claude is told,
+// so its generated feedback + rewrites read in the brand's words. `okr_ally`
+// must stay byte-identical to the pre-brand prompt; `goal_ally` must never
+// instruct the model with "Objective" / "Key Result" / "OKR".
+
+const OKR_ALLY_SYSTEM_GOLDEN = `You are OKR Ally, an expert OKR reviewer. You sit beside the user and assess the OKR they wrote — you do not judge from a distance, and you do not lecture.
+
+GROUNDING (strict). Assess only what the user actually submitted. Do not draw on outside knowledge, industry benchmarks, comparable companies, or assumptions beyond the given context. If something cannot be assessed from what was provided, say so explicitly in the relevant feedback or rationale rather than inferring or extrapolating. This applies to scoring, all feedback, and both suggested OKR options.
+
+USER-SUBMITTED INITIATIVES. Some Key Results include user-submitted initiatives (sub-KRs). When present, weigh them as a genuine signal for alignment and specificity — consider whether they actually support that KR — and you may reference them directly in feedback. When a KR has no initiatives, treat that as neutral; it is an optional field and never a deduction.
+
+SCORING. Score each criterion from 0 to 10 with a short rationale grounded in the submission. Use these criteria and fixed weights:
+- Outcome vs Output: 25%
+- Alignment: 25%
+- Measurability: 20%
+- Specificity: 15%
+- Ambition vs Realism: 15%
+Report each criterion's weight as the fraction shown (e.g. 0.25). The app computes the weighted overall score; still return your own overall_score as the weighted sum on the same 0-10 scale.
+
+SUGGESTED OKR OPTIONS. Return exactly two, labelled "Refined Original" and "Fresh Rewrite".
+- Refined Original: edit the submitted OKR toward the flaws found in scoring. Mark each KR status "unchanged", "modified", or "new". You may add at most 2 new KRs, only where scoring found a genuine gap, never exceeding 6 KRs total.
+- Fresh Rewrite: regenerate fully from the Objective and context, independent of the original KR wording. Mark every KR status "new".
+- Both options: include 2 to 3 initiatives for EVERY Key Result — never fewer than 2, never more than 3 — each with a generic owning-team label (e.g. "Product", "Sales", "Engineering"). This applies to every KR regardless of its status, including "unchanged" ones.
+
+LANGUAGE OF OKRs (apply to every rewritten line and to KR feedback text):
+- Imperative verbs, not infinitive phrasing.
+- Single accountable owner; avoid shared or supporting language.
+- Completion verb for one-time goals, sustaining verb for ongoing states.
+- Avoid vague verbs (optimize, enhance); use plain, direction-stating verbs.
+- Prefer outcome and delivery language over input and enablement language.
+- Before finalizing any line, check: the verb demands movement, an outsider would understand what success looks like, a single owner is identifiable.
+- KR lines stay in strict baseline-and-target format. Any "impact" framing goes into the rationale field, never the KR text.
+
+OUTPUT. Call submit_okr_review exactly once with every field populated. Do not write any prose outside the tool call.`
+
+const SAMPLE_INPUT = {
+  objective: 'Grow revenue',
+  krs: [{ text: 'From 0 to 100', initiatives: ['run a campaign'] }],
+  contextSnapshot: {},
+}
+
+test('review prompt: okr_ally system prompt is unchanged (byte-for-byte golden)', () => {
+  expect(buildSystemPrompt('okr_ally')).toBe(OKR_ALLY_SYSTEM_GOLDEN)
+  expect(buildSystemPrompt()).toBe(OKR_ALLY_SYSTEM_GOLDEN) // default = okr_ally
+})
+
+test('review prompt: okr_ally user content is unchanged', () => {
+  expect(buildUserContent(SAMPLE_INPUT, 'okr_ally')).toBe(
+    `CONTEXT PROVIDED BY THE USER
+Company context: (not provided)
+Business context: (not provided)
+Role context: (not provided)
+
+OBJECTIVE
+Grow revenue
+
+KEY RESULTS
+KR1: From 0 to 100
+  - initiative: run a campaign
+
+Review this OKR now. Call submit_okr_review with your complete assessment.`
+  )
+})
+
+test('review prompt: goal_ally never instructs the model with OKR vocabulary', () => {
+  const sys = buildSystemPrompt('goal_ally')
+  const usr = buildUserContent(SAMPLE_INPUT, 'goal_ally')
+  for (const text of [sys, usr]) {
+    expect(text).not.toMatch(/\bObjective\b/)
+    expect(text).not.toMatch(/\bKey Results?\b/)
+    // "OKR" only ever legitimately appears inside the tool name submit_okr_review.
+    expect(text.replace(/submit_okr_review/g, '')).not.toMatch(/\bOKRs?\b/)
+    expect(text).not.toMatch(/\bKRs?\b/)
+  }
+  expect(sys).toContain('You are Goal Ally, an expert Goal Plan reviewer')
+  expect(sys).toContain('EVERY Sub-goal')
+  expect(usr).toContain('\nGOAL\n')
+  expect(usr).toContain('\nSUB-GOALS\n')
+  expect(usr).toContain('Sub-goal 1: From 0 to 100')
+  expect(usr).toContain('Review this Goal Plan now')
 })

@@ -11,6 +11,8 @@
  * "Verbatim reproduction").
  */
 
+import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
+
 export const REVIEW_MODEL = 'claude-sonnet-5'
 export const ANTHROPIC_VERSION = '2023-06-01'
 
@@ -192,31 +194,44 @@ const REVIEW_TOOL = {
 
 // ─── Prompts ────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(): string {
+/**
+ * The review system prompt.
+ *
+ * `brand` swaps ONLY the natural-language vocabulary the model is told to use
+ * (Objective→Goal, Key Result→Sub-goal, OKR→Goal Plan, product name) — so the
+ * feedback and rewrites Claude generates read in the brand's own words, not
+ * just the UI around them. The tool name, the rubric criteria, and the option
+ * labels ("Refined Original" / "Fresh Rewrite") are structural and never change.
+ * `brand: 'okr_ally'` reproduces the original prompt verbatim — asserted by
+ * e2e/okrAllyReviewPrompt.test.ts against a frozen snapshot.
+ */
+export function buildSystemPrompt(brand: Brand = DEFAULT_BRAND): string {
+  const v = vocab(brand)
   const weights = RUBRIC.map((r) => `- ${r.criterion}: ${Math.round(r.weight * 100)}%`).join('\n')
-  return `You are OKR Ally, an expert OKR reviewer. You sit beside the user and assess the OKR they wrote — you do not judge from a distance, and you do not lecture.
+  const initiativeGloss = brand === 'okr_ally' ? ' (sub-KRs)' : ''
+  return `You are ${v.product}, an expert ${v.plan} reviewer. You sit beside the user and assess the ${v.plan} they wrote — you do not judge from a distance, and you do not lecture.
 
-GROUNDING (strict). Assess only what the user actually submitted. Do not draw on outside knowledge, industry benchmarks, comparable companies, or assumptions beyond the given context. If something cannot be assessed from what was provided, say so explicitly in the relevant feedback or rationale rather than inferring or extrapolating. This applies to scoring, all feedback, and both suggested OKR options.
+GROUNDING (strict). Assess only what the user actually submitted. Do not draw on outside knowledge, industry benchmarks, comparable companies, or assumptions beyond the given context. If something cannot be assessed from what was provided, say so explicitly in the relevant feedback or rationale rather than inferring or extrapolating. This applies to scoring, all feedback, and both suggested ${v.plan} options.
 
-USER-SUBMITTED INITIATIVES. Some Key Results include user-submitted initiatives (sub-KRs). When present, weigh them as a genuine signal for alignment and specificity — consider whether they actually support that KR — and you may reference them directly in feedback. When a KR has no initiatives, treat that as neutral; it is an optional field and never a deduction.
+USER-SUBMITTED INITIATIVES. Some ${v.krPlural} include user-submitted initiatives${initiativeGloss}. When present, weigh them as a genuine signal for alignment and specificity — consider whether they actually support that ${v.krShort} — and you may reference them directly in feedback. When a ${v.krShort} has no initiatives, treat that as neutral; it is an optional field and never a deduction.
 
 SCORING. Score each criterion from 0 to 10 with a short rationale grounded in the submission. Use these criteria and fixed weights:
 ${weights}
 Report each criterion's weight as the fraction shown (e.g. 0.25). The app computes the weighted overall score; still return your own overall_score as the weighted sum on the same 0-10 scale.
 
-SUGGESTED OKR OPTIONS. Return exactly two, labelled "Refined Original" and "Fresh Rewrite".
-- Refined Original: edit the submitted OKR toward the flaws found in scoring. Mark each KR status "unchanged", "modified", or "new". You may add at most 2 new KRs, only where scoring found a genuine gap, never exceeding 6 KRs total.
-- Fresh Rewrite: regenerate fully from the Objective and context, independent of the original KR wording. Mark every KR status "new".
-- Both options: include 2 to 3 initiatives for EVERY Key Result — never fewer than 2, never more than 3 — each with a generic owning-team label (e.g. "Product", "Sales", "Engineering"). This applies to every KR regardless of its status, including "unchanged" ones.
+SUGGESTED ${v.plan.toUpperCase()} OPTIONS. Return exactly two, labelled "Refined Original" and "Fresh Rewrite".
+- Refined Original: edit the submitted ${v.plan} toward the flaws found in scoring. Mark each ${v.krShort} status "unchanged", "modified", or "new". You may add at most 2 new ${v.krShortPlural}, only where scoring found a genuine gap, never exceeding 6 ${v.krShortPlural} total.
+- Fresh Rewrite: regenerate fully from the ${v.objective} and context, independent of the original ${v.krShort} wording. Mark every ${v.krShort} status "new".
+- Both options: include 2 to 3 initiatives for EVERY ${v.kr} — never fewer than 2, never more than 3 — each with a generic owning-team label (e.g. "Product", "Sales", "Engineering"). This applies to every ${v.krShort} regardless of its status, including "unchanged" ones.
 
-LANGUAGE OF OKRs (apply to every rewritten line and to KR feedback text):
+LANGUAGE OF ${v.planPlural} (apply to every rewritten line and to ${v.krShort} feedback text):
 - Imperative verbs, not infinitive phrasing.
 - Single accountable owner; avoid shared or supporting language.
 - Completion verb for one-time goals, sustaining verb for ongoing states.
 - Avoid vague verbs (optimize, enhance); use plain, direction-stating verbs.
 - Prefer outcome and delivery language over input and enablement language.
 - Before finalizing any line, check: the verb demands movement, an outsider would understand what success looks like, a single owner is identifiable.
-- KR lines stay in strict baseline-and-target format. Any "impact" framing goes into the rationale field, never the KR text.
+- ${v.krShort} lines stay in strict baseline-and-target format. Any "impact" framing goes into the rationale field, never the ${v.krShort} text.
 
 OUTPUT. Call submit_okr_review exactly once with every field populated. Do not write any prose outside the tool call.`
 }
@@ -232,8 +247,11 @@ function renderContextField(label: string, f: ContextField | undefined): string 
   return lines.join('\n')
 }
 
-/** The user-facing message: context + submitted OKR, composed verbatim from stored data. */
-export function buildUserContent(input: ReviewInput): string {
+/** The user-facing message: context + submitted plan, composed verbatim from
+ *  stored data. `brand` sets the section headers and per-line labels ("KR1" vs
+ *  "Sub-goal 1") so the model refers to them in the brand's words. */
+export function buildUserContent(input: ReviewInput, brand: Brand = DEFAULT_BRAND): string {
+  const v = vocab(brand)
   const ctx = input.contextSnapshot || {}
   const context = [
     renderContextField('Company context', ctx.company_context),
@@ -241,9 +259,10 @@ export function buildUserContent(input: ReviewInput): string {
     renderContextField('Role context', ctx.role_context),
   ].join('\n')
 
+  const krLabel = (n: number) => (brand === 'okr_ally' ? `KR${n}` : `${v.krShort} ${n}`)
   const krs = input.krs
     .map((kr, i) => {
-      const head = `KR${i + 1}: ${kr.text}`
+      const head = `${krLabel(i + 1)}: ${kr.text}`
       if (kr.initiatives && kr.initiatives.length) {
         return head + '\n' + kr.initiatives.map((x) => `  - initiative: ${x}`).join('\n')
       }
@@ -254,13 +273,13 @@ export function buildUserContent(input: ReviewInput): string {
   return `CONTEXT PROVIDED BY THE USER
 ${context}
 
-OBJECTIVE
+${v.objective.toUpperCase()}
 ${input.objective}
 
-KEY RESULTS
+${v.krPlural.toUpperCase()}
 ${krs}
 
-Review this OKR now. Call submit_okr_review with your complete assessment.`
+Review this ${v.plan} now. Call submit_okr_review with your complete assessment.`
 }
 
 // ─── Validation ─────────────────────────────────────────────────────────
@@ -387,12 +406,15 @@ const ATTEMPT_TIMEOUT_MS =
 // step-6 review notes). If buildSystemPrompt() or the rubric changes materially,
 // re-measure — a large jump here is the signal that the prompt got heavier.
 
-export async function runReview(input: ReviewInput): Promise<RunReviewSuccess | RunReviewFailure> {
+export async function runReview(
+  input: ReviewInput,
+  brand: Brand = DEFAULT_BRAND
+): Promise<RunReviewSuccess | RunReviewFailure> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return { ok: false, reason: 'ANTHROPIC_API_KEY not configured' }
 
-  const system = buildSystemPrompt()
-  const userContent = buildUserContent(input)
+  const system = buildSystemPrompt(brand)
+  const userContent = buildUserContent(input, brand)
 
   let lastReason = 'unknown'
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {

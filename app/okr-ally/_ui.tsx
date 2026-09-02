@@ -3,6 +3,7 @@
 import Image from 'next/image'
 import { ReactNode, useEffect, useRef, useState } from 'react'
 import { tokens, dataViz } from '@/lib/okrAllyTokens'
+import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
 
 /**
  * The product palette. Semantic names (`T.primary`, `T.textPrimary`, `T.error`,
@@ -38,7 +39,8 @@ export function Page({ children }: { children: ReactNode }) {
   )
 }
 
-export function TopBar({ right }: { right?: ReactNode }) {
+export function TopBar({ right, brand = DEFAULT_BRAND }: { right?: ReactNode; brand?: Brand }) {
+  const product = vocab(brand).product
   return (
     <div
       className="flex items-center justify-between mb-7 pb-4"
@@ -46,10 +48,10 @@ export function TopBar({ right }: { right?: ReactNode }) {
     >
       <div className="flex items-center gap-2">
         <div style={{ width: 30, height: 30, borderRadius: '50%', overflow: 'hidden', flexShrink: 0 }}>
-          <Image src={AVATAR} alt="OKR Ally" width={30} height={30} />
+          <Image src={AVATAR} alt={product} width={30} height={30} />
         </div>
         <span style={{ fontFamily: 'var(--font-inter), sans-serif', fontWeight: 700, color: T.charcoal, fontSize: 16 }}>
-          OKR Ally
+          {product}
         </span>
         <span
           style={{
@@ -468,15 +470,16 @@ export function GeneratingIndicator() {
 }
 
 /** Thank-you + share prompt, shown on the exit block after rating and on the signed-out screen. */
-export function ShareCard() {
+export function ShareCard({ brand = DEFAULT_BRAND }: { brand?: Brand }) {
+  const v = vocab(brand)
   const [copied, setCopied] = useState(false)
-  const [url, setUrl] = useState('https://subramaniampg.guru/okr-ally')
+  const [url, setUrl] = useState(`https://subramaniampg.guru${v.path}`)
   useEffect(() => {
-    if (typeof window !== 'undefined') setUrl(`${window.location.origin}/okr-ally`)
-  }, [])
+    if (typeof window !== 'undefined') setUrl(`${window.location.origin}${v.path}`)
+  }, [v.path])
 
-  const emailHref = `mailto:?subject=${encodeURIComponent('OKR Ally — a second pair of eyes on your OKRs')}&body=${encodeURIComponent(
-    `I used OKR Ally to review an Objective and Key Results — it scores them against a clear rubric and rewrites them two ways. First review is free.\n\n${url}`
+  const emailHref = `mailto:?subject=${encodeURIComponent(`${v.product} — a second pair of eyes on your ${v.planPlural}`)}&body=${encodeURIComponent(
+    `I used ${v.product} to review ${brand === 'okr_ally' ? 'an Objective and Key Results' : 'a Goal and Sub-goals'} — it scores them against a clear rubric and rewrites them two ways. First review is free.\n\n${url}`
   )}`
   const linkedInHref = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`
 
@@ -506,7 +509,7 @@ export function ShareCard() {
     <div>
       <div style={{ fontWeight: 700, fontSize: 14, color: T.charcoal }}>Thanks for spending time with Ally.</div>
       <p style={{ fontSize: 13, color: T.muted, margin: '4px 0 10px' }}>
-        Know someone whose OKRs could use a second pair of eyes?
+        Know someone whose {v.planPlural} could use a second pair of eyes?
       </p>
       <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
         <button type="button" onClick={copy} style={linkStyle}>
@@ -576,7 +579,7 @@ interface BeforeInstallPromptEvent extends Event {
  * installable and it isn't already installed, and calls the stashed prompt on
  * tap. iOS Safari never fires the event, so it simply never renders there.
  */
-export function InstallAppBanner() {
+export function InstallAppBanner({ brand = DEFAULT_BRAND }: { brand?: Brand }) {
   const [evt, setEvt] = useState<BeforeInstallPromptEvent | null>(null)
   const [dismissed, setDismissed] = useState(false)
 
@@ -617,7 +620,7 @@ export function InstallAppBanner() {
         animation: 'okraIn .35s ease both',
       }}
     >
-      <span>Install OKR Ally for one-tap access from your home screen.</span>
+      <span>Install {vocab(brand).product} for one-tap access from your home screen.</span>
       <span className="flex items-center gap-2" style={{ flexShrink: 0 }}>
         <button
           onClick={async () => {
