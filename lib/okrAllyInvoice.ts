@@ -5,6 +5,7 @@ import { putPdf } from '@/lib/okrAllyBlob'
 import { PACKS } from '@/lib/okrAllyBilling'
 import { GST_STATES, stateCode, stateCodeFromGstin } from '@/lib/indiaGstStates'
 import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
+import { tokens } from '@/lib/okrAllyTokens'
 
 /**
  * OKR Ally GST invoice generation (build sequence step 5, extended in migration
@@ -486,11 +487,11 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<C
         toName: input.buyerName,
         subject: `Tax invoice ${row.invoice_number}${input.emailSubjectTag ?? ' — OKR Ally'}`,
         htmlContent: `
-          <div style="font-family:Inter,Arial,sans-serif;color:#2C2C2A;line-height:1.6;">
+          <div style="font-family:Inter,Arial,sans-serif;color:${tokens.textPrimary};line-height:1.6;">
             <p>Your GST invoice <strong>${row.invoice_number}</strong> ${forWhat} is attached (PDF).</p>
             <p>${amountLine}</p>
-            <p style="font-size:13px;color:#6b6b66;">This is a system-generated invoice and does not require a signature.</p>
-            <p style="font-size:13px;color:#6b6b66;">${settings.legalBusinessName}</p>
+            <p style="font-size:13px;color:${tokens.textSecondary};">This is a system-generated invoice and does not require a signature.</p>
+            <p style="font-size:13px;color:${tokens.textSecondary};">${settings.legalBusinessName}</p>
           </div>`,
         textContent:
           `Your GST invoice ${row.invoice_number} ${forWhat} is attached (PDF). ` +

@@ -6,6 +6,7 @@ import { REPORT_LOGO_JPEG, REPORT_LOGO_W, REPORT_LOGO_H } from '@/lib/okrAllyRep
 import { putPdf } from '@/lib/okrAllyBlob'
 import { markReviewDelivered } from '@/lib/okrAllySubmission'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
+import { tokens, rgb } from '@/lib/okrAllyTokens'
 
 /**
  * OKR Ally review report PDF (build sequence step 7).
@@ -31,19 +32,22 @@ export interface ReportData {
   settings: OkrAllySiteSettings
 }
 
-const CHARCOAL: [number, number, number] = [44, 44, 42]
-const BODY: [number, number, number] = [95, 94, 90]
+// Palette — all from lib/okrAllyTokens.ts so the PDF can't drift from the web
+// surface. MUTE is the one PDF-only value (a lighter grey that reads better at
+// print sizes than the on-screen secondary text colour).
+const CHARCOAL = rgb.textPrimary
+const BODY = rgb.textSecondary
 const MUTE: [number, number, number] = [150, 140, 130]
-const EMERALD: [number, number, number] = [29, 158, 117]
-const EMERALD_DARK: [number, number, number] = [15, 110, 86]
+const EMERALD = rgb.primary
+const EMERALD_DARK = rgb.primaryHover
 // Score-radar fill + grid — deliberately punchy (see <ScoreInfographic> on the
 // web, which uses the identical values so the two surfaces stay in step).
-const RADAR_FILL: [number, number, number] = [159, 217, 199]
-const RADAR_GRID: [number, number, number] = [184, 177, 163]
-const BROWN: [number, number, number] = [99, 56, 6]
-const RULE: [number, number, number] = [232, 228, 220]
-const CREAM: [number, number, number] = [250, 248, 245]
-const TONE_RED: [number, number, number] = [185, 28, 28]
+const RADAR_FILL = rgb.radarFill
+const RADAR_GRID = rgb.radarGrid
+const BROWN = rgb.warning
+const RULE = rgb.border
+const CREAM = rgb.background
+const TONE_RED = rgb.error
 
 /** Band colour for a 0-10 score — mirrors the web report (`scoreTone` is shared). */
 function toneRgb(tone: ScoreTone): [number, number, number] {
@@ -484,10 +488,10 @@ export async function generateStoreAndEmailReport(args: {
         toName: args.userName,
         subject: 'Your OKR Ally review',
         htmlContent: `
-          <div style="font-family:Inter,Arial,sans-serif;color:#2C2C2A;line-height:1.6;">
+          <div style="font-family:Inter,Arial,sans-serif;color:${tokens.textPrimary};line-height:1.6;">
             <p>Your OKR review is ready — the full report is attached as a PDF.</p>
             <p>Overall score: <strong>${args.review.overall_score.toFixed(1)} / 10</strong>. It includes the score breakdown, feedback on your Objective and each Key Result, and two suggested rewrites.</p>
-            <p style="font-size:13px;color:#6b6b66;">This review reflects the quality of the context you provided.</p>
+            <p style="font-size:13px;color:${tokens.textSecondary};">This review reflects the quality of the context you provided.</p>
           </div>`,
         textContent:
           `Your OKR review is ready (attached, PDF). Overall score ${args.review.overall_score.toFixed(1)}/10. ` +

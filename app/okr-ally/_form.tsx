@@ -359,7 +359,7 @@ export default function StepForm({ initialForm, orgContext, onReachedContextScre
       {error && (
         <div
           className="mb-4 text-sm rounded-lg px-4 py-3"
-          style={{ background: '#FEF2F2', color: '#991B1B', border: '1px solid #FECACA' }}
+          style={{ background: T.errorLight, color: T.error, border: `1px solid ` }}
         >
           {error}
         </div>
@@ -906,7 +906,7 @@ function KrStep({
                 {krs.length > 1 && (
                   <button
                     onClick={() => onChange(krs.filter((_, j) => j !== i))}
-                    style={{ fontSize: 11.5, color: '#9A3412', background: 'none', border: 'none', cursor: 'pointer' }}
+                    style={{ fontSize: 11.5, color: T.error, background: 'none', border: 'none', cursor: 'pointer' }}
                   >
                     remove KR
                   </button>

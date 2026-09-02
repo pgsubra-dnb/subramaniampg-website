@@ -78,7 +78,7 @@ export default function OrgAdminScreen({ onPoolChange }: { onPoolChange?: () => 
     onPoolChange?.()
   }, [load, onPoolChange])
 
-  if (err) return <p style={{ color: '#B91C1C', fontSize: 14 }}>{err}</p>
+  if (err) return <p style={{ color: T.error, fontSize: 14 }}>{err}</p>
   if (!status) return <p style={{ color: T.muted, fontSize: 14 }}>Loading…</p>
 
   return (
@@ -118,7 +118,7 @@ function PoolStat({ label, value, strong }: { label: string; value: number; stro
       </div>
       <div
         style={{
-          fontFamily: 'var(--font-lora), serif',
+          fontFamily: 'var(--font-inter), sans-serif',
           fontSize: strong ? 26 : 22,
           fontWeight: 600,
           color: strong ? T.emeraldDark : T.charcoal,
@@ -133,7 +133,7 @@ function PoolStat({ label, value, strong }: { label: string; value: number; stro
 function Msg({ m }: { m: { kind: 'ok' | 'err'; text: string } | null }) {
   if (!m) return null
   return (
-    <p style={{ fontSize: 12.5, marginTop: 8, color: m.kind === 'err' ? '#B91C1C' : T.emeraldDark }}>{m.text}</p>
+    <p style={{ fontSize: 12.5, marginTop: 8, color: m.kind === 'err' ? T.error : T.emeraldDark }}>{m.text}</p>
   )
 }
 
@@ -383,7 +383,7 @@ function ReportPanel() {
           {busy ? 'Loading…' : 'View'}
         </Btn>
       </div>
-      {err && <p style={{ fontSize: 12.5, color: '#B91C1C', marginTop: 8 }}>{err}</p>}
+      {err && <p style={{ fontSize: 12.5, color: T.error, marginTop: 8 }}>{err}</p>}
       {report && (
         <div style={{ marginTop: 14 }}>
           <div style={{ fontSize: 13, color: T.charcoal, marginBottom: 8 }}>
@@ -440,7 +440,7 @@ function Fig({ label, value, strong }: { label: string; value: number; strong?: 
       </div>
       <div
         style={{
-          fontFamily: 'var(--font-lora), serif',
+          fontFamily: 'var(--font-inter), sans-serif',
           fontSize: 20,
           fontWeight: 600,
           color: strong ? T.emeraldDark : T.charcoal,

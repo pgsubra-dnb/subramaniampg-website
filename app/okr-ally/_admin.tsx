@@ -197,7 +197,7 @@ export function AdminList({ onOpen }: { onOpen: (submissionId: string) => void }
                 <div
                   style={{
                     flexShrink: 0,
-                    fontFamily: 'var(--font-lora), serif',
+                    fontFamily: 'var(--font-inter), sans-serif',
                     fontWeight: 700,
                     color: T.emeraldDark,
                     fontSize: 15,
@@ -340,7 +340,7 @@ function GrantCreditsPanel() {
               style={{
                 fontSize: 12.5,
                 marginTop: 8,
-                color: msg.kind === 'err' ? '#B91C1C' : msg.kind === 'warn' ? T.gold : T.emeraldDark,
+                color: msg.kind === 'err' ? T.error : msg.kind === 'warn' ? T.gold : T.emeraldDark,
               }}
             >
               {msg.text}
@@ -492,7 +492,7 @@ export function AdminReviewScreen({
       {/* progress banner — each panel saves on its own */}
       <div
         style={{
-          border: `1px solid ${bothSaved ? T.emeraldBorder : '#EAD9B0'}`,
+          border: `1px solid ${bothSaved ? T.emeraldBorder : T.warningBorder}`,
           background: bothSaved ? T.emeraldTint : T.goldTint,
           borderRadius: 12,
           padding: '10px 14px',
@@ -642,7 +642,7 @@ function ExpertPanel({
   return (
     <div
       style={{
-        border: `1px solid ${unsaved ? '#EAD9B0' : T.hairline}`,
+        border: `1px solid ${unsaved ? T.warningBorder : T.hairline}`,
         borderTop: 'none',
         borderRadius: '0 0 14px 14px',
         padding: 16,
@@ -692,7 +692,7 @@ function ExpertPanel({
           }}
         />
       </div>
-      {err && <p style={{ fontSize: 12, color: '#B91C1C', margin: '0 0 6px' }}>{err}</p>}
+      {err && <p style={{ fontSize: 12, color: T.error, margin: '0 0 6px' }}>{err}</p>}
       <div className="flex items-center gap-3">
         <Btn small onClick={save} disabled={busy}>
           {busy ? 'Saving…' : status === 'saved' ? `Update “${label}”` : `Save “${label}”`}
@@ -806,7 +806,7 @@ function ImprovementEmailPanel({
         </>
       )}
       {msg && (
-        <p style={{ fontSize: 12.5, margin: '8px 0 0', color: msg.kind === 'ok' ? T.emeraldDark : '#B91C1C' }}>{msg.text}</p>
+        <p style={{ fontSize: 12.5, margin: '8px 0 0', color: msg.kind === 'ok' ? T.emeraldDark : T.error }}>{msg.text}</p>
       )}
     </div>
   )

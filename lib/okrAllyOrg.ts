@@ -5,6 +5,7 @@ import { createAndSendInvoice } from '@/lib/okrAllyInvoice'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 import { pdfSafe } from '@/lib/okrAllyReport'
 import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
+import { tokens } from '@/lib/okrAllyTokens'
 
 /**
  * OKR Ally — self-serve corporate / organization credits (migration 009).
@@ -142,7 +143,7 @@ async function alertCorporateInvoiceUnissued(
       to: 'pgs@embiggen.co.in',
       toName: 'Subramaniam P G',
       subject: `Action needed — OKR Ally corporate invoice not issued (${input.companyName})`,
-      htmlContent: `<pre style="font-family:ui-monospace,Menlo,monospace;font-size:13px;white-space:pre-wrap;color:#2C2C2A;">${detail
+      htmlContent: `<pre style="font-family:ui-monospace,Menlo,monospace;font-size:13px;white-space:pre-wrap;color:${tokens.textPrimary};">${detail
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')}</pre>`,
       textContent: detail,
@@ -278,17 +279,17 @@ export async function fulfilCorporatePurchase(
         toName: company,
         subject: `You're the OKR Ally admin for ${company}`,
         htmlContent: `
-          <div style="font-family:Inter,Arial,sans-serif;color:#2C2C2A;line-height:1.6;">
+          <div style="font-family:Inter,Arial,sans-serif;color:${tokens.textPrimary};line-height:1.6;">
             <p>${company} has bought a pool of OKR Ally review credits, and this email address is its admin.</p>
             <p>This purchase added <strong>${added}</strong> credit${added === 1 ? '' : 's'} &mdash; the pool now holds <strong>${pool}</strong>.</p>
             <p>Your first step is to set your company's shared context — your team can't run reviews until you publish it.</p>
             <p>
-              <a href="https://subramaniampg.guru/okr-ally?tab=company" style="background:#1F6F54;color:#FAF8F5;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
+              <a href="https://subramaniampg.guru/okr-ally?tab=company" style="background:${tokens.primary};color:${tokens.onPrimary};padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
                 Set up your company
               </a>
             </p>
-            <p style="font-size:13px;color:#6b6b66;">Sign in with this email address — it opens straight to the Company tab, where you set the context, allocate credits to your team, and see usage.</p>
-            <p style="font-size:13px;color:#6b6b66;">&mdash; Subramaniam P G</p>
+            <p style="font-size:13px;color:${tokens.textSecondary};">Sign in with this email address — it opens straight to the Company tab, where you set the context, allocate credits to your team, and see usage.</p>
+            <p style="font-size:13px;color:${tokens.textSecondary};">&mdash; Subramaniam P G</p>
           </div>`,
         textContent:
           `${company} has bought a pool of OKR Ally review credits, and this email address is its admin. ` +
@@ -530,10 +531,10 @@ export async function allocateOrgCredits(
     toName: recipient.name,
     subject: `${credits} OKR Ally review ${plural} from ${ctx.organization.name}`,
     htmlContent: `
-      <div style="font-family:Inter,Arial,sans-serif;color:#2C2C2A;line-height:1.6;">
+      <div style="font-family:Inter,Arial,sans-serif;color:${tokens.textPrimary};line-height:1.6;">
         <p><strong>${ctx.organization.name}</strong> has given you <strong>${credits} OKR Ally review ${plural}</strong>.</p>
         <p>Sign in at <a href="https://subramaniampg.guru/okr-ally">subramaniampg.guru/okr-ally</a> with this email address to use them. These are separate from any personal credits you may have — your reviews spend the company credits first.</p>
-        <p style="font-size:13px;color:#6b6b66;">— Subramaniam P G</p>
+        <p style="font-size:13px;color:${tokens.textSecondary};">— Subramaniam P G</p>
       </div>`,
     textContent:
       `${ctx.organization.name} has given you ${credits} OKR Ally review ${plural}. ` +

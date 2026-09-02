@@ -133,7 +133,7 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
         description: `${order.credits} review credit${order.credits > 1 ? 's' : ''}`,
         order_id: order.orderId,
         prefill: order.prefill,
-        theme: { color: '#1D9E75' },
+        theme: { color: T.primary },
         handler: async (resp: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
           const v = await fetch('/api/okr-ally/verify-payment', {
             method: 'POST',
@@ -199,7 +199,7 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
           style={
             msg.kind === 'ok'
               ? { background: T.emeraldTint, color: T.emeraldDark, border: `1px solid ${T.emeraldBorder}` }
-              : { background: '#FEF2F2', color: '#991B1B', border: '1px solid #FECACA' }
+              : { background: T.errorLight, color: T.error, border: `1px solid ` }
           }
         >
           {msg.text}
@@ -220,11 +220,11 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
                 padding: 16,
               }}
             >
-              <div style={{ fontFamily: 'var(--font-lora), serif', fontWeight: 600, fontSize: 15 }}>{p.label}</div>
+              <div style={{ fontFamily: 'var(--font-inter), sans-serif', fontWeight: 600, fontSize: 15 }}>{p.label}</div>
               <div style={{ fontSize: 12.5, opacity: 0.85 }}>
                 {p.credits} review{p.credits > 1 ? 's' : ''} · {money(price.perReview ?? p.base / p.credits)}/review
               </div>
-              <div style={{ fontSize: 20, fontWeight: 700, marginTop: 8, fontFamily: 'var(--font-lora), serif' }}>
+              <div style={{ fontSize: 20, fontWeight: 700, marginTop: 8, fontFamily: 'var(--font-inter), sans-serif' }}>
                 {money(price.total)}
               </div>
               <div style={{ fontSize: 11.5, opacity: 0.8 }}>
@@ -281,13 +281,13 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
             width: '100%',
             padding: '9px 10px',
             borderRadius: 8,
-            border: `1px solid ${gstinInvalid ? '#DC2626' : T.hairline}`,
+            border: `1px solid ${gstinInvalid ? T.error : T.hairline}`,
             fontSize: 13.5,
             marginBottom: gstinInvalid ? 2 : 10,
           }}
         />
         {gstinInvalid && (
-          <p style={{ fontSize: 11.5, color: '#B91C1C', margin: '0 0 10px' }}>
+          <p style={{ fontSize: 11.5, color: T.error, margin: '0 0 10px' }}>
             Not a valid GSTIN — it&apos;s 15 characters: 2-digit state code, then the 10-character PAN, then 3 more.
           </p>
         )}
@@ -306,7 +306,7 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
               </Btn>
             </div>
             {couponMsg && (
-              <p style={{ fontSize: 12, color: couponApplied ? T.emeraldDark : '#B91C1C', margin: '6px 0 0' }}>{couponMsg}</p>
+              <p style={{ fontSize: 12, color: couponApplied ? T.emeraldDark : T.error, margin: '6px 0 0' }}>{couponMsg}</p>
             )}
           </>
         )}
@@ -328,7 +328,7 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
           padding: 16,
         }}
       >
-        <div style={{ fontFamily: 'var(--font-lora), serif', fontWeight: 600, fontSize: 15, color: T.bubbleText }}>
+        <div style={{ fontFamily: 'var(--font-inter), sans-serif', fontWeight: 600, fontSize: 15, color: T.bubbleText }}>
           Looking for team or company credits?
         </div>
         <div style={{ fontSize: 12.5, color: T.bubbleText, opacity: 0.85, marginTop: 4 }}>

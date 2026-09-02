@@ -212,7 +212,7 @@ export default function HelpTab() {
           <section key={topic.id} style={{ marginTop: 22 }}>
             <h3
               style={{
-                fontFamily: 'var(--font-lora), serif',
+                fontFamily: 'var(--font-inter), sans-serif',
                 fontSize: 16,
                 fontWeight: 700,
                 color: T.charcoal,
