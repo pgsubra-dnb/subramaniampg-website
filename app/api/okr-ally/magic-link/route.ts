@@ -46,6 +46,9 @@ export async function POST(req: NextRequest) {
       textContent:
         `Here is your link to continue with OKR Ally. It expires in 15 minutes and can be used once.\n\n` +
         `${magicLink}\n\nIf you did not request this link, you can ignore this email.`,
+      // Sign-in links are not a payment event — PGS is not copied. Only
+      // invoice / payment-confirmation emails BCC pgs@embiggen.co.in.
+      skipBcc: true,
     })
 
     return NextResponse.json({ success: true })

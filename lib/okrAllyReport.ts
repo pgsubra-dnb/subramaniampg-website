@@ -493,6 +493,9 @@ export async function generateStoreAndEmailReport(args: {
           `Your OKR review is ready (attached, PDF). Overall score ${args.review.overall_score.toFixed(1)}/10. ` +
           `Includes the score breakdown, Objective + Key Result feedback, and two suggested rewrites.`,
         attachments: [{ name: `OKR-Review-${args.submissionId.slice(0, 8)}.pdf`, content: pdf.toString('base64') }],
+        // Delivering the review is not a payment event — PGS is not copied.
+        // (The ₹0 free-review invoice, sent separately, still BCCs him.)
+        skipBcc: true,
       })
     } catch (mailErr) {
       console.error('OKR Ally report: email failed', args.submissionId, mailErr)

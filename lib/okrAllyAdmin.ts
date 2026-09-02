@@ -559,6 +559,8 @@ ${bodyText
     subject: 'A note on your OKR — Subramaniam P G',
     htmlContent: html,
     textContent: `${bodyText}\n\n— Subramaniam P G`,
+    // PGS wrote and sent this note himself — no self-BCC.
+    skipBcc: true,
   })
 
   if (!ok) {
@@ -600,7 +602,9 @@ export type GrantCreditsResult =
 /**
  * PGS adds review credits to an account by email from the admin screen. Atomic
  * (ledger row + balance in one transaction) and the recipient is ALWAYS
- * notified by email (which also BCCs PGS). A grant to an account that has not
+ * notified by email. That email does NOT BCC PGS — he performed the grant
+ * himself, so a copy is redundant (unlike a real purchase's invoice /
+ * "credits are ready", which do copy him). A grant to an account that has not
  * completed a first review is allowed but flagged.
  */
 export async function grantCreditsAsAdmin(
@@ -673,6 +677,9 @@ export async function grantCreditsAsAdmin(
       `${credits} review ${plural} ${credits === 1 ? 'has' : 'have'} been added to your OKR Ally account. ` +
       `Your balance is now ${creditsRemaining}. Sign in at https://subramaniampg.guru/okr-ally to use them.` +
       (note ? `\n\nNote: ${note}` : ''),
+    // PGS performed this grant himself from the admin screen — no self-BCC.
+    // (A real purchase still copies him: invoice + "credits are ready".)
+    skipBcc: true,
   })
 
   return {
