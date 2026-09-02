@@ -2,21 +2,30 @@
 
 import Image from 'next/image'
 import { ReactNode, useEffect, useRef, useState } from 'react'
+import { tokens, dataViz } from '@/lib/okrAllyTokens'
 
-/** Design tokens from okr-ally-ui-mockup.html — the visual source of truth. */
+/**
+ * The product palette. Semantic names (`T.primary`, `T.textPrimary`, `T.error`,
+ * …) come straight from `lib/okrAllyTokens.ts`; the lower-case brand names
+ * (`T.emerald`, `T.charcoal`, `T.cream`, …) are kept as aliases so the many
+ * existing call sites don't have to change. New code should use the semantic
+ * names. Colour values live in one place now — okrAllyTokens.ts.
+ */
 export const T = {
-  cream: '#FAF8F5',
-  card: '#FFFFFF',
-  charcoal: '#2C2C2A',
-  muted: '#5F5E5A',
-  hairline: '#E8E4DC',
-  emerald: '#1D9E75',
-  emeraldDark: '#0F6E56',
-  emeraldTint: '#E1F5EE',
-  emeraldBorder: '#CDEBE0',
-  gold: '#633806',
-  goldTint: '#FAEEDA',
-  bubbleText: '#0D3D2F',
+  ...tokens,
+  // ── legacy aliases ──
+  cream: tokens.background,
+  card: tokens.surface,
+  charcoal: tokens.textPrimary,
+  muted: tokens.textSecondary,
+  hairline: tokens.border,
+  emerald: tokens.primary,
+  emeraldDark: tokens.primaryHover,
+  emeraldTint: tokens.primaryLight,
+  emeraldBorder: tokens.primaryBorder,
+  gold: tokens.warning,
+  goldTint: tokens.warningLight,
+  bubbleText: tokens.primaryContrast,
 }
 
 export const AVATAR = '/okr-ally/ally-avatar.png'
@@ -39,7 +48,7 @@ export function TopBar({ right }: { right?: ReactNode }) {
         <div style={{ width: 30, height: 30, borderRadius: '50%', overflow: 'hidden', flexShrink: 0 }}>
           <Image src={AVATAR} alt="OKR Ally" width={30} height={30} />
         </div>
-        <span style={{ fontFamily: 'var(--font-lora), serif', fontWeight: 600, color: T.charcoal, fontSize: 16 }}>
+        <span style={{ fontFamily: 'var(--font-inter), sans-serif', fontWeight: 700, color: T.charcoal, fontSize: 16 }}>
           OKR Ally
         </span>
         <span
@@ -137,7 +146,7 @@ export function Btn({
   const styles: Record<string, React.CSSProperties> = {
     primary: { ...base, background: T.emerald, color: '#fff' },
     ghost: { ...base, background: 'transparent', color: T.emeraldDark, borderColor: T.hairline },
-    danger: { ...base, background: 'transparent', color: '#9A3412', borderColor: '#F3D0BC' },
+    danger: { ...base, background: 'transparent', color: T.error, borderColor: T.errorBorder },
   }
   return (
     <button type={type} onClick={onClick} disabled={disabled} style={styles[variant]}>
@@ -149,7 +158,7 @@ export function Btn({
 export function CharCount({ value, max }: { value: string; max: number }) {
   const over = value.length > max
   return (
-    <span style={{ fontSize: 11.5, color: over ? '#B91C1C' : T.muted }}>
+    <span style={{ fontSize: 11.5, color: over ? T.error : T.muted }}>
       {value.length} / {max}
     </span>
   )
@@ -211,16 +220,16 @@ export function scoreTone(score: number): ScoreTone {
   return 'high'
 }
 export const TONE_COLOR: Record<ScoreTone, string> = {
-  low: '#B91C1C',
-  mid: T.gold,
-  high: T.emerald,
+  low: T.error,
+  mid: T.warning,
+  high: T.primary,
 }
 
 // Score-radar treatment — a punchy emerald fill + a warm-grey grid, shared
 // verbatim with the PDF (RADAR_FILL / RADAR_GRID in lib/okrAllyReport.ts) so
 // the two surfaces don't drift.
-export const RADAR_FILL = '#9FD9C7'
-export const RADAR_GRID = '#B8B1A3'
+export const RADAR_FILL = dataViz.radarFill
+export const RADAR_GRID = dataViz.radarGrid
 
 /** Rubric criteria in canonical order — kept in sync with RUBRIC in lib/okrAllyReview.ts. */
 export const CRITERIA_ORDER = [
@@ -268,8 +277,8 @@ export function ScoreRing({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontFamily: 'var(--font-lora), serif',
-          fontWeight: 600,
+          fontFamily: 'var(--font-inter), sans-serif',
+          fontWeight: 700,
           fontSize: size / 3.4,
           color,
         }}

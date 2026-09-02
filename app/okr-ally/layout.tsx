@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import { tokens } from '@/lib/okrAllyTokens'
 
 export const metadata: Metadata = {
   title: 'OKR Ally — Powered by AI',
@@ -21,7 +22,7 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#1D9E75',
+  themeColor: tokens.primary,
 }
 
 export default function OkrAllyLayout({ children }: { children: React.ReactNode }) {

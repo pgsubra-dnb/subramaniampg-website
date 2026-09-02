@@ -212,7 +212,7 @@ export default function ReportScreen({
               }}
             />
             {err && (
-              <p style={{ fontSize: 12.5, color: '#B91C1C', margin: '6px 0 0' }} dangerouslySetInnerHTML={{ __html: err }} />
+              <p style={{ fontSize: 12.5, color: T.error, margin: '6px 0 0' }} dangerouslySetInnerHTML={{ __html: err }} />
             )}
             <div className="mt-2">
               <Btn small onClick={submitFeedback} disabled={saving}>
@@ -244,7 +244,7 @@ export function OptionCard({ option, featured }: { option: OkrOption; featured?:
       <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', opacity: 0.85 }}>
         {option.label}
       </div>
-      <div style={{ fontFamily: 'var(--font-lora), serif', fontSize: 16, fontWeight: 600, margin: '6px 0 10px', lineHeight: 1.35 }}>
+      <div style={{ fontFamily: 'var(--font-inter), sans-serif', fontSize: 16, fontWeight: 600, margin: '6px 0 10px', lineHeight: 1.35 }}>
         {option.objective}
       </div>
       {option.key_results.map((kr, i) => (

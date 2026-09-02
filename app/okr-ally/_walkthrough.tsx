@@ -77,7 +77,7 @@ function Carousel({
 
       <h1
         style={{
-          fontFamily: 'var(--font-lora), serif',
+          fontFamily: 'var(--font-inter), sans-serif',
           fontSize: 20,
           fontWeight: 600,
           color: T.charcoal,
@@ -309,7 +309,7 @@ function NoteView({ slide }: { slide: Note }) {
     <div style={{ animation: 'okraIn .3s ease both', padding: '8px 0' }}>
       <h2
         style={{
-          fontFamily: 'var(--font-lora), serif',
+          fontFamily: 'var(--font-inter), sans-serif',
           fontSize: 18,
           fontWeight: 600,
           color: T.charcoal,
@@ -329,7 +329,7 @@ function CtaView({ slide, onAction }: { slide: Cta; onAction?: () => void }) {
       <div style={{ width: 68, height: 68, borderRadius: '50%', overflow: 'hidden', margin: '0 auto 16px', border: `3px solid ${T.emerald}` }}>
         <Image src={AVATAR} alt="OKR Ally" width={68} height={68} />
       </div>
-      <h2 style={{ fontFamily: 'var(--font-lora), serif', fontSize: 20, fontWeight: 600, color: T.charcoal, margin: 0 }}>
+      <h2 style={{ fontFamily: 'var(--font-inter), sans-serif', fontSize: 20, fontWeight: 600, color: T.charcoal, margin: 0 }}>
         {slide.heading}
       </h2>
       <p style={{ color: T.muted, marginTop: 10, lineHeight: 1.6, maxWidth: 420, marginLeft: 'auto', marginRight: 'auto', fontSize: 14 }}>

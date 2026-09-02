@@ -112,7 +112,7 @@ export default function HistoryTab({ onOpen }: { onOpen: (submissionId: string) 
                   <div
                     style={{
                       flexShrink: 0,
-                      fontFamily: 'var(--font-lora), serif',
+                      fontFamily: 'var(--font-inter), sans-serif',
                       fontWeight: 700,
                       color: T.emeraldDark,
                       fontSize: 15,

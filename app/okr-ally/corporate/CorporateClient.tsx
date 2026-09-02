@@ -92,7 +92,7 @@ export default function CorporateClient() {
         description: `${order.credits} corporate review credits`,
         order_id: order.orderId,
         prefill: order.prefill,
-        theme: { color: '#1D9E75' },
+        theme: { color: T.primary },
         handler: async (resp: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
           const v = await fetch('/api/okr-ally/verify-payment', {
             method: 'POST',
@@ -148,7 +148,7 @@ export default function CorporateClient() {
       <style>{keyframes}</style>
       <TopBar />
 
-      <h1 style={{ fontFamily: 'var(--font-lora), serif', fontSize: 22, fontWeight: 600, color: T.charcoal, margin: '0 0 6px' }}>
+      <h1 style={{ fontFamily: 'var(--font-inter), sans-serif', fontSize: 22, fontWeight: 600, color: T.charcoal, margin: '0 0 6px' }}>
         Corporate credits
       </h1>
       <p style={{ color: T.muted, fontSize: 14, lineHeight: 1.6, marginBottom: 18 }}>
@@ -187,11 +187,11 @@ export default function CorporateClient() {
                     cursor: 'pointer',
                   }}
                 >
-                  <div style={{ fontFamily: 'var(--font-lora), serif', fontWeight: 600, fontSize: 16 }}>
+                  <div style={{ fontFamily: 'var(--font-inter), sans-serif', fontWeight: 600, fontSize: 16 }}>
                     {b.credits} credits
                   </div>
                   <div style={{ fontSize: 12.5, opacity: 0.85 }}>{money(Math.round(b.base / b.credits))}/credit</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, marginTop: 8, fontFamily: 'var(--font-lora), serif' }}>
+                  <div style={{ fontSize: 20, fontWeight: 700, marginTop: 8, fontFamily: 'var(--font-inter), sans-serif' }}>
                     {money(total)}
                   </div>
                   <div style={{ fontSize: 11.5, opacity: 0.8 }}>
@@ -218,14 +218,14 @@ export default function CorporateClient() {
             <input style={input} value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
             <label style={label}>Company GSTIN *</label>
             <input
-              style={{ ...input, borderColor: gstinInvalid ? '#DC2626' : T.hairline }}
+              style={{ ...input, borderColor: gstinInvalid ? T.error : T.hairline }}
               value={gstin}
               onChange={(e) => setGstin(e.target.value.toUpperCase())}
               placeholder="e.g. 29ABCDE1234F1Z5"
               maxLength={15}
             />
             {gstinInvalid && (
-              <p style={{ fontSize: 11.5, color: '#B91C1C', margin: '2px 0 0' }}>
+              <p style={{ fontSize: 11.5, color: T.error, margin: '2px 0 0' }}>
                 Not a valid GSTIN — 15 characters.
               </p>
             )}
@@ -268,7 +268,7 @@ export default function CorporateClient() {
               style={
                 msg.kind === 'ok'
                   ? { background: T.emeraldTint, color: T.emeraldDark, border: `1px solid ${T.emeraldBorder}` }
-                  : { background: '#FEF2F2', color: '#991B1B', border: '1px solid #FECACA' }
+                  : { background: T.errorLight, color: T.error, border: `1px solid ` }
               }
             >
               {msg.text}

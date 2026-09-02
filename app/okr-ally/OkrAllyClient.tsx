@@ -500,7 +500,7 @@ function Intro({ onStart, onSeeHow }: { onStart: () => void; onSeeHow: () => voi
       <div style={{ width: 84, height: 84, borderRadius: '50%', overflow: 'hidden', margin: '0 auto 16px', border: `3px solid ${T.emerald}` }}>
         <Image src={AVATAR} alt="OKR Ally" width={84} height={84} />
       </div>
-      <h1 style={{ fontFamily: 'var(--font-lora), serif', fontSize: 24, fontWeight: 600, color: T.charcoal, margin: 0 }}>
+      <h1 style={{ fontFamily: 'var(--font-inter), sans-serif', fontSize: 24, fontWeight: 600, color: T.charcoal, margin: 0 }}>
         Hi, I&apos;m Ally.
       </h1>
       <p style={{ color: T.muted, marginTop: 12, lineHeight: 1.6, maxWidth: 460, marginLeft: 'auto', marginRight: 'auto' }}>
@@ -606,7 +606,7 @@ function SignedOut({ onContinue }: { onContinue: () => void }) {
       <div style={{ width: 72, height: 72, borderRadius: '50%', overflow: 'hidden', margin: '0 auto 14px', border: `3px solid ${T.emerald}` }}>
         <Image src={AVATAR} alt="OKR Ally" width={72} height={72} />
       </div>
-      <h1 style={{ fontFamily: 'var(--font-lora), serif', fontSize: 22, fontWeight: 600, color: T.charcoal, margin: 0 }}>
+      <h1 style={{ fontFamily: 'var(--font-inter), sans-serif', fontSize: 22, fontWeight: 600, color: T.charcoal, margin: 0 }}>
         You&apos;re signed out.
       </h1>
       <p style={{ color: T.muted, marginTop: 10, fontSize: 13.5, maxWidth: 420, marginLeft: 'auto', marginRight: 'auto' }}>
@@ -714,7 +714,7 @@ function EmailGate({ error }: { error: string | null }) {
           <p style={{ fontSize: 12.5, color: T.emeraldDark, marginTop: 4 }}>New link sent to {email}.</p>
         )}
         {localErr && (
-          <div className="mt-2 mb-1 text-sm rounded-lg px-4 py-3" style={{ background: '#FEF2F2', color: '#991B1B', border: '1px solid #FECACA' }}>
+          <div className="mt-2 mb-1 text-sm rounded-lg px-4 py-3" style={{ background: T.errorLight, color: T.error, border: `1px solid ` }}>
             {localErr}
           </div>
         )}
@@ -744,7 +744,7 @@ function EmailGate({ error }: { error: string | null }) {
         your reviews and credits stay with you.
       </AllyRow>
       {(error || localErr) && (
-        <div className="mb-3 text-sm rounded-lg px-4 py-3" style={{ background: '#FEF2F2', color: '#991B1B', border: '1px solid #FECACA' }}>
+        <div className="mb-3 text-sm rounded-lg px-4 py-3" style={{ background: T.errorLight, color: T.error, border: `1px solid ` }}>
           {localErr || error}
         </div>
       )}
