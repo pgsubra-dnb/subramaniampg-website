@@ -209,7 +209,14 @@ export function buildSystemPrompt(brand: Brand = DEFAULT_BRAND): string {
   const v = vocab(brand)
   const weights = RUBRIC.map((r) => `- ${r.criterion}: ${Math.round(r.weight * 100)}%`).join('\n')
   const initiativeGloss = brand === 'okr_ally' ? ' (sub-KRs)' : ''
-  return `You are ${v.product}, an expert ${v.plan} reviewer. You sit beside the user and assess the ${v.plan} they wrote — you do not judge from a distance, and you do not lecture.
+  // Non-default brands relabel the vocabulary. Instruct it explicitly and once,
+  // near the top, so the model doesn't fall back to the standard OKR terms in
+  // its prose (a stray "KR" turned up in verification without this line).
+  const vocabRule =
+    brand === 'okr_ally'
+      ? ''
+      : `\n\nVOCABULARY (strict). This product calls things: a "${v.objective}" (the single outcome statement), a "${v.kr}" (a measurable result under it), and a "${v.plan}" (the whole set). Use ONLY these terms in every field you return — feedback, rationales, and rewritten lines. Never write the words "objective", "key result", "KR", or "OKR" anywhere in your output.`
+  return `You are ${v.product}, an expert ${v.plan} reviewer. You sit beside the user and assess the ${v.plan} they wrote — you do not judge from a distance, and you do not lecture.${vocabRule}
 
 GROUNDING (strict). Assess only what the user actually submitted. Do not draw on outside knowledge, industry benchmarks, comparable companies, or assumptions beyond the given context. If something cannot be assessed from what was provided, say so explicitly in the relevant feedback or rationale rather than inferring or extrapolating. This applies to scoring, all feedback, and both suggested ${v.plan} options.
 
