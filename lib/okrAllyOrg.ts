@@ -281,13 +281,21 @@ export async function fulfilCorporatePurchase(
           <div style="font-family:Inter,Arial,sans-serif;color:#2C2C2A;line-height:1.6;">
             <p>${company} has bought a pool of OKR Ally review credits, and this email address is its admin.</p>
             <p>This purchase added <strong>${added}</strong> credit${added === 1 ? '' : 's'} &mdash; the pool now holds <strong>${pool}</strong>.</p>
-            <p>Sign in at <a href="https://subramaniampg.guru/okr-ally">subramaniampg.guru/okr-ally</a> with this email address, then open the <strong>Company</strong> tab to allocate credits to your team and see usage.</p>
+            <p>Your first step is to set your company's shared context — your team can't run reviews until you publish it.</p>
+            <p>
+              <a href="https://subramaniampg.guru/okr-ally?tab=company" style="background:#1F6F54;color:#FAF8F5;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
+                Set up your company
+              </a>
+            </p>
+            <p style="font-size:13px;color:#6b6b66;">Sign in with this email address — it opens straight to the Company tab, where you set the context, allocate credits to your team, and see usage.</p>
             <p style="font-size:13px;color:#6b6b66;">&mdash; Subramaniam P G</p>
           </div>`,
         textContent:
           `${company} has bought a pool of OKR Ally review credits, and this email address is its admin. ` +
-          `This purchase added ${added} credit${added === 1 ? '' : 's'} — the pool now holds ${pool}. ` +
-          `Sign in at https://subramaniampg.guru/okr-ally with this email address, then open the Company tab to allocate credits and see usage.`,
+          `This purchase added ${added} credit${added === 1 ? '' : 's'} — the pool now holds ${pool}.\n\n` +
+          `Your first step is to set your company's shared context — your team can't run reviews until you publish it. ` +
+          `Sign in with this email address at:\n\nhttps://subramaniampg.guru/okr-ally?tab=company\n\n` +
+          `That opens straight to the Company tab, where you set the context, allocate credits, and see usage.`,
       })
     } catch (err) {
       console.error('OKR Ally corporate admin-notification failed:', input.razorpayPaymentId, err)
