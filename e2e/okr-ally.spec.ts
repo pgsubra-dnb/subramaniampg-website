@@ -1608,12 +1608,19 @@ test('walkthrough: org admin sees the admin walkthrough once on the first Compan
   await expect(page.getByText(/Seeing usage/i)).toBeVisible()
   await page.getByRole('button', { name: 'Got it' }).click()
 
-  // now the real admin screen; walkthrough gone; server recorded it
+  // now the real admin screen; walkthrough gone
   await expect(page.getByText('Purchased', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Running OKR Ally for your company' })).toHaveCount(0)
-  await expect.poll(() => getSeenWalkthroughs(u.userId)).toContain('org_admin')
 
-  // second visit — reload, reopen Company → no walkthrough
+  // an immediate reload must not re-pop it (localStorage guard beats the POST race)
+  await page.reload()
+  await page.getByRole('button', { name: 'Company', exact: true }).click()
+  await expect(page.getByText('Purchased', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Running OKR Ally for your company' })).toHaveCount(0)
+
+  // and it's durably recorded server-side (survives a cleared browser too)
+  await expect.poll(() => getSeenWalkthroughs(u.userId)).toContain('org_admin')
+  await page.evaluate(() => localStorage.clear())
   await page.reload()
   await page.getByRole('button', { name: 'Company', exact: true }).click()
   await expect(page.getByText('Purchased', { exact: true })).toBeVisible()
