@@ -130,7 +130,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         status: 'failed_refunded',
-        error: 'The review could not be generated. Your credit has been refunded — please try again.',
+        error:
+          charge === 'admin'
+            ? 'The review could not be generated — please try again.'
+            : 'The review could not be generated. Your credit has been refunded — please try again.',
         detail: result.reason,
         refunded: charge,
       },

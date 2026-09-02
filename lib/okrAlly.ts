@@ -1,6 +1,7 @@
 import { Pool, type QueryResultRow } from 'pg'
 import type { NextRequest } from 'next/server'
 import { okrAllySanityClient } from '@/lib/okrAllySanity'
+import { isAdminSessionToken, verifyAdminSession } from '@/lib/okrAllySession'
 
 /**
  * OKR Ally — Neon data access + session helpers.
@@ -120,11 +121,37 @@ export async function getUserById(id: string): Promise<OkrAllyUser | null> {
   return res.rows[0] ?? null
 }
 
-/** Current OKR Ally user from the session cookie, or null if not signed in. */
+/**
+ * Current OKR Ally user from the session cookie, or null if not signed in.
+ *
+ * Two cookie shapes:
+ *  - a bare Neon user id (UUID) — the 7-day session issued to regular users.
+ *  - `<userId>.<issuedAt>.<sig>` — the 24h signed session issued to admins
+ *    (lib/okrAllySession.ts).
+ *
+ * An admin account is ONLY ever authenticated through a valid, unexpired signed
+ * token. A bare-id cookie naming an admin account is rejected, so an old cookie
+ * (or a hand-crafted one) can't be used to skip the 24h re-verification.
+ */
 export async function getSessionUser(req: NextRequest): Promise<OkrAllyUser | null> {
-  const id = req.cookies.get(OKR_ALLY_SESSION_COOKIE)?.value
-  if (!id) return null
-  return getUserById(id)
+  const raw = req.cookies.get(OKR_ALLY_SESSION_COOKIE)?.value
+  if (!raw) return null
+
+  if (isAdminSessionToken(raw)) {
+    const verified = verifyAdminSession(raw)
+    if (!verified) return null // bad signature, tampered issuedAt, or > 24h old
+    const user = await getUserById(verified.userId)
+    // The signed token is an admin-only credential. If the account is no longer
+    // an admin, force a fresh (regular) sign-in.
+    if (!user || !user.is_admin) return null
+    return user
+  }
+
+  const user = await getUserById(raw)
+  if (!user) return null
+  // Admins must use the signed, 24h-expiring token — never a bare id.
+  if (user.is_admin) return null
+  return user
 }
 
 /** Personal credits only; 0 when no balance row exists yet. Used by the paid
