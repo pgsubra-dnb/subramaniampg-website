@@ -149,12 +149,14 @@ export async function markReviewDelivered(args: {
   )
 }
 
-export type ChargeKind = 'credit' | 'coupon' | 'org'
+export type ChargeKind = 'credit' | 'coupon' | 'org' | 'admin'
 
 export type StartResult =
   | {
       ok: true
       submission: SubmissionRow
+      /** 'admin' — an is_admin account; no credit was deducted, an
+       *  `admin_unlimited` (amount 0) audit row was written instead. */
       charge: ChargeKind
       /** Set only when charge === 'org' — which organization's pool was drawn on,
        *  so refundFailedSubmission returns the credit to the right place. */
@@ -218,6 +220,25 @@ export async function startSubmission(args: StartArgs): Promise<StartResult> {
         return { ok: false, status: 409, error: 'duplicate idempotency key' }
       }
       const submission = insert.rows[0]
+
+      // Admin unlimited — pgs@embiggen.co.in (users.is_admin) runs reviews
+      // without a credit being deducted. This is the first thing checked, ahead
+      // of the free-review coupon and every credit path, so an admin review
+      // never consumes a coupon or a balance. An `admin_unlimited` row (amount
+      // 0, one per submission) is still written so every admin review is on the
+      // ledger for audit.
+      const adminCheck = await client.query<{ is_admin: boolean }>(
+        `SELECT is_admin FROM users WHERE id = $1`,
+        [userId]
+      )
+      if (adminCheck.rows[0]?.is_admin) {
+        await client.query(
+          `INSERT INTO credit_transactions (user_id, submission_id, amount, type, note)
+           VALUES ($1, $2, 0, 'admin_unlimited', 'admin unlimited — credit deduction bypassed')`,
+          [userId, submission.id]
+        )
+        return { ok: true, submission, charge: 'admin' }
+      }
 
       if (freeCouponCode) {
         const redeem = await client.query(
@@ -356,6 +377,14 @@ export async function refundFailedSubmission(args: {
       await client.query(
         `INSERT INTO credit_transactions (user_id, submission_id, amount, type)
          VALUES ($1, $2, 1, 'refund_failed_generation')`,
+        [args.userId, args.submissionId]
+      )
+    } else if (args.charge === 'admin') {
+      // Admin unlimited — nothing was charged. Record a 0-amount audit row so
+      // the failed attempt is still on the ledger, then mark failed_refunded.
+      await client.query(
+        `INSERT INTO credit_transactions (user_id, submission_id, amount, type, note)
+         VALUES ($1, $2, 0, 'refund_failed_generation', 'admin unlimited — no charge to refund')`,
         [args.userId, args.submissionId]
       )
     } else {

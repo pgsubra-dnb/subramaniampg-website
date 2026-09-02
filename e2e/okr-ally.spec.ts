@@ -1,9 +1,11 @@
+import crypto from 'node:crypto'
 import { test, expect, Page } from '@playwright/test'
 import { FAIL_BASE_URL } from '../playwright.config'
 import { validateReviewOutput } from '../lib/okrAllyReview'
 import { PACKS } from '../lib/okrAllyBilling'
 import {
   signIn,
+  promoteToAdmin,
   seedCredits,
   seedProfile,
   setAdmin,
@@ -33,6 +35,12 @@ import {
 import { grantCreditsAsAdmin, sendImprovementEmail } from '../lib/okrAllyAdmin'
 import { generateStoreAndEmailReport } from '../lib/okrAllyReport'
 import { getReviewForSubmission } from '../lib/okrAllySubmission'
+import {
+  signAdminSession,
+  verifyAdminSession,
+  isAdminSessionToken,
+  ADMIN_SESSION_MAX_AGE_MS,
+} from '../lib/okrAllySession'
 
 // Spec 16 (corporate) calls the fulfilment/allocation libs directly, so opt
 // this test process past the non-prod fulfilment guard (the webServer has it).
@@ -403,9 +411,9 @@ test.describe(() => {
 test('admin: expert feedback on both options, then a grounded improvement-email draft', async ({ page, context }) => {
   test.setTimeout(120_000)
 
-  const user = await signIn(context, 'http://localhost:3200')
+  let user = await signIn(context, 'http://localhost:3200')
   createdUsers.push(user.userId)
-  const hdr = { cookie: user.cookieHeader }
+  let hdr = { cookie: user.cookieHeader }
 
   // ── not an admin: routes 403, no Admin tab ──
   expect((await context.request.get('/api/okr-ally/admin/reviews', { headers: hdr })).status()).toBe(403)
@@ -413,8 +421,9 @@ test('admin: expert feedback on both options, then a grounded improvement-email 
   await expect(page.getByRole('button', { name: 'History' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Admin' })).toHaveCount(0)
 
-  // ── promote + seed a completed review ──
-  await setAdmin(user.userId, true)
+  // ── promote (re-mints the session as the 24h signed admin token) + seed a review ──
+  user = await promoteToAdmin(context, 'http://localhost:3200', user)
+  hdr = { cookie: user.cookieHeader }
   const { submissionId, reviewId } = await seedCompletedReview(user.userId, 'E2E admin objective')
 
   await page.reload()
@@ -554,17 +563,18 @@ test('free first review issues a ₹0 tax invoice with the full discount breakdo
 test('admin credit grant: adds credits atomically, warns when no review yet, 403 for non-admins', async ({ browser }) => {
   const ctxA = await browser.newContext()
   const ctxB = await browser.newContext()
-  const admin = await signIn(ctxA, 'http://localhost:3200')
+  let admin = await signIn(ctxA, 'http://localhost:3200')
   const recipient = await signIn(ctxB, 'http://localhost:3200')
   createdUsers.push(admin.userId, recipient.userId)
-  const hdr = { cookie: admin.cookieHeader }
+  let hdr = { cookie: admin.cookieHeader }
 
   // non-admin → 403
   expect(
     (await ctxA.request.post('/api/okr-ally/admin/grant-credits', { headers: hdr, data: { email: recipient.email, credits: 2 } })).status()
   ).toBe(403)
 
-  await setAdmin(admin.userId, true)
+  admin = await promoteToAdmin(ctxA, 'http://localhost:3200', admin)
+  hdr = { cookie: admin.cookieHeader }
 
   // unknown email → 400
   expect(
@@ -586,7 +596,6 @@ test('admin credit grant: adds credits atomically, warns when no review yet, 403
   const txns = await getCreditTransactions(recipient.userId)
   expect(txns).toContainEqual({ type: 'admin_grant', amount: 3 })
 
-  await setAdmin(admin.userId, false)
   await ctxA.close()
   await ctxB.close()
 })
@@ -595,9 +604,9 @@ test('admin credit grant: adds credits atomically, warns when no review yet, 403
 // 9. Admin list — company / email filters + pagination
 // ══════════════════════════════════════════════════════════
 test('admin list: company and email filters narrow results, pagination is honoured', async ({ context }) => {
-  const admin = await signIn(context, 'http://localhost:3200')
+  let admin = await signIn(context, 'http://localhost:3200')
   createdUsers.push(admin.userId)
-  await setAdmin(admin.userId, true)
+  admin = await promoteToAdmin(context, 'http://localhost:3200', admin)
   const hdr = { cookie: admin.cookieHeader }
 
   // two more users, each with a completed review + a distinct company on their profile
@@ -633,8 +642,6 @@ test('admin list: company and email filters narrow results, pagination is honour
   expect(p1.items).toHaveLength(1)
   expect(p2.items).toHaveLength(1)
   expect(p1.items[0].submissionId).not.toBe(p2.items[0].submissionId)
-
-  await setAdmin(admin.userId, false)
 })
 
 // ══════════════════════════════════════════════════════════
@@ -1294,4 +1301,113 @@ test('corporate: report is org-scoped; a pre-existing personal account is left f
   )
   expect(dl.status()).toBe(200)
   expect(dl.headers()['content-type']).toContain('application/pdf')
+})
+
+// ══════════════════════════════════════════════════════════
+// 17. Admin-only 24h signed session + admin-unlimited reviews
+// ══════════════════════════════════════════════════════════
+test('admin session token: signature + 24h window cannot be forged', () => {
+  const uid = crypto.randomUUID()
+  const good = signAdminSession(uid)
+  expect(isAdminSessionToken(good)).toBe(true)
+  expect(verifyAdminSession(good)?.userId).toBe(uid)
+
+  // just under 24h → valid; just over → expired
+  expect(verifyAdminSession(signAdminSession(uid, Date.now() - (ADMIN_SESSION_MAX_AGE_MS - 60_000)))?.userId).toBe(uid)
+  expect(verifyAdminSession(signAdminSession(uid, Date.now() - (ADMIN_SESSION_MAX_AGE_MS + 60_000)))).toBeNull()
+
+  const [, iat, sig] = good.split('.')
+  // swap the user id, keep the signature → rejected
+  expect(verifyAdminSession(`${crypto.randomUUID()}.${iat}.${sig}`)).toBeNull()
+  // roll issuedAt forward to "now", keep the stale signature → rejected
+  expect(verifyAdminSession(`${uid}.${Date.now()}.${sig}`)).toBeNull()
+  // a correctly-signed token that claims a future issuedAt → rejected
+  expect(verifyAdminSession(signAdminSession(uid, Date.now() + 10 * 60_000))).toBeNull()
+  // garbage / a bare uuid
+  expect(verifyAdminSession('not-a-token')).toBeNull()
+  expect(verifyAdminSession(uid)).toBeNull()
+})
+
+test('session: admin gets a 24h signed cookie; a regular user keeps the 7d bare-id cookie', async ({ browser }) => {
+  const ctxAdmin = await browser.newContext()
+  const ctxUser = await browser.newContext()
+  const admin = await signIn(ctxAdmin, 'http://localhost:3200', undefined, { admin: true })
+  const user = await signIn(ctxUser, 'http://localhost:3200')
+  createdUsers.push(admin.userId, user.userId)
+
+  expect(isAdminSessionToken(admin.sessionValue)).toBe(true)
+  expect(verifyAdminSession(admin.sessionValue)?.userId).toBe(admin.userId)
+  expect(isAdminSessionToken(user.sessionValue)).toBe(false)
+  expect(user.sessionValue).toBe(user.userId) // unchanged scheme for regular users
+
+  const hrsLeft = (c: { expires: number }) => (c.expires * 1000 - Date.now()) / 3_600_000
+  const adminCookie = (await ctxAdmin.cookies()).find((c) => c.name === 'okr_ally_session')!
+  const userCookie = (await ctxUser.cookies()).find((c) => c.name === 'okr_ally_session')!
+  expect(hrsLeft(adminCookie)).toBeGreaterThan(23)
+  expect(hrsLeft(adminCookie)).toBeLessThan(25)
+  expect(hrsLeft(userCookie)).toBeGreaterThan(24 * 6.5) // ~7 days
+
+  const meAdmin = await (await ctxAdmin.request.get('/api/okr-ally/me')).json()
+  expect(meAdmin).toMatchObject({ authenticated: true, user: { isAdmin: true } })
+  const meUser = await (await ctxUser.request.get('/api/okr-ally/me')).json()
+  expect(meUser).toMatchObject({ authenticated: true, user: { isAdmin: false } })
+
+  await ctxAdmin.close()
+  await ctxUser.close()
+})
+
+test('session: an admin account is unusable with a bare-id, expired, or tampered cookie (no bypass)', async ({ browser }) => {
+  const ctx = await browser.newContext()
+  const admin = await signIn(ctx, 'http://localhost:3200', undefined, { admin: true })
+  createdUsers.push(admin.userId)
+
+  const authedWith = async (value: string) => {
+    const r = await ctx.request.get('/api/okr-ally/me', {
+      headers: { cookie: `okr_ally_session=${value}` },
+    })
+    return (await r.json()).authenticated === true
+  }
+
+  expect(await authedWith(admin.sessionValue)).toBe(true) // the real signed token
+  expect(await authedWith(admin.userId)).toBe(false) // bare id for an admin → NO
+  expect(
+    await authedWith(signAdminSession(admin.userId, Date.now() - (ADMIN_SESSION_MAX_AGE_MS + 3_600_000)))
+  ).toBe(false) // 25h old
+  const [, , sig] = admin.sessionValue.split('.')
+  expect(await authedWith(`${admin.userId}.${Date.now()}.${sig}`)).toBe(false) // rolled-forward iat, stale sig
+
+  await ctx.close()
+})
+
+test('admin unlimited: an admin with zero credits gets a full review, logged as admin_unlimited (amount 0)', async ({ context }) => {
+  test.setTimeout(240_000)
+  const admin = await signIn(context, 'http://localhost:3200', undefined, { admin: true })
+  createdUsers.push(admin.userId)
+  expect(await getBalance(admin.userId)).toBe(0)
+
+  const res = await context.request.post('/api/okr-ally/review', {
+    headers: { cookie: admin.cookieHeader, 'content-type': 'application/json' },
+    data: {
+      idempotencyKey: crypto.randomUUID(),
+      objective:
+        'Our enterprise customers adopt the new analytics module as part of their daily workflow.',
+      krs: [
+        { text: 'Increase weekly-active analytics users among enterprise accounts from 18% to 45%' },
+        { text: 'Raise the share of enterprise renewals that cite analytics as a driver from 5% to 25%' },
+      ],
+      context_snapshot: {},
+    },
+  })
+  expect(res.status()).toBe(200)
+  const j = await res.json()
+  expect(j.status).toBe('complete')
+  expect(j.reviewId).toBeTruthy()
+
+  // nothing charged; exactly one audit row, type admin_unlimited, amount 0
+  expect(await getBalance(admin.userId)).toBe(0)
+  expect(await getCreditTransactions(admin.userId)).toEqual([{ type: 'admin_unlimited', amount: 0 }])
+
+  // the free-review coupon was NOT consumed — the admin branch runs before it
+  const red = await pool.query(`SELECT 1 FROM coupon_redemptions WHERE user_id = $1`, [admin.userId])
+  expect(red.rowCount).toBe(0)
 })

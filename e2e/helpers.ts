@@ -48,18 +48,34 @@ export interface SignedInUser {
   userId: string
   /** Cookie header value, e.g. "okr_ally_session=<uuid>" — for APIRequestContext calls. */
   cookieHeader: string
+  /** The raw `okr_ally_session` cookie value: a bare UUID for a regular user,
+   *  the `<uuid>.<iat>.<sig>` signed token for an admin. */
+  sessionValue: string
 }
 
 /**
  * Full magic-link sign-in against `baseURL`: mint a magicToken in Sanity, hit
  * /api/okr-ally/verify (which creates/loads the Neon user and sets the session
  * cookie in `context`), and return the user id + cookie header.
+ *
+ * `opts.admin` flags the account `is_admin` BEFORE hitting /verify, so the route
+ * issues the 24h signed session token instead of a bare-id cookie (getSessionUser
+ * rejects a bare-id cookie for an admin account).
  */
 export async function signIn(
   context: BrowserContext,
   baseURL: string,
-  email = testEmail()
+  email = testEmail(),
+  opts: { admin?: boolean } = {}
 ): Promise<SignedInUser> {
+  if (opts.admin) {
+    await pool.query(
+      `INSERT INTO users (email, name, is_admin) VALUES ($1, $2, true)
+       ON CONFLICT (email) DO UPDATE SET is_admin = true`,
+      [email, (email.split('@')[0] || 'admin').slice(0, 120)]
+    )
+  }
+
   const token = crypto.randomBytes(32).toString('hex')
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
   await sanityMutate([
@@ -81,11 +97,34 @@ export async function signIn(
   const session = cookies.find((c) => c.name === 'okr_ally_session')
   if (!session) throw new Error('signIn: no okr_ally_session cookie after /verify')
 
-  return { email, userId: session.value, cookieHeader: `okr_ally_session=${session.value}` }
+  const row = await pool.query<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [email])
+  const userId = row.rows[0]?.id
+  if (!userId) throw new Error('signIn: no users row after /verify')
+
+  return {
+    email,
+    userId,
+    cookieHeader: `okr_ally_session=${session.value}`,
+    sessionValue: session.value,
+  }
 }
 
 export async function setAdmin(userId: string, isAdmin: boolean): Promise<void> {
   await pool.query(`UPDATE users SET is_admin = $2 WHERE id = $1`, [userId, isAdmin])
+}
+
+/**
+ * Promote an already-signed-in user to admin and refresh their session in
+ * `context` to the 24h signed admin token — a bare-id cookie is rejected for an
+ * admin account, so tests that check non-admin gating first must re-mint here.
+ */
+export async function promoteToAdmin(
+  context: BrowserContext,
+  baseURL: string,
+  user: SignedInUser
+): Promise<SignedInUser> {
+  await setAdmin(user.userId, true)
+  return signIn(context, baseURL, user.email)
 }
 
 /** Give a user a full saved profile (name/phone on users, context on user_profile)
