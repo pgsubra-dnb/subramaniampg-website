@@ -391,6 +391,10 @@ export default function StepForm({ initialForm, orgContext, onReachedContextScre
         />
       ) : c && ctxKind ? (
         <CtxStep
+          // Remount per context field so CtxStep's local input state (the
+          // clarify answer, the paraphrase edit box) can't carry over from the
+          // previous field — a stale answer would otherwise be silently sent.
+          key={ctxKind}
           kind={ctxKind}
           state={c}
           busy={busy}

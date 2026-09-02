@@ -1689,3 +1689,57 @@ test('walkthrough: an individual (non-org) user sees neither role walkthrough', 
   await expect(page.getByRole('button', { name: /walkthrough again/i })).toHaveCount(0)
   expect(await getSeenWalkthroughs(u.userId)).toEqual([])
 })
+
+// ══════════════════════════════════════════════════════════
+// 21. Stale input must not bleed between context steps
+//     (needs a real ANTHROPIC_API_KEY on the web server — the clarify path
+//      is what carries the previous field's answer over.)
+// ══════════════════════════════════════════════════════════
+test('context steps: a clarifying answer does not carry into the next field', async ({ page, context }) => {
+  test.setTimeout(240_000)
+  const user = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(user.userId)
+  await seedCredits(user.userId, 1)
+
+  await page.goto('/okr-ally')
+  await fillSimple(page, 'Bleed Tester', 'Next')
+  await page.getByRole('button', { name: 'Continue', exact: true }).click() // skip phone
+  await fillSimple(page, 'Repro Co', 'Next')
+
+  // company context — deliberately thin so Ally asks a follow-up
+  await page.getByText(/Tell me about your company or organisation/i).waitFor()
+  await page.locator('textarea').last().fill('We do software.')
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+
+  // answer the company follow-up with a very distinctive string
+  const SENTINEL = 'ZZ-COMPANY-CLARIFY-SENTINEL-9137: accounting software for small law firms, ~400 customers'
+  await page.getByRole('button', { name: 'Send' }).waitFor({ timeout: 60_000 })
+  await page.locator('input[type="text"], textarea').last().fill(SENTINEL)
+  await page.getByRole('button', { name: 'Send' }).click()
+
+  // clear the paraphrase step if it shows
+  await expect
+    .poll(
+      async () => {
+        if (await page.getByText(/Tell me about your company right now/i).count()) return 'business'
+        for (const b of ["Use Ally's version", 'Keep my original']) {
+          if (await page.getByRole('button', { name: b }).isEnabled().catch(() => false)) {
+            await page.getByRole('button', { name: b }).click()
+          }
+        }
+        return 'waiting'
+      },
+      { timeout: 90_000, intervals: [700] }
+    )
+    .toBe('business')
+
+  // business context — thin again, to reach ITS clarify step
+  await page.locator('textarea').last().fill('Growing.')
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+  await page.getByRole('button', { name: 'Send' }).waitFor({ timeout: 60_000 })
+
+  // the business clarify input must be EMPTY — not the company sentinel
+  const clarifyBox = page.locator('input[type="text"], textarea').last()
+  await expect(clarifyBox).toHaveValue('')
+  expect(await clarifyBox.inputValue()).not.toContain('SENTINEL')
+})
