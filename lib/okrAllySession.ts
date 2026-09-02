@@ -19,30 +19,24 @@ import crypto from 'crypto'
  * bare-user-id cookie for an admin account, so the signed path can't be
  * side-stepped.
  *
- * HMAC key: a dedicated OKR_ALLY_SESSION_SECRET if set, otherwise derived from
- * DATABASE_URL (present in every environment that can run OKR Ally). Rotating
- * either just forces admins to sign in again — regular sessions are unaffected.
- * Same crypto primitives as the Razorpay signature checks elsewhere in the repo
- * (crypto.createHmac + timingSafeEqual).
+ * HMAC key: the dedicated OKR_ALLY_SESSION_SECRET (`openssl rand -hex 32`, set
+ * on Vercel + in .env.local — same pattern as CONSULTING_RAZORPAY_WEBHOOK_SECRET).
+ * It is NOT derived from DATABASE_URL, so rotating the database URL has no effect
+ * on session validity. Rotating OKR_ALLY_SESSION_SECRET forces admins to sign in
+ * again; regular sessions are unaffected either way. Same crypto primitives as
+ * the Razorpay signature checks elsewhere in the repo (crypto.createHmac +
+ * timingSafeEqual).
  */
 
 export const ADMIN_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000
 export const ADMIN_SESSION_MAX_AGE_SECONDS = ADMIN_SESSION_MAX_AGE_MS / 1000
 
-function sessionKey(): Buffer {
-  const base =
-    process.env.OKR_ALLY_SESSION_SECRET ||
-    process.env.DATABASE_URL ||
-    process.env.POSTGRES_URL ||
-    ''
-  if (!base) {
-    throw new Error(
-      'OKR Ally admin session: no signing secret — set OKR_ALLY_SESSION_SECRET or DATABASE_URL'
-    )
+function sessionKey(): string {
+  const secret = process.env.OKR_ALLY_SESSION_SECRET
+  if (!secret) {
+    throw new Error('OKR_ALLY_SESSION_SECRET is not set — required to sign/verify admin sessions')
   }
-  // Domain-separate so the derived key can never collide with another use of
-  // the same underlying secret.
-  return crypto.createHmac('sha256', 'okr-ally/admin-session/v1').update(base).digest()
+  return secret
 }
 
 function sign(body: string): string {
