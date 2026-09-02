@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateToken, storeMagicToken } from '@/lib/okrAllySanity'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
+import { allow } from '@/lib/okrAllyRateLimit'
 
 export const dynamic = 'force-dynamic'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// Sign-in-link requests: the client offers up to 3 resends on a 60s cooldown,
+// so ~4 per session is normal; this backstops abuse (in-memory, per instance).
+const MAX_LINKS = 6
+const LINK_WINDOW_MS = 15 * 60 * 1000
 
 /**
  * OKR Ally email gate (screen flow, section 9, step 2).
@@ -19,6 +24,17 @@ export async function POST(req: NextRequest) {
 
     if (!EMAIL_RE.test(email)) {
       return NextResponse.json({ error: 'A valid email is required' }, { status: 400 })
+    }
+
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
+    if (
+      !allow(`magic-link:email:${email}`, MAX_LINKS, LINK_WINDOW_MS) ||
+      !allow(`magic-link:ip:${ip}`, MAX_LINKS * 3, LINK_WINDOW_MS)
+    ) {
+      return NextResponse.json(
+        { error: 'Too many sign-in links requested. Wait a few minutes, then try again.' },
+        { status: 429 }
+      )
     }
 
     const token = generateToken()

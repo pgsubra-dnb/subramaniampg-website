@@ -636,34 +636,71 @@ function SignedOut({ onContinue }: { onContinue: () => void }) {
   )
 }
 
+const RESEND_COOLDOWN_S = 60
+const MAX_RESENDS = 3
+
 function EmailGate({ error }: { error: string | null }) {
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [busy, setBusy] = useState(false)
   const [localErr, setLocalErr] = useState<string | null>(null)
+  const [resends, setResends] = useState(0)
+  const [cooldownEndsAt, setCooldownEndsAt] = useState(0)
+  const [, setTick] = useState(0)
+  const [justResent, setJustResent] = useState(false)
 
-  async function send() {
+  // One interval per cooldown period; `cooldown` is derived from the clock so a
+  // dropped tick can't strand the button as disabled.
+  useEffect(() => {
+    if (cooldownEndsAt <= Date.now()) return
+    const id = setInterval(() => {
+      setTick((n) => n + 1)
+      if (Date.now() >= cooldownEndsAt) clearInterval(id)
+    }, 1000)
+    return () => clearInterval(id)
+  }, [cooldownEndsAt])
+  const cooldown = Math.max(0, Math.ceil((cooldownEndsAt - Date.now()) / 1000))
+
+  async function request(isResend: boolean) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setLocalErr('That doesn’t look like an email address.')
       return
     }
     setBusy(true)
     setLocalErr(null)
+    setJustResent(false)
     try {
-      await fetch('/api/okr-ally/magic-link', {
+      const r = await fetch('/api/okr-ally/magic-link', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email }),
       })
+      if (r.status === 429) {
+        const j = await r.json().catch(() => ({}))
+        setLocalErr(j.error || 'Too many sign-in links requested — please wait a few minutes.')
+        return
+      }
+      if (!r.ok) {
+        setLocalErr('Could not send the link. Try again in a moment.')
+        return
+      }
       setSent(true)
+      setCooldownEndsAt(Date.now() + RESEND_COOLDOWN_S * 1000)
+      if (isResend) {
+        setResends((n) => n + 1)
+        setJustResent(true)
+      }
     } catch {
       setLocalErr('Could not send the link. Try again in a moment.')
     } finally {
       setBusy(false)
     }
   }
+  const send = () => request(false)
+  const resend = () => request(true)
 
   if (sent) {
+    const hitCap = resends >= MAX_RESENDS
     return (
       <>
         <AllyRow>
@@ -671,8 +708,31 @@ function EmailGate({ error }: { error: string | null }) {
           minutes. Come back here after you click it.
         </AllyRow>
         <p style={{ fontSize: 12.5, color: T.muted, marginTop: 8 }}>
-          Didn&apos;t get it? Check your spam or junk folder, or wait a minute and try again.
+          Didn&apos;t get it? Check your spam or junk folder{cooldown > 0 ? ', then resend it below' : ''}.
         </p>
+        {justResent && (
+          <p style={{ fontSize: 12.5, color: T.emeraldDark, marginTop: 4 }}>New link sent to {email}.</p>
+        )}
+        {localErr && (
+          <div className="mt-2 mb-1 text-sm rounded-lg px-4 py-3" style={{ background: '#FEF2F2', color: '#991B1B', border: '1px solid #FECACA' }}>
+            {localErr}
+          </div>
+        )}
+        <div style={{ marginTop: 10 }}>
+          {hitCap ? (
+            <p style={{ fontSize: 12.5, color: T.muted }}>
+              That&apos;s the resend limit for now. If it still hasn&apos;t arrived, email{' '}
+              <a href="mailto:pgs@embiggen.co.in" style={{ color: T.emeraldDark, fontWeight: 600 }}>
+                pgs@embiggen.co.in
+              </a>
+              .
+            </p>
+          ) : (
+            <Btn variant="ghost" onClick={resend} disabled={busy || cooldown > 0}>
+              {busy ? 'Sending…' : cooldown > 0 ? `Resend link (${cooldown}s)` : 'Resend link'}
+            </Btn>
+          )}
+        </div>
       </>
     )
   }

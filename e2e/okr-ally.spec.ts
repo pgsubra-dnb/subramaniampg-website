@@ -1597,6 +1597,9 @@ test('walkthrough: org admin sees the admin walkthrough once on the first Compan
   const org = await seedOrg('Walkthrough Admin Co')
   createdGstins.push(org.gstin)
   await makeOrgAdmin(u.userId, org.id)
+  // context already published, so this test isn't also exercising the
+  // unconfirmed-admin auto-route to the Company tab (that's its own spec).
+  await publishOrgContext(org.id, 'Walkthrough Admin Co does X.', 'Focused on Y this year.')
 
   await page.goto('/okr-ally')
   await page.getByRole('button', { name: 'Company', exact: true }).click()
@@ -1788,4 +1791,64 @@ test('routing: ?tab=company opens the Company tab for a signed-in org admin', as
   }
   await expect(page.getByText('Company context for your team')).toBeVisible()
   await expect(page).toHaveURL(/\/okr-ally$/) // param stripped
+})
+
+// ══════════════════════════════════════════════════════════
+// 23. Magic-link "Resend link" — cooldown, real resend, session cap
+// ══════════════════════════════════════════════════════════
+test('magic link: resend button has a 60s cooldown, then resends, then hits a session cap', async ({ page }) => {
+  test.setTimeout(120_000)
+  let calls = 0
+  await page.route('**/api/okr-ally/magic-link', async (route) => {
+    calls++
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"success":true}' })
+  })
+
+  await page.goto('/okr-ally')
+  await page.getByRole('button', { name: 'Say hi to Ally' }).click()
+  await page.getByPlaceholder('you@company.com').fill('resend-test@example.com')
+  await page.clock.install()
+  await page.getByRole('button', { name: 'Send link' }).click()
+  await expect(page.getByText(/sent a sign-in link to/i)).toBeVisible()
+  expect(calls).toBe(1)
+
+  const resend = () => page.getByRole('button', { name: /^Resend link/ })
+  await expect(resend()).toBeDisabled()
+  await expect(resend()).toContainText(/Resend link \(\d+s\)/)
+
+  await page.clock.runFor(30_000)
+  await expect(resend()).toBeDisabled() // still cooling down
+
+  await page.clock.runFor(31_000)
+  const enabled = page.getByRole('button', { name: 'Resend link', exact: true })
+  await expect(enabled).toBeEnabled()
+  await enabled.click()
+  await expect(page.getByText(/New link sent to resend-test@example\.com/i)).toBeVisible()
+  expect(calls).toBe(2)
+
+  for (let i = 0; i < 2; i++) {
+    await page.clock.runFor(61_000)
+    await page.getByRole('button', { name: 'Resend link', exact: true }).click()
+    await expect(page.getByText(/New link sent/i)).toBeVisible()
+  }
+  expect(calls).toBe(4) // initial + 3 resends
+
+  await page.clock.runFor(61_000)
+  await expect(page.getByRole('button', { name: /Resend link/ })).toHaveCount(0)
+  await expect(page.getByText(/resend limit for now/i)).toBeVisible()
+  await expect(page.getByText('pgs@embiggen.co.in')).toBeVisible()
+  expect(calls).toBe(4) // no further requests after the cap
+})
+
+test('magic link API: rate-limited after repeated requests for one email', async ({ request }) => {
+  const email = `okr-e2e-rl-${Date.now()}@example.com`
+  const codes: number[] = []
+  for (let i = 0; i < 9; i++) {
+    const r = await request.post('http://localhost:3200/api/okr-ally/magic-link', { data: { email } })
+    codes.push(r.status())
+  }
+  expect(codes.slice(0, 6)).toEqual([200, 200, 200, 200, 200, 200])
+  expect(codes.slice(6).every((c) => c === 429)).toBe(true)
+  const last = await (await request.post('http://localhost:3200/api/okr-ally/magic-link', { data: { email } })).json()
+  expect(last.error).toMatch(/too many sign-in links/i)
 })
