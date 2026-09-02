@@ -42,6 +42,10 @@ const TOPICS: Topic[] = [
         a: 'I give you two rewrites. The refined version stays close to your original and fixes it in place. The fresh version rebuilds the OKR from the outcome up. Take whichever fits, or borrow from both.',
       },
       {
+        q: "Why don't the two suggested rewrites get their own score?",
+        a: "I only score what you actually wrote and submitted, that's the real assessment. The two rewrites are there to show you what a stronger version could look like, but scoring them would just be me grading my own suggestions, not a genuine independent check. If you want a real score for a rewritten version, the honest way to get one is to actually use it as your OKR and submit it fresh.",
+      },
+      {
         q: 'Can I see the review again later?',
         a: 'Yes. Every completed review — with its score, both rewrites and the PDF — stays in your History tab.',
       },
