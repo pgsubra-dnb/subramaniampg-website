@@ -138,6 +138,9 @@ export default function OkrAllyClient() {
       setVerifyError(VERIFY_ERROR[err] || VERIFY_ERROR['invalid-link'])
       window.history.replaceState({}, '', '/okr-ally')
     }
+    // `?tab=company` — the corporate admin-welcome email links here directly.
+    const wantsCompanyTab = params.get('tab') === 'company'
+    if (params.has('tab')) window.history.replaceState({}, '', '/okr-ally')
     ;(async () => {
       try {
         const m: Me = await (await fetch('/api/okr-ally/me')).json()
@@ -145,6 +148,13 @@ export default function OkrAllyClient() {
         if (!m.authenticated) {
           setPhase(err ? 'email' : 'intro')
           return
+        }
+        // A corporate admin whose org context isn't published yet has one real
+        // job — set it up. Route them straight to the Company tab instead of the
+        // generic intro/chat. Once context_confirmed_at is set, they land
+        // normally (the Company tab stays available in the tab bar).
+        if (m.user?.isOrgAdmin && (wantsCompanyTab || (m.orgContext && !m.orgContext.confirmed))) {
+          setTab('company')
         }
         refreshStatus()
         const [d, prof] = await Promise.all([

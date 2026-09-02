@@ -1743,3 +1743,49 @@ test('context steps: a clarifying answer does not carry into the next field', as
   await expect(clarifyBox).toHaveValue('')
   expect(await clarifyBox.inputValue()).not.toContain('SENTINEL')
 })
+
+// ══════════════════════════════════════════════════════════
+// 22. Corporate admin first-visit routing
+// ══════════════════════════════════════════════════════════
+test('routing: an org admin with unconfirmed context lands on the Company tab; a confirmed one lands normally', async ({ page, context }) => {
+  const u = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(u.userId)
+  const org = await seedOrg('Routing Co')
+  createdGstins.push(org.gstin)
+  await makeOrgAdmin(u.userId, org.id)
+
+  // unconfirmed → straight to the Company tab / setup, NOT the "Hi, I'm Ally" chat
+  await page.goto('/okr-ally')
+  // the org-admin walkthrough auto-shows on that first Company visit; dismiss it
+  await expect(page.getByRole('heading', { name: 'Running OKR Ally for your company' })).toBeVisible({ timeout: 20_000 })
+  for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Next', exact: true }).click()
+  await page.getByRole('button', { name: 'Got it' }).click()
+  await expect(page.getByText('Company context for your team')).toBeVisible()
+  await expect(page.getByText(/what should I call you/i)).toHaveCount(0)
+
+  // publish context, then a fresh load must behave normally (Ally tab, form),
+  // with the Company tab still reachable
+  await publishOrgContext(org.id, 'Routing Co does X for Y.', 'Routing Co is focused on Z this year.')
+  await page.goto('/okr-ally')
+  await expect(page.getByText(/what should I call you/i)).toBeVisible()
+  await expect(page.getByText('Company context for your team')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Company', exact: true })).toBeVisible()
+})
+
+test('routing: ?tab=company opens the Company tab for a signed-in org admin', async ({ page, context }) => {
+  const u = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(u.userId)
+  const org = await seedOrg('Deep Link Co')
+  createdGstins.push(org.gstin)
+  await makeOrgAdmin(u.userId, org.id)
+  await publishOrgContext(org.id, 'ctx a', 'ctx b') // confirmed, so no auto-route
+
+  await page.goto('/okr-ally?tab=company')
+  // walkthrough already seen? no — first company visit still triggers it; skip past
+  if (await page.getByRole('button', { name: 'Got it' }).isVisible().catch(() => false)) {
+    for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Next', exact: true }).click().catch(() => {})
+    await page.getByRole('button', { name: 'Got it' }).click()
+  }
+  await expect(page.getByText('Company context for your team')).toBeVisible()
+  await expect(page).toHaveURL(/\/okr-ally$/) // param stripped
+})
