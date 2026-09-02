@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSessionUser } from '@/lib/okrAlly'
+import { getSessionUser, query } from '@/lib/okrAlly'
 import { getInvoiceForUser, renderInvoicePdf } from '@/lib/okrAllyInvoice'
 import { getPdfBytes } from '@/lib/okrAllyBlob'
+import { toBrand, vocab } from '@/lib/okrAllyBrand'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,7 +24,22 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   let bytes: Buffer | null = invoice.pdf_url ? await getPdfBytes(invoice.pdf_url) : null
   if (!bytes) {
-    const pdfBase64 = await renderInvoicePdf(invoice, { name: user.name, email: user.email })
+    // Regenerating from the row (stored Blob missing). serviceLabel isn't
+    // persisted, so reconstruct the free-review label from the submission's
+    // brand — otherwise a Goal Ally invoice would regenerate with OKR Ally
+    // wording. Paid / corporate / consulting invoices keep their own defaults.
+    let serviceLabel: string | undefined
+    if (invoice.submission_id && Number(invoice.total_amount) === 0) {
+      const b = await query<{ brand: string | null }>(
+        `SELECT brand FROM submissions WHERE id = $1`,
+        [invoice.submission_id]
+      )
+      const brand = toBrand(b.rows[0]?.brand)
+      if (brand === 'goal_ally') {
+        serviceLabel = `${vocab(brand).product} — ${vocab(brand).objective} review credits`
+      }
+    }
+    const pdfBase64 = await renderInvoicePdf(invoice, { name: user.name, email: user.email }, serviceLabel)
     bytes = Buffer.from(pdfBase64, 'base64')
   }
 
