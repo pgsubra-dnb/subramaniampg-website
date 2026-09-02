@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/okrAlly'
 import { assessField, normalizeForCompare, CONTEXT_FIELD_MAX, type ContextFieldKind } from '@/lib/okrAllyContext'
 import { allow, allowDailyContextCall } from '@/lib/okrAllyRateLimit'
+import { toBrand } from '@/lib/okrAllyBrand'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const result = await assessField(field, text)
+  const result = await assessField(field, text, toBrand(body.brand))
   if (!result.ok) {
     console.error('OKR Ally context assess failed:', field, result.reason)
     // Non-blocking: let the form proceed without a clarifying question.

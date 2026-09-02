@@ -151,11 +151,14 @@ export async function POST(req: NextRequest) {
   const { submission, charge } = start
   const organizationId = start.organizationId ?? null
 
-  const result = await runReview({
-    objective: parsed.value.objective,
-    krs: parsed.value.krs,
-    contextSnapshot: parsed.value.contextSnapshot,
-  })
+  const result = await runReview(
+    {
+      objective: parsed.value.objective,
+      krs: parsed.value.krs,
+      contextSnapshot: parsed.value.contextSnapshot,
+    },
+    parsed.value.brand
+  )
 
   if (!result.ok) {
     await refundFailedSubmission({ submissionId: submission.id, userId: user.id, charge, organizationId })
@@ -203,6 +206,7 @@ export async function POST(req: NextRequest) {
       krs: parsed.value.krs,
       contextSnapshot: parsed.value.contextSnapshot,
       review: result.review,
+      brand: parsed.value.brand,
     })
   }
 
@@ -219,6 +223,7 @@ export async function POST(req: NextRequest) {
         couponCode: freeCouponCode,
         buyerName: user.name,
         buyerEmail: user.email,
+        brand: parsed.value.brand,
       })
       if (inv.ok) invoiceNumber = inv.invoice.invoice_number
       else console.error('OKR Ally free-review invoice soft-failed:', submission.id, inv.reason)

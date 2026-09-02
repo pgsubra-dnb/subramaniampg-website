@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg'
 import { query, withTransaction } from '@/lib/okrAlly'
 import type { SubmittedKR, ReviewContextSnapshot } from '@/lib/okrAllyReview'
+import { type Brand, toBrand } from '@/lib/okrAllyBrand'
 
 /**
  * OKR Ally — submission lifecycle + credit ledger for the review route
@@ -34,6 +35,7 @@ export interface SubmissionRow {
   idempotency_key: string
   status: SubmissionStatus
   created_at: string
+  brand: Brand | null
 }
 
 export interface ValidatedInput {
@@ -41,6 +43,10 @@ export interface ValidatedInput {
   krs: SubmittedKR[]
   contextSnapshot: ReviewContextSnapshot
   parentSubmissionId: string | null
+  /** Which surface the submission came through — 'okr_ally' | 'goal_ally'.
+   *  Recorded on `submissions.brand` for analytics; drives the review
+   *  vocabulary. Defaults to 'okr_ally' when the client sends nothing. */
+  brand: Brand
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -104,7 +110,13 @@ export function validateInput(body: unknown): { ok: true; value: ValidatedInput 
 
   return {
     ok: true,
-    value: { objective, krs, contextSnapshot: ctxRaw as ReviewContextSnapshot, parentSubmissionId },
+    value: {
+      objective,
+      krs,
+      contextSnapshot: ctxRaw as ReviewContextSnapshot,
+      parentSubmissionId,
+      brand: toBrand(b.brand),
+    },
   }
 }
 
@@ -201,8 +213,8 @@ export async function startSubmission(args: StartArgs): Promise<StartResult> {
 
       const insert = await client.query<SubmissionRow>(
         `INSERT INTO submissions
-           (user_id, objective, krs, context_snapshot, parent_submission_id, idempotency_key, status)
-         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, 'pending')
+           (user_id, objective, krs, context_snapshot, parent_submission_id, idempotency_key, status, brand)
+         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, 'pending', $7)
          ON CONFLICT (idempotency_key) DO NOTHING
          RETURNING *`,
         [
@@ -212,6 +224,7 @@ export async function startSubmission(args: StartArgs): Promise<StartResult> {
           JSON.stringify(input.contextSnapshot ?? {}),
           input.parentSubmissionId,
           idempotencyKey,
+          input.brand,
         ]
       )
 

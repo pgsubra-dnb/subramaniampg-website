@@ -1,5 +1,6 @@
 import { query } from '@/lib/okrAlly'
 import type { ReviewOutput } from '@/lib/okrAllyReview'
+import { type Brand, toBrand } from '@/lib/okrAllyBrand'
 
 /**
  * OKR Ally — History tab + per-submission report load + outcome feedback
@@ -53,6 +54,7 @@ export interface FullReport {
   krs: { text: string; initiatives?: string[] }[]
   contextSnapshot: unknown
   createdAt: string
+  brand: Brand
   review: (ReviewOutput & { reviewId: string }) | null
   emailed: boolean
   rating: number | null
@@ -68,7 +70,8 @@ export async function getFullReport(userId: string, submissionId: string): Promi
     krs: { text: string; initiatives?: string[] }[]
     context_snapshot: unknown
     created_at: string
-  }>(`SELECT id, status, objective, krs, context_snapshot, created_at FROM submissions WHERE id = $1 AND user_id = $2`, [
+    brand: string | null
+  }>(`SELECT id, status, objective, krs, context_snapshot, created_at, brand FROM submissions WHERE id = $1 AND user_id = $2`, [
     submissionId,
     userId,
   ])
@@ -122,6 +125,7 @@ export async function getFullReport(userId: string, submissionId: string): Promi
     krs: sub.krs,
     contextSnapshot: sub.context_snapshot,
     createdAt: sub.created_at,
+    brand: toBrand(sub.brand),
     review,
     emailed,
     rating,
