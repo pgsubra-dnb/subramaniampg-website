@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
         isOrgAdmin: user.is_org_admin,
         organizationId: user.organization_id,
       },
+      seenWalkthroughs: user.seen_walkthroughs ?? [],
       creditsRemaining: credits.total,
       personalCredits: credits.personal,
       orgCredits: credits.org,

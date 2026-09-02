@@ -73,10 +73,27 @@ export interface OkrAllyUser {
   organization_id: string | null
   /** Company Admin screen gate — strictly this flag (migration 009). */
   is_org_admin: boolean
+  /** Walkthrough keys already auto-shown to this user (migration 012):
+   *  'org_admin', 'employee'. The main "How it works" one is manual-only. */
+  seen_walkthroughs: string[]
   created_at: string
 }
 
-const USER_COLS = 'id, email, phone, name, is_admin, organization_id, is_org_admin, created_at'
+const USER_COLS =
+  'id, email, phone, name, is_admin, organization_id, is_org_admin, seen_walkthroughs, created_at'
+
+export const WALKTHROUGH_KEYS = ['org_admin', 'employee'] as const
+export type WalkthroughKey = (typeof WALKTHROUGH_KEYS)[number]
+
+/** Record that a walkthrough has been auto-shown, so it won't auto-pop again.
+ *  Idempotent; the user stays free to reopen it from the "see this again" link. */
+export async function markWalkthroughSeen(userId: string, key: WalkthroughKey): Promise<void> {
+  await query(
+    `UPDATE users SET seen_walkthroughs = array_append(seen_walkthroughs, $2)
+      WHERE id = $1 AND NOT ($2 = ANY(seen_walkthroughs))`,
+    [userId, key]
+  )
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

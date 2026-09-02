@@ -25,6 +25,10 @@ import {
   getUserOrgFields,
   publishOrgContext,
   getSubmissionContextSnapshot,
+  seedOrg,
+  makeOrgAdmin,
+  joinOrg,
+  getSeenWalkthroughs,
   pool,
 } from './helpers'
 import { resolveOrCreateUser } from '../lib/okrAlly'
@@ -1582,4 +1586,99 @@ test('context notice: an individual user editing their own context sees the "goi
 
   await expect(notice).toBeVisible()
   await expect(notice).toContainText(/keep the context they were run with/i)
+})
+
+// ══════════════════════════════════════════════════════════
+// 20. Role-specific walkthroughs (migration 012)
+// ══════════════════════════════════════════════════════════
+test('walkthrough: org admin sees the admin walkthrough once on the first Company-tab visit', async ({ page, context }) => {
+  const u = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(u.userId)
+  const org = await seedOrg('Walkthrough Admin Co')
+  createdGstins.push(org.gstin)
+  await makeOrgAdmin(u.userId, org.id)
+
+  await page.goto('/okr-ally')
+  await page.getByRole('button', { name: 'Company', exact: true }).click()
+
+  // auto-shows on first visit
+  await expect(page.getByRole('heading', { name: 'Running OKR Ally for your company' })).toBeVisible()
+  await expect(page.getByText(/The credit pool/i)).toBeVisible()
+  for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Next', exact: true }).click()
+  await expect(page.getByText(/Seeing usage/i)).toBeVisible()
+  await page.getByRole('button', { name: 'Got it' }).click()
+
+  // now the real admin screen; walkthrough gone; server recorded it
+  await expect(page.getByText('Purchased', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Running OKR Ally for your company' })).toHaveCount(0)
+  await expect.poll(() => getSeenWalkthroughs(u.userId)).toContain('org_admin')
+
+  // second visit — reload, reopen Company → no walkthrough
+  await page.reload()
+  await page.getByRole('button', { name: 'Company', exact: true }).click()
+  await expect(page.getByText('Purchased', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Running OKR Ally for your company' })).toHaveCount(0)
+
+  // but the revisit link still opens it
+  await page.getByRole('button', { name: /See the admin walkthrough again/i }).click()
+  await expect(page.getByRole('heading', { name: 'Running OKR Ally for your company' })).toBeVisible()
+})
+
+test('walkthrough: an org employee sees the employee walkthrough once when they reach the context screens', async ({ page, context }) => {
+  const buyer = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(buyer.userId)
+  const org = await seedOrg('Walkthrough Employee Co')
+  createdGstins.push(org.gstin)
+  await makeOrgAdmin(buyer.userId, org.id) // buyer is a throwaway admin here
+  await publishOrgContext(org.id, 'Company context published by the admin.', 'Business context published by the admin.')
+
+  const emp = await signIn(context, 'http://localhost:3200', `okr-e2e-wemp-${Date.now()}@example.com`)
+  createdUsers.push(emp.userId)
+  await joinOrg(emp.userId, org.id)
+
+  await page.goto('/okr-ally')
+  // walk the identity steps to reach the (only) context step, ctx_role
+  await expect(page.getByText(/what should I call you/i)).toBeVisible()
+  await page.locator('input[type="text"], textarea').last().fill('Wanda Employee')
+  await page.getByRole('button', { name: 'Next', exact: true }).click()
+  await page.getByRole('button', { name: 'Continue', exact: true }).click() // skip phone
+  await page.getByText(/name of your company/i).waitFor()
+  await page.locator('input[type="text"], textarea').last().fill('My Team')
+  await page.getByRole('button', { name: 'Next', exact: true }).click()
+
+  // reaching the context screen fires the walkthrough
+  await expect(page.getByRole('heading', { name: 'OKR Ally at your company' })).toBeVisible()
+  await expect(page.getByText(/Your company sets part of the context/i)).toBeVisible()
+  await page.getByRole('button', { name: 'Next', exact: true }).click()
+  await page.getByRole('button', { name: 'Next', exact: true }).click()
+  await page.getByRole('button', { name: 'Got it' }).click()
+
+  // back on the form at the role step; server recorded it
+  await expect(page.getByText(/your own role/i)).toBeVisible()
+  await expect.poll(() => getSeenWalkthroughs(emp.userId)).toContain('employee')
+
+  // reload → form resumes, walkthrough does NOT re-pop
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'OKR Ally at your company' })).toHaveCount(0, { timeout: 15_000 })
+})
+
+test('walkthrough: an individual (non-org) user sees neither role walkthrough', async ({ page, context }) => {
+  const u = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(u.userId)
+  await page.goto('/okr-ally')
+  await expect(page.getByText(/what should I call you/i)).toBeVisible()
+  // step through name/company to where an org employee's would have fired
+  await page.locator('input[type="text"], textarea').last().fill('Ivy Individual')
+  await page.getByRole('button', { name: 'Next', exact: true }).click()
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+  await page.locator('input[type="text"], textarea').last().fill('Ivy Co')
+  await page.getByRole('button', { name: 'Next', exact: true }).click()
+
+  await expect(page.getByText(/Tell me about your company or organisation/i)).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'OKR Ally at your company' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Running OKR Ally for your company' })).toHaveCount(0)
+  // no company tab, no revisit links
+  await expect(page.getByRole('button', { name: 'Company', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /walkthrough again/i })).toHaveCount(0)
+  expect(await getSeenWalkthroughs(u.userId)).toEqual([])
 })
