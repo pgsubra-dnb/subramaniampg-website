@@ -1411,3 +1411,27 @@ test('admin unlimited: an admin with zero credits gets a full review, logged as 
   const red = await pool.query(`SELECT 1 FROM coupon_redemptions WHERE user_id = $1`, [admin.userId])
   expect(red.rowCount).toBe(0)
 })
+
+// ══════════════════════════════════════════════════════════
+// 18. Help — the "why aren't the rewrites scored" entry
+// ══════════════════════════════════════════════════════════
+test('help: the "why aren\'t the rewrites scored" entry renders and is findable by search', async ({ page, context }) => {
+  const u = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(u.userId)
+  await page.goto('/okr-ally')
+  await page.getByRole('button', { name: 'Help', exact: true }).click()
+
+  const q = "Why don't the two suggested rewrites get their own score?"
+  await expect(page.getByText(q)).toBeVisible()
+  await page.getByText(q).click() // expand the <details>
+  await expect(page.getByText(/grading my own suggestions, not a genuine independent check/)).toBeVisible()
+  await expect(page.getByText(/actually use it as your OKR and submit it fresh/)).toBeVisible()
+
+  const search = page.getByPlaceholder('Search help…')
+  await search.fill('grading my own suggestions')   // term from the answer
+  await expect(page.getByText(q)).toBeVisible()
+  await search.fill('rewrites get their own score') // term from the question
+  await expect(page.getByText(q)).toBeVisible()
+  await search.fill('zzz-no-such-term')
+  await expect(page.getByText(q)).toHaveCount(0)
+})
