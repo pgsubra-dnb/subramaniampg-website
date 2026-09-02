@@ -23,6 +23,8 @@ import {
   getOrgByGstin,
   getOrgBalance,
   getUserOrgFields,
+  publishOrgContext,
+  getSubmissionContextSnapshot,
   pool,
 } from './helpers'
 import { resolveOrCreateUser } from '../lib/okrAlly'
@@ -1183,6 +1185,7 @@ test('corporate: a review spends the org balance first, personal untouched until
   createdUsers.push(emp.userId)
   await seedCredits(emp.userId, 2)
   await allocateOrgCredits(admin, { email: emp.email, credits: 2 })
+  await publishOrgContext(org.id, 'Org company context for deduction test.', 'Org business context for deduction test.')
   expect(await getOrgBalance(emp.userId, org.id)).toBe(2)
 
   const body = {
@@ -1436,4 +1439,147 @@ test('help: the "why aren\'t the rewrites scored" entry renders and is findable 
   await expect(page.getByText(q)).toBeVisible()
   await search.fill('zzz-no-such-term')
   await expect(page.getByText(q)).toHaveCount(0)
+})
+
+// ══════════════════════════════════════════════════════════
+// 19. Corporate shared context (migration 011)
+// ══════════════════════════════════════════════════════════
+test('corporate context: employee blocked until published, then unblocked; org context frozen per submission', async ({ context }) => {
+  test.setTimeout(300_000)
+  const buyer = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(buyer.userId)
+  const gstin = testGstin()
+  createdGstins.push(gstin)
+  const adminEmail = `okr-e2e-ctxadmin-${Date.now()}@example.com`
+  await corpFulfil({ purchaserUserId: buyer.userId, gstin, adminEmail, credits: 100 })
+  const admin = await resolveOrCreateUser(adminEmail)
+  createdUsers.push(admin.id)
+  const org = (await getOrgByGstin(gstin))!
+
+  const emp = await signIn(context, 'http://localhost:3200', `okr-e2e-ctxemp-${Date.now()}@example.com`)
+  createdUsers.push(emp.userId)
+  await allocateOrgCredits(admin, { email: emp.email, credits: 5 })
+
+  const body = {
+    objective: 'New enterprise customers reach production use without a services engagement.',
+    krs: [{ text: 'Raise 60-day activation from 44% to 70%', initiatives: [] }],
+    context_snapshot: {
+      company_context: { final_text: 'PERSONAL company text the employee typed' },
+      business_context: { final_text: 'PERSONAL business text the employee typed' },
+      role_context: { final_text: 'I am the VP of Customer Success.' },
+    },
+  }
+  const review = () =>
+    context.request.post('http://localhost:3200/api/okr-ally/review', {
+      headers: { cookie: emp.cookieHeader },
+      data: { idempotencyKey: `e2e-ctx-${Date.now()}-${Math.random().toString(36).slice(2)}`, ...body },
+    })
+  const meNow = async () =>
+    (await context.request.get('http://localhost:3200/api/okr-ally/me', { headers: { cookie: emp.cookieHeader } })).json()
+
+  // /me reflects the block; a review is refused with the specific code
+  expect((await meNow()).orgContext).toMatchObject({ confirmed: false })
+  let r = await review()
+  expect(r.status()).toBe(403)
+  expect((await r.json()).code).toBe('org_context_unconfirmed')
+
+  // admin publishes → unblocked, /me carries the shared text
+  await publishOrgContext(org.id, 'ORG COMPANY CONTEXT v1', 'ORG BUSINESS CONTEXT v1')
+  expect((await meNow()).orgContext).toMatchObject({
+    confirmed: true,
+    companyContext: 'ORG COMPANY CONTEXT v1',
+    businessContext: 'ORG BUSINESS CONTEXT v1',
+  })
+
+  r = await review()
+  expect(r.status(), JSON.stringify(await r.json())).not.toBe(403)
+
+  // the submission froze the ORG company/business context and the PERSONAL role
+  const sub1 = (await getLatestSubmission(emp.userId))!
+  const snap1 = await getSubmissionContextSnapshot(sub1.id)
+  expect(snap1.company_context.final_text).toBe('ORG COMPANY CONTEXT v1')
+  expect(snap1.business_context.final_text).toBe('ORG BUSINESS CONTEXT v1')
+  expect(snap1.role_context.final_text).toBe('I am the VP of Customer Success.')
+
+  // admin edits + reconfirms → the earlier submission is untouched; the next gets v2
+  await publishOrgContext(org.id, 'ORG COMPANY CONTEXT v2', 'ORG BUSINESS CONTEXT v2')
+  expect((await getSubmissionContextSnapshot(sub1.id)).company_context.final_text).toBe('ORG COMPANY CONTEXT v1')
+
+  await review()
+  const latest = (await pool.query(`SELECT id FROM submissions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1`, [emp.userId])).rows[0]
+  expect((await getSubmissionContextSnapshot(latest.id)).company_context.final_text).toBe('ORG COMPANY CONTEXT v2')
+})
+
+test('corporate context: two employees under different orgs see only their own org context', async ({ browser }) => {
+  const ctxA = await browser.newContext()
+  const ctxB = await browser.newContext()
+  const buyerA = await signIn(ctxA, 'http://localhost:3200')
+  const buyerB = await signIn(ctxB, 'http://localhost:3200')
+  createdUsers.push(buyerA.userId, buyerB.userId)
+  const gA = testGstin()
+  const gB = testGstin()
+  createdGstins.push(gA, gB)
+  const adminA = `okr-e2e-ia-${Date.now()}@example.com`
+  const adminB = `okr-e2e-ib-${Date.now()}@example.com`
+  await corpFulfil({ purchaserUserId: buyerA.userId, gstin: gA, adminEmail: adminA, companyName: 'Alpha Corp LLP', credits: 100 })
+  await corpFulfil({ purchaserUserId: buyerB.userId, gstin: gB, adminEmail: adminB, companyName: 'Beta Corp LLP', credits: 100 })
+  const oA = (await getOrgByGstin(gA))!
+  const oB = (await getOrgByGstin(gB))!
+  const adminAUser = await resolveOrCreateUser(adminA)
+  const adminBUser = await resolveOrCreateUser(adminB)
+  createdUsers.push(adminAUser.id, adminBUser.id)
+  await publishOrgContext(oA.id, 'ALPHA company context', 'ALPHA business context')
+  await publishOrgContext(oB.id, 'BETA company context', 'BETA business context')
+
+  const empA = await signIn(ctxA, 'http://localhost:3200', `okr-e2e-ea-${Date.now()}@example.com`)
+  const empB = await signIn(ctxB, 'http://localhost:3200', `okr-e2e-eb-${Date.now()}@example.com`)
+  createdUsers.push(empA.userId, empB.userId)
+  await allocateOrgCredits(adminAUser, { email: empA.email, credits: 2 })
+  await allocateOrgCredits(adminBUser, { email: empB.email, credits: 2 })
+
+  const meOf = async (u: { cookieHeader: string }) =>
+    (await ctxA.request.get('http://localhost:3200/api/okr-ally/me', { headers: { cookie: u.cookieHeader } })).json()
+
+  expect((await meOf(empA)).orgContext).toMatchObject({
+    organizationName: 'Alpha Corp LLP',
+    companyContext: 'ALPHA company context',
+    businessContext: 'ALPHA business context',
+    confirmed: true,
+  })
+  expect((await meOf(empB)).orgContext).toMatchObject({
+    organizationName: 'Beta Corp LLP',
+    companyContext: 'BETA company context',
+    businessContext: 'BETA business context',
+    confirmed: true,
+  })
+  await ctxA.close()
+  await ctxB.close()
+})
+
+test('context notice: an individual user editing their own context sees the "going forward only" note', async ({ page, context }) => {
+  const u = await signIn(context, 'http://localhost:3200')
+  createdUsers.push(u.userId)
+  await seedProfile(u.userId, {
+    name: 'Nora Individual',
+    companyName: 'Solo Co',
+    companyContext: 'We build analytics tooling for small teams.',
+    businessContext: 'Moving from free to paid conversion focus this year.',
+    roleContext: 'I own the product.',
+  })
+  await page.goto('/okr-ally')
+  await expect(page.getByText(/Here's what I have on file/i)).toBeVisible()
+
+  const notice = page.getByText(/apply to reviews you run from now on/i)
+  await expect(notice).toHaveCount(0) // nothing changed yet
+
+  await page
+    .locator('div')
+    .filter({ has: page.getByText('Your role', { exact: true }) })
+    .last()
+    .getByRole('button', { name: 'Edit' })
+    .click()
+  await page.locator('textarea').last().fill('I own the product and the platform team, about 18 people.')
+
+  await expect(notice).toBeVisible()
+  await expect(notice).toContainText(/keep the context they were run with/i)
 })

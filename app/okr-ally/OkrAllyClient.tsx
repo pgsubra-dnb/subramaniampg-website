@@ -11,7 +11,7 @@ import HelpTab from './_help'
 import { AdminList, AdminReviewScreen } from './_admin'
 import Walkthrough from './_walkthrough'
 import OrgAdminScreen from './_org'
-import { FormState, emptyForm, CtxFieldState } from './_formState'
+import { FormState, emptyForm, CtxFieldState, OrgContext } from './_formState'
 
 type Phase = 'loading' | 'intro' | 'walkthrough' | 'email' | 'app' | 'signedout'
 type Tab = 'ally' | 'pricing' | 'history' | 'help' | 'admin' | 'company'
@@ -26,6 +26,7 @@ interface Me {
     isOrgAdmin: boolean
     organizationId: string | null
   }
+  orgContext?: OrgContext | null
 }
 interface Status {
   creditsRemaining: number
@@ -56,6 +57,7 @@ export default function OkrAllyClient() {
 
   const isAdmin = !!me?.user?.isAdmin
   const isOrgAdmin = !!me?.user?.isOrgAdmin
+  const orgCtx = me?.orgContext ?? null
 
   // Register the minimal service worker — the last PWA-installability criterion
   // (Chrome/Edge, desktop + Android). It does no caching.
@@ -69,6 +71,13 @@ export default function OkrAllyClient() {
     fetch('/api/okr-ally/status')
       .then((r) => r.json())
       .then((s: Status) => setStatus(s))
+      .catch(() => {})
+  }, [])
+
+  const refreshMe = useCallback(() => {
+    fetch('/api/okr-ally/me')
+      .then((r) => r.json())
+      .then((m: Me) => m.authenticated && setMe(m))
       .catch(() => {})
   }, [])
 
@@ -275,7 +284,11 @@ export default function OkrAllyClient() {
         </>
       )}
 
-      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'ally' && resumeOffer && (
+      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'ally' && orgCtx && !orgCtx.confirmed && (
+        <OrgContextPending orgCtx={orgCtx} isOrgAdmin={isOrgAdmin} onGoToCompany={() => setTab('company')} />
+      )}
+
+      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'ally' && !(orgCtx && !orgCtx.confirmed) && resumeOffer && (
         <>
           <AllyRow>You have a review in progress. Pick up where you left off, or start fresh?</AllyRow>
           <div className="flex gap-2 mb-4">
@@ -287,9 +300,10 @@ export default function OkrAllyClient() {
         </>
       )}
 
-      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'ally' && !resumeOffer && (
+      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'ally' && !(orgCtx && !orgCtx.confirmed) && !resumeOffer && (
         <StepForm
           initialForm={draft}
+          orgContext={orgCtx}
           onSubmitted={(r) => {
             setReportId(r.submissionId)
             refreshStatus()
@@ -308,7 +322,12 @@ export default function OkrAllyClient() {
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'help' && <HelpTab />}
 
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'company' && isOrgAdmin && (
-        <OrgAdminScreen onPoolChange={() => refreshStatus()} />
+        <OrgAdminScreen
+          onPoolChange={() => {
+            refreshStatus()
+            refreshMe()
+          }}
+        />
       )}
 
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'admin' && isAdmin && (
@@ -425,6 +444,40 @@ function Intro({ onStart, onSeeHow }: { onStart: () => void; onSeeHow: () => voi
           Leadership Execution Assessment
         </a>
       </div>
+    </div>
+  )
+}
+
+function OrgContextPending({
+  orgCtx,
+  isOrgAdmin,
+  onGoToCompany,
+}: {
+  orgCtx: OrgContext
+  isOrgAdmin: boolean
+  onGoToCompany: () => void
+}) {
+  return (
+    <div>
+      <AllyRow>
+        <strong>{orgCtx.organizationName}</strong> runs OKR Ally on a shared company context, and it hasn&apos;t
+        been published yet. Until it is, reviews are on hold for everyone on the team.
+      </AllyRow>
+      {isOrgAdmin ? (
+        <div style={{ marginTop: 12 }}>
+          <p style={{ fontSize: 13.5, color: T.charcoal, lineHeight: 1.6, marginBottom: 12 }}>
+            You&apos;re the admin. Open the Company tab, write your company and business context, and click
+            <strong> Confirm and publish</strong>. Your team can run reviews the moment you do.
+          </p>
+          <Btn onClick={onGoToCompany}>Go to the Company tab</Btn>
+        </div>
+      ) : (
+        <p style={{ fontSize: 13.5, color: T.charcoal, lineHeight: 1.6, marginTop: 12 }}>
+          Ask your company admin{orgCtx.adminEmail ? <> (<a href={`mailto:${orgCtx.adminEmail}`} style={{ color: T.emeraldDark, fontWeight: 600 }}>{orgCtx.adminEmail}</a>)</> : null}{' '}
+          to set it up on the Company tab. You&apos;ll be able to run reviews as soon as they publish it —
+          your role context is still yours to fill in when you do.
+        </p>
+      )}
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { runReview } from '@/lib/okrAllyReview'
 import { generateStoreAndEmailReport } from '@/lib/okrAllyReport'
 import { createAndSendFreeReviewInvoice } from '@/lib/okrAllyInvoice'
 import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
+import { getOrgContextForMember } from '@/lib/okrAllyOrg'
 import {
   validateInput,
   isRateLimited,
@@ -73,6 +74,38 @@ export async function POST(req: NextRequest) {
   const parsed = validateInput(body)
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 })
+  }
+
+  // Corporate members run on their org's shared company/business context.
+  // Block until the admin has published it; then freeze the org's current text
+  // into this submission's context_snapshot (a later admin edit never touches
+  // it). Role context stays personal — passed through from the client.
+  const orgCtx = await getOrgContextForMember(user)
+  if (orgCtx) {
+    if (orgCtx.contextConfirmedAt === null) {
+      return NextResponse.json(
+        {
+          error:
+            `${orgCtx.organizationName}'s shared context hasn't been published yet. ` +
+            `Ask your company admin${orgCtx.adminEmail ? ` (${orgCtx.adminEmail})` : ''} to set it up on the Company tab, then you can run a review.`,
+          code: 'org_context_unconfirmed',
+        },
+        { status: 403 }
+      )
+    }
+    const frozen = (t: string) => ({
+      raw_input: t,
+      clarifying_question: null,
+      clarifying_answer: null,
+      paraphrase_suggested: null,
+      final_text: t,
+      paraphrase_action: 'not_offered' as const,
+    })
+    parsed.value.contextSnapshot = {
+      ...parsed.value.contextSnapshot,
+      company_context: frozen(orgCtx.companyContext ?? ''),
+      business_context: frozen(orgCtx.businessContext ?? ''),
+    }
   }
 
   if (await isRateLimited(user.id)) {

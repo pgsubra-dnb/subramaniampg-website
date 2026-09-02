@@ -17,7 +17,12 @@ interface OrgStatus {
   poolPurchased: number
   poolAllocated: number
   poolAvailable: number
+  companyContext: string | null
+  businessContext: string | null
+  contextConfirmedAt: string | null
 }
+
+const CONTEXT_MAX = 1000
 
 interface Report {
   organizationName: string
@@ -92,6 +97,7 @@ export default function OrgAdminScreen({ onPoolChange }: { onPoolChange?: () => 
         <PoolStat label="Available" value={status.poolAvailable} strong />
       </div>
 
+      <ContextPanel status={status} onDone={refresh} />
       <AllocatePanel available={status.poolAvailable} onDone={refresh} />
       <ReclaimPanel onDone={refresh} />
       <ReportPanel />
@@ -128,6 +134,96 @@ function Msg({ m }: { m: { kind: 'ok' | 'err'; text: string } | null }) {
   if (!m) return null
   return (
     <p style={{ fontSize: 12.5, marginTop: 8, color: m.kind === 'err' ? '#B91C1C' : T.emeraldDark }}>{m.text}</p>
+  )
+}
+
+const textarea: React.CSSProperties = { ...input, minHeight: 90, lineHeight: 1.5, resize: 'vertical', fontFamily: 'inherit' }
+
+function ContextPanel({ status, onDone }: { status: OrgStatus; onDone: () => void }) {
+  const [company, setCompany] = useState(status.companyContext ?? '')
+  const [business, setBusiness] = useState(status.businessContext ?? '')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+
+  const dirty =
+    company.trim() !== (status.companyContext ?? '').trim() ||
+    business.trim() !== (status.businessContext ?? '').trim()
+  const published = status.contextConfirmedAt !== null
+
+  async function publish() {
+    setBusy(true)
+    setMsg(null)
+    try {
+      const res = await fetch('/api/okr-ally/org/context', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ companyContext: company.trim(), businessContext: business.trim() }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMsg({ kind: 'err', text: j.error || 'Could not publish.' })
+        return
+      }
+      setMsg({ kind: 'ok', text: 'Published. Your team can run reviews with this context now.' })
+      onDone()
+    } catch {
+      setMsg({ kind: 'err', text: 'Network problem — nothing was published.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={card}>
+      <div style={{ fontWeight: 700, fontSize: 13.5, color: T.charcoal, marginBottom: 4 }}>
+        Company context for your team
+      </div>
+      <p style={{ fontSize: 12, color: T.muted, margin: '0 0 12px', lineHeight: 1.5 }}>
+        Every employee runs their review on the company and business context you set here — they can&apos;t
+        change it, and each only adds their own role. Nothing takes effect until you publish.
+      </p>
+
+      <label style={{ display: 'block', fontSize: 12.5, color: T.muted, margin: '0 0 4px' }}>
+        Company context — what the company does, who it serves, roughly how big it is
+      </label>
+      <textarea
+        style={textarea}
+        maxLength={CONTEXT_MAX}
+        value={company}
+        onChange={(e) => setCompany(e.target.value)}
+        placeholder="A few sentences."
+      />
+      <label style={{ display: 'block', fontSize: 12.5, color: T.muted, margin: '12px 0 4px' }}>
+        Business context — strategic direction, current challenges, opportunities, trends
+      </label>
+      <textarea
+        style={textarea}
+        maxLength={CONTEXT_MAX}
+        value={business}
+        onChange={(e) => setBusiness(e.target.value)}
+        placeholder="A few sentences."
+      />
+
+      <p style={{ fontSize: 11.5, color: T.muted, margin: '10px 0 0', lineHeight: 1.5 }}>
+        {published ? (
+          <>Published {fmtDate(status.contextConfirmedAt!)}. Republishing updates it for future reviews only —
+          reviews already run keep the context they were run with.</>
+        ) : (
+          <>Not published yet — your team can&apos;t run reviews until you publish this.</>
+        )}
+      </p>
+
+      <div style={{ marginTop: 10 }}>
+        <Btn
+          small
+          onClick={publish}
+          disabled={busy || !company.trim() || !business.trim() || (published && !dirty)}
+        >
+          {busy ? 'Publishing…' : published ? (dirty ? 'Confirm and publish changes' : 'Published') : 'Confirm and publish'}
+        </Btn>
+      </div>
+      <Msg m={msg} />
+    </div>
   )
 }
 

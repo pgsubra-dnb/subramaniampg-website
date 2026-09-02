@@ -11,20 +11,28 @@ import {
   CTX_KIND,
   CTX_PROMPT,
   BUSINESS_CONTEXT_GUIDES,
+  CONTEXT_FORWARD_NOTICE,
   ctxSnapshot,
   emptyForm,
   isCtxStep,
   nextStep,
   sameText,
   emptyCtx,
+  applyOrgContext,
   CtxFieldState,
   ParaphraseAction,
+  OrgContext,
 } from './_formState'
 
 interface Props {
   initialForm: FormState | null
+  /** Set for a corporate member: company + business context are the org's,
+   *  read-only. Role context stays personal. */
+  orgContext?: OrgContext | null
   onSubmitted: (result: ReviewResult) => void
 }
+
+const ORG_CTX_LABEL = 'Set by your company admin'
 
 export interface ReviewResult {
   submissionId: string
@@ -46,8 +54,11 @@ const STEP_LABEL: Record<StepId, string> = {
   confirm: 'Review & submit',
 }
 
-export default function StepForm({ initialForm, onSubmitted }: Props) {
-  const [form, setForm] = useState<FormState>(initialForm ?? emptyForm())
+export default function StepForm({ initialForm, orgContext, onSubmitted }: Props) {
+  const [form, setForm] = useState<FormState>(() => {
+    const base = initialForm ?? emptyForm()
+    return orgContext ? applyOrgContext(base, orgContext) : { ...base, orgManaged: false }
+  })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [submitState, setSubmitState] = useState<'idle' | 'running' | 'failed'>('idle')
@@ -211,13 +222,14 @@ export default function StepForm({ initialForm, onSubmitted }: Props) {
   }) {
     if (!e.name.trim()) return setError('I need a name to address you by.')
     if (!e.companyName.trim()) return setError('A company or team name, please.')
-    if (!e.company.trim() || !e.business.trim() || !e.role.trim()) {
+    if (!e.role.trim() || (!form.orgManaged && (!e.company.trim() || !e.business.trim()))) {
       return setError('Keep a few words in each context field, even if brief.')
     }
     setError(null)
     update((f) => {
       // A context field is only re-run through the pipeline if it actually
-      // changed; an unchanged field stays 'done' and is skipped entirely.
+      // changed; an unchanged field stays 'done' and is skipped entirely. For an
+      // org member, company/business are the org's — never re-run here.
       const resolve = (kind: 'company' | 'business' | 'role', text: string): CtxFieldState =>
         sameText(text, f.ctx[kind].finalText) ? f.ctx[kind] : { ...emptyCtx(), raw: text.trim() }
       const draftForm: FormState = {
@@ -226,8 +238,8 @@ export default function StepForm({ initialForm, onSubmitted }: Props) {
         phone: e.phone.trim(),
         companyName: e.companyName.trim(),
         ctx: {
-          company: resolve('company', e.company),
-          business: resolve('business', e.business),
+          company: f.orgManaged ? f.ctx.company : resolve('company', e.company),
+          business: f.orgManaged ? f.ctx.business : resolve('business', e.business),
           role: resolve('role', e.role),
         },
       }
@@ -252,12 +264,17 @@ export default function StepForm({ initialForm, onSubmitted }: Props) {
         name: form.name.trim(),
         phone: form.phone.trim() || null,
         ...(form.saveProfile
-          ? {
-              companyName: form.companyName.trim() || null,
-              companyContext: form.ctx.company.finalText || null,
-              businessContext: form.ctx.business.finalText || null,
-              roleContext: form.ctx.role.finalText || null,
-            }
+          ? form.orgManaged
+            ? {
+                companyName: form.companyName.trim() || null,
+                roleContext: form.ctx.role.finalText || null,
+              }
+            : {
+                companyName: form.companyName.trim() || null,
+                companyContext: form.ctx.company.finalText || null,
+                businessContext: form.ctx.business.finalText || null,
+                roleContext: form.ctx.role.finalText || null,
+              }
           : {}),
       }),
     }).catch(() => {})
@@ -428,7 +445,7 @@ export default function StepForm({ initialForm, onSubmitted }: Props) {
 
 // ── transcript of committed answers ───────────────────────
 function Transcript({ form, onEdit }: { form: FormState; onEdit: (s: StepId) => void }) {
-  const rows: { q: string; a: string; step: StepId }[] = []
+  const rows: { q: string; a: string; step: StepId; readOnly?: boolean }[] = []
   const at = STEP_ORDER.indexOf(form.step)
   const done = (s: StepId) => STEP_ORDER.indexOf(s) < at
 
@@ -449,7 +466,13 @@ function Transcript({ form, onEdit }: { form: FormState; onEdit: (s: StepId) => 
     ;(['ctx_company', 'ctx_business', 'ctx_role'] as const).forEach((s) => {
       if (done(s)) {
         const cs = form.ctx[CTX_KIND[s]]
-        rows.push({ q: CTX_PROMPT[CTX_KIND[s]], a: cs.finalText || cs.raw, step: s })
+        const orgLocked = form.orgManaged && (s === 'ctx_company' || s === 'ctx_business')
+        rows.push({
+          q: orgLocked ? `${CTX_PROMPT[CTX_KIND[s]]} (${ORG_CTX_LABEL})` : CTX_PROMPT[CTX_KIND[s]],
+          a: cs.finalText || cs.raw,
+          step: s,
+          readOnly: orgLocked,
+        })
       }
     })
   }
@@ -468,21 +491,23 @@ function Transcript({ form, onEdit }: { form: FormState; onEdit: (s: StepId) => 
           <AllyRow>{r.q}</AllyRow>
           <UserRow>
             {r.a}
-            <button
-              onClick={() => onEdit(r.step)}
-              style={{
-                display: 'block',
-                marginTop: 6,
-                fontSize: 11,
-                color: 'rgba(255,255,255,.75)',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                padding: 0,
-              }}
-            >
-              edit
-            </button>
+            {!r.readOnly && (
+              <button
+                onClick={() => onEdit(r.step)}
+                style={{
+                  display: 'block',
+                  marginTop: 6,
+                  fontSize: 11,
+                  color: 'rgba(255,255,255,.75)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              >
+                edit
+              </button>
+            )}
           </UserRow>
         </div>
       ))}
@@ -523,18 +548,19 @@ function ProfileSummaryStep({
       return n
     })
 
+  const org = form.orgManaged
   const fields = [
-    { k: 'name', label: 'Your name', value: name, set: setName, saved: form.name, multiline: false, optional: false },
-    { k: 'phone', label: 'Phone', value: phone, set: setPhone, saved: form.phone, multiline: false, optional: true },
-    { k: 'company_name', label: 'Company or team', value: companyName, set: setCompanyName, saved: form.companyName, multiline: false, optional: false },
-    { k: 'company', label: 'Company context', value: company, set: setCompany, saved: form.ctx.company.finalText, multiline: true, optional: false },
-    { k: 'business', label: 'Business context', value: business, set: setBusiness, saved: form.ctx.business.finalText, multiline: true, optional: false },
-    { k: 'role', label: 'Your role', value: role, set: setRole, saved: form.ctx.role.finalText, multiline: true, optional: false },
+    { k: 'name', label: 'Your name', value: name, set: setName, saved: form.name, multiline: false, optional: false, readOnly: false },
+    { k: 'phone', label: 'Phone', value: phone, set: setPhone, saved: form.phone, multiline: false, optional: true, readOnly: false },
+    { k: 'company_name', label: 'Company or team', value: companyName, set: setCompanyName, saved: form.companyName, multiline: false, optional: false, readOnly: false },
+    { k: 'company', label: 'Company context', value: company, set: setCompany, saved: form.ctx.company.finalText, multiline: true, optional: false, readOnly: org },
+    { k: 'business', label: 'Business context', value: business, set: setBusiness, saved: form.ctx.business.finalText, multiline: true, optional: false, readOnly: org },
+    { k: 'role', label: 'Your role', value: role, set: setRole, saved: form.ctx.role.finalText, multiline: true, optional: false, readOnly: false },
   ] as const
 
   const ctxChanged =
-    !sameText(company, form.ctx.company.finalText) ||
-    !sameText(business, form.ctx.business.finalText) ||
+    (!org &&
+      (!sameText(company, form.ctx.company.finalText) || !sameText(business, form.ctx.business.finalText))) ||
     !sameText(role, form.ctx.role.finalText)
 
   const first = form.name.split(' ')[0]
@@ -567,16 +593,20 @@ function ProfileSummaryStep({
                   }}
                 >
                   {f.label}
-                  {dirty && <span style={{ color: T.emeraldDark, textTransform: 'none', letterSpacing: 0 }}> · edited</span>}
+                  {!f.readOnly && dirty && <span style={{ color: T.emeraldDark, textTransform: 'none', letterSpacing: 0 }}> · edited</span>}
                 </span>
-                <button
-                  onClick={() => toggle(f.k)}
-                  style={{ fontSize: 11.5, color: T.emeraldDark, background: 'none', border: 'none', cursor: 'pointer' }}
-                >
-                  {isOpen ? 'Done' : 'Edit'}
-                </button>
+                {f.readOnly ? (
+                  <span style={{ fontSize: 11.5, color: T.muted }}>{ORG_CTX_LABEL}</span>
+                ) : (
+                  <button
+                    onClick={() => toggle(f.k)}
+                    style={{ fontSize: 11.5, color: T.emeraldDark, background: 'none', border: 'none', cursor: 'pointer' }}
+                  >
+                    {isOpen ? 'Done' : 'Edit'}
+                  </button>
+                )}
               </div>
-              {isOpen ? (
+              {isOpen && !f.readOnly ? (
                 <div className="mt-2">
                   <Field
                     value={f.value}
@@ -601,6 +631,8 @@ function ProfileSummaryStep({
           )
         })}
       </div>
+
+      {ctxChanged && <ContextForwardNotice style={{ margin: '0 0 10px' }} />}
 
       <div className="flex items-center justify-between">
         <span style={{ fontSize: 11.5, color: T.muted }}>
@@ -652,6 +684,24 @@ function SimpleStep({
 }
 
 // ── context step ──────────────────────────────────────────
+/** Shown whenever a user is changing an existing context field — the change is
+ *  not retroactive. Applies to individual and corporate users alike. */
+export function ContextForwardNotice({ style }: { style?: React.CSSProperties }) {
+  return (
+    <p
+      style={{
+        margin: '8px 0 0',
+        fontSize: 12,
+        lineHeight: 1.5,
+        color: T.muted,
+        ...style,
+      }}
+    >
+      {CONTEXT_FORWARD_NOTICE}
+    </p>
+  )
+}
+
 /** Short guidance shown under the prompt on a fresh context field (beta feedback). */
 function ContextTips({ kind }: { kind: 'company' | 'business' | 'role' }) {
   return (
@@ -788,6 +838,8 @@ function CtxStep({
       <div className="mb-2">
         <Field value={state.raw} onChange={onRawChange} multiline max={LIMITS.context} autoFocus />
       </div>
+      {/* Returning user re-editing a saved context field — the change isn't retroactive. */}
+      {state.lastCheckedText.trim() !== '' && <ContextForwardNotice style={{ marginTop: 0, marginBottom: 6 }} />}
       <div className="flex items-center justify-between">
         <CharCount value={state.raw} max={LIMITS.context} />
         <Btn onClick={onSubmitRaw} disabled={busy}>
@@ -947,15 +999,19 @@ function ConfirmStep({
   failed: boolean
   busy: boolean
 }) {
-  const row = (label: string, value: string, step: StepId) => (
+  const row = (label: string, value: string, step: StepId, readOnly?: boolean) => (
     <div className="py-2.5" style={{ borderBottom: `1px solid ${T.hairline}` }}>
       <div className="flex justify-between items-baseline">
         <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: T.gold }}>
           {label}
         </span>
-        <button onClick={() => onEdit(step)} style={{ fontSize: 11.5, color: T.emeraldDark, background: 'none', border: 'none', cursor: 'pointer' }}>
-          edit
-        </button>
+        {readOnly ? (
+          <span style={{ fontSize: 11.5, color: T.muted }}>{ORG_CTX_LABEL}</span>
+        ) : (
+          <button onClick={() => onEdit(step)} style={{ fontSize: 11.5, color: T.emeraldDark, background: 'none', border: 'none', cursor: 'pointer' }}>
+            edit
+          </button>
+        )}
       </div>
       <div style={{ fontSize: 14, color: T.charcoal, marginTop: 4, whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{value || '—'}</div>
     </div>
@@ -968,8 +1024,8 @@ function ConfirmStep({
         {row('Name', form.name, 'name')}
         {row('Phone', form.phone || '(skipped)', 'phone')}
         {row('Company', form.companyName, 'company_name')}
-        {row('Company context', form.ctx.company.finalText, 'ctx_company')}
-        {row('Business context', form.ctx.business.finalText, 'ctx_business')}
+        {row('Company context', form.ctx.company.finalText, 'ctx_company', form.orgManaged)}
+        {row('Business context', form.ctx.business.finalText, 'ctx_business', form.orgManaged)}
         {row('Your role', form.ctx.role.finalText, 'ctx_role')}
         {row('Objective', form.objective, 'objective')}
         {row(
@@ -986,7 +1042,11 @@ function ConfirmStep({
 
       <label className="flex items-start gap-2 mb-4 text-sm" style={{ color: T.muted }}>
         <input type="checkbox" checked={form.saveProfile} onChange={(e) => onToggleSave(e.target.checked)} style={{ marginTop: 3 }} />
-        <span>Save this company, business and role context to my profile, so next time it&apos;s prefilled.</span>
+        <span>
+          {form.orgManaged
+            ? 'Save my role context to my profile, so next time it’s prefilled. (Company and business context come from your company admin.)'
+            : 'Save this company, business and role context to my profile, so next time it’s prefilled.'}
+        </span>
       </label>
 
       <div
