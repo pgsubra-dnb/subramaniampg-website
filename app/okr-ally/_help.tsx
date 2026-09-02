@@ -75,6 +75,41 @@ const TOPICS: Topic[] = [
     ],
   },
   {
+    id: 'corporate',
+    title: 'Corporate & team credits',
+    blurb: 'A shared credit pool for your company, handed out by one admin.',
+    items: [
+      {
+        q: 'How does a company buy credits?',
+        a: "If several people at your company want to run their OKRs through me, buy a shared pool instead of individual packs. Sign in, open the Pricing & Plans tab, and follow “Looking for team or company credits?” — or go straight to subramaniampg.guru/okr-ally/corporate. Pick a bundle, enter your company name, GSTIN and registered address, choose the state for the invoice, and name the person who will manage the credits (the “designated admin” — that can be you or a colleague). Pay by card or UPI. The GST invoice is made out to the company, not to you personally.",
+      },
+      {
+        q: 'What are the bundles?',
+        a: 'Three fixed sizes: 100 credits for ₹6,000, 200 for ₹11,000, or 500 for ₹25,000 — all plus 18% GST, so ₹7,080, ₹12,980 and ₹29,500 to pay. That is ₹60, ₹55 and ₹50 a review as the pool gets bigger. Need more than 500? Email pgs@embiggen.co.in to discuss — there is no self-serve option above 500.',
+      },
+      {
+        q: 'How does the admin hand credits out?',
+        a: "The designated admin gets a Company tab in OKR Ally. It shows the pool — purchased, allocated, and still available — and lets them allocate any number to an employee's email. If that person has no OKR Ally account yet, allocating creates one; either way they are emailed to say the credits are waiting. The pool goes down by whatever is allocated.",
+      },
+      {
+        q: 'When an employee runs a review, which credits does it use?',
+        a: 'Their company-allocated credits are spent first, automatically. A review only falls back to any personal credits they bought themselves once the company credits are used up. The two balances are always kept separate and shown separately.',
+      },
+      {
+        q: 'Can the admin take unused credits back?',
+        a: "Yes. “Reclaim unused credits” on the Company tab takes back whatever an employee has not spent yet and returns it to the pool. Credits already used on reviews stay used — reclaim never claws those back and never takes a balance below zero. The admin can also pull a per-employee usage report (with a PDF) showing exactly what the company allocated, what was used, and what is left.",
+      },
+      {
+        q: 'I already use OKR Ally personally. What happens if my company makes me an admin or gives me credits?',
+        a: "Nothing happens to your personal account. Your own credits, your past reviews, your saved company and role context, your history — all of it stays exactly as it was. Being made an org admin only adds the Company tab. Being allocated company credits only adds a separate company balance alongside your personal one, and your reviews simply spend the company credits first. It is purely additive.",
+      },
+      {
+        q: 'Who can see the company’s usage?',
+        a: "The designated admin sees the pool and each employee's company-credit figures — allocated, used, remaining — and nothing about anyone's personal OKR Ally account. Employees don't see the pool or other people's allocations.",
+      },
+    ],
+  },
+  {
     id: 'free-review',
     title: 'The free first review',
     blurb: 'Your first review is on the house.',
