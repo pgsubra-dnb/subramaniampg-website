@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser, getAvailableCredits } from '@/lib/okrAlly'
+import { getOrgContextForMember } from '@/lib/okrAllyOrg'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +14,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ authenticated: false })
     }
 
-    const credits = await getAvailableCredits(user.id)
+    const [credits, org] = await Promise.all([
+      getAvailableCredits(user.id),
+      getOrgContextForMember(user),
+    ])
 
     return NextResponse.json({
       authenticated: true,
@@ -29,6 +33,17 @@ export async function GET(req: NextRequest) {
       creditsRemaining: credits.total,
       personalCredits: credits.personal,
       orgCredits: credits.org,
+      // Corporate members: the shared company/business context set by their org
+      // admin. `confirmed` false → the employee cannot start a review yet.
+      orgContext: org
+        ? {
+            organizationName: org.organizationName,
+            companyContext: org.companyContext,
+            businessContext: org.businessContext,
+            confirmed: org.contextConfirmedAt !== null,
+            adminEmail: org.adminEmail,
+          }
+        : null,
     })
   } catch (error) {
     console.error('OKR Ally me error:', error)

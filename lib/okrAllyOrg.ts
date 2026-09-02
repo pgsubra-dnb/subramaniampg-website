@@ -307,11 +307,18 @@ export async function fulfilCorporatePurchase(
 
 // ─── Company Admin screen ─────────────────────────────────────────────────
 
+export const ORG_CONTEXT_MAX = 1000
+
 export interface OrgAdminContext {
   organization: { id: string; name: string; gstin: string; registeredAddress: string }
   poolPurchased: number
   poolAllocated: number
   poolAvailable: number
+  /** Shared company + business context the admin publishes for the whole org
+   *  (migration 011). `contextConfirmedAt` is null until "Confirm and publish". */
+  companyContext: string | null
+  businessContext: string | null
+  contextConfirmedAt: string | null
 }
 
 export async function getOrgAdminContext(user: OkrAllyUser): Promise<OrgAdminContext> {
@@ -323,8 +330,12 @@ export async function getOrgAdminContext(user: OkrAllyUser): Promise<OrgAdminCon
     registered_address: string
     credits_purchased: number
     credits_allocated: number
+    company_context: string | null
+    business_context: string | null
+    context_confirmed_at: string | null
   }>(
-    `SELECT id, name, gstin, registered_address, credits_purchased, credits_allocated
+    `SELECT id, name, gstin, registered_address, credits_purchased, credits_allocated,
+            company_context, business_context, context_confirmed_at
        FROM organizations WHERE id = $1`,
     [orgId]
   )
@@ -335,6 +346,89 @@ export async function getOrgAdminContext(user: OkrAllyUser): Promise<OrgAdminCon
     poolPurchased: o.credits_purchased,
     poolAllocated: o.credits_allocated,
     poolAvailable: o.credits_purchased - o.credits_allocated,
+    companyContext: o.company_context,
+    businessContext: o.business_context,
+    contextConfirmedAt: o.context_confirmed_at,
+  }
+}
+
+export type SetOrgContextOutcome =
+  | { ok: true; contextConfirmedAt: string }
+  | { ok: false; error: string }
+
+/**
+ * Org admin publishes the shared company + business context for the whole org.
+ * There is no separate "save draft" — this one action both stores the text AND
+ * stamps `context_confirmed_at = now()`, which is what unblocks employees. A
+ * later re-publish just re-stamps it; past submissions are untouched (their
+ * `context_snapshot` froze the old text at submit time).
+ */
+export async function setOrgContext(
+  user: OkrAllyUser,
+  input: { companyContext: string; businessContext: string }
+): Promise<SetOrgContextOutcome> {
+  const orgId = requireOrgAdmin(user)
+  const company = (input.companyContext || '').trim()
+  const business = (input.businessContext || '').trim()
+  if (!company || !business) {
+    return { ok: false, error: 'Both company context and business context are required before publishing.' }
+  }
+  if (company.length > ORG_CONTEXT_MAX || business.length > ORG_CONTEXT_MAX) {
+    return { ok: false, error: `Each field must be ${ORG_CONTEXT_MAX} characters or fewer.` }
+  }
+  const r = await query<{ context_confirmed_at: string }>(
+    `UPDATE organizations
+        SET company_context = $2, business_context = $3, context_confirmed_at = now()
+      WHERE id = $1
+      RETURNING context_confirmed_at`,
+    [orgId, company, business]
+  )
+  return { ok: true, contextConfirmedAt: r.rows[0].context_confirmed_at }
+}
+
+export interface OrgContextForMember {
+  organizationId: string
+  organizationName: string
+  companyContext: string | null
+  businessContext: string | null
+  /** null until the admin has run "Confirm and publish" at least once. */
+  contextConfirmedAt: string | null
+  /** The designated admin's email, so an employee knows who to ask. */
+  adminEmail: string | null
+}
+
+/**
+ * The org's shared context as seen by ANY member (admin or employee) — anyone
+ * whose `users.organization_id` is this org. Returns null for a user with no
+ * home org. Used by /api/okr-ally/me and the review route.
+ */
+export async function getOrgContextForMember(user: OkrAllyUser): Promise<OrgContextForMember | null> {
+  if (!user.organization_id) return null
+  const r = await query<{
+    name: string
+    company_context: string | null
+    business_context: string | null
+    context_confirmed_at: string | null
+  }>(
+    `SELECT name, company_context, business_context, context_confirmed_at
+       FROM organizations WHERE id = $1`,
+    [user.organization_id]
+  )
+  const o = r.rows[0]
+  if (!o) return null
+  const admin = await query<{ email: string }>(
+    `SELECT email FROM users
+      WHERE organization_id = $1 AND is_org_admin = true
+      ORDER BY created_at LIMIT 1`,
+    [user.organization_id]
+  )
+  return {
+    organizationId: user.organization_id,
+    organizationName: o.name,
+    companyContext: o.company_context,
+    businessContext: o.business_context,
+    contextConfirmedAt: o.context_confirmed_at,
+    adminEmail: admin.rows[0]?.email ?? null,
   }
 }
 

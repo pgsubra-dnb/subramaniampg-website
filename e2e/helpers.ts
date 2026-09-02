@@ -344,6 +344,28 @@ export async function getOrgByGstin(gstin: string): Promise<OrgRow | null> {
   return r.rows[0] ?? null
 }
 
+/** Simulate an org admin's "Confirm and publish" (migration 011): store the
+ *  shared company/business context AND stamp context_confirmed_at. Call again to
+ *  simulate a later edit + reconfirmation. */
+export async function publishOrgContext(
+  organizationId: string,
+  companyContext: string,
+  businessContext: string
+): Promise<void> {
+  await pool.query(
+    `UPDATE organizations SET company_context = $2, business_context = $3, context_confirmed_at = now() WHERE id = $1`,
+    [organizationId, companyContext, businessContext]
+  )
+}
+
+export async function getSubmissionContextSnapshot(submissionId: string): Promise<Record<string, { final_text?: string }>> {
+  const r = await pool.query<{ context_snapshot: Record<string, { final_text?: string }> }>(
+    `SELECT context_snapshot FROM submissions WHERE id = $1`,
+    [submissionId]
+  )
+  return r.rows[0].context_snapshot
+}
+
 export async function getOrgBalance(userId: string, organizationId: string): Promise<number> {
   const r = await pool.query<{ credits_remaining: number }>(
     `SELECT credits_remaining FROM org_credit_balance WHERE user_id = $1 AND organization_id = $2`,

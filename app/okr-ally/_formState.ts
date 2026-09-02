@@ -75,6 +75,10 @@ export interface FormState {
    *  with a full saved profile start on the profile-summary screen and only the
    *  fields they actually edit are re-run through the context pipeline. */
   mode: 'stepwise' | 'summary'
+  /** Corporate members: company + business context come from the org admin,
+   *  read-only. The `ctx_company` / `ctx_business` steps are skipped and those
+   *  fields are never editable here. Role context stays personal. */
+  orgManaged: boolean
   name: string
   phone: string
   companyName: string
@@ -84,10 +88,24 @@ export interface FormState {
   saveProfile: boolean
 }
 
+/** Shown wherever a user changes a context field — the change is not retroactive. */
+export const CONTEXT_FORWARD_NOTICE =
+  'Changes to your context apply to reviews you run from now on. Reviews already completed keep the context they were run with.'
+
+/** The org's shared context as `/api/okr-ally/me` reports it for a corporate member. */
+export interface OrgContext {
+  organizationName: string
+  companyContext: string | null
+  businessContext: string | null
+  confirmed: boolean
+  adminEmail: string | null
+}
+
 export function emptyForm(): FormState {
   return {
     step: 'name',
     mode: 'stepwise',
+    orgManaged: false,
     name: '',
     phone: '',
     companyName: '',
@@ -109,6 +127,8 @@ export function emptyForm(): FormState {
 export function nextStep(form: FormState, from: StepId): StepId {
   for (let i = STEP_ORDER.indexOf(from) + 1; i < STEP_ORDER.length; i++) {
     const s = STEP_ORDER[i]
+    // Corporate members never answer company/business context — it's the org's.
+    if (form.orgManaged && (s === 'ctx_company' || s === 'ctx_business')) continue
     if (form.mode === 'summary') {
       if (s === 'name' || s === 'phone' || s === 'company_name') continue
       if (isCtxStep(s) && form.ctx[CTX_KIND[s]].phase === 'done') continue
@@ -117,6 +137,37 @@ export function nextStep(form: FormState, from: StepId): StepId {
     return s
   }
   return STEP_ORDER[STEP_ORDER.length - 1]
+}
+
+/**
+ * Corporate member: replace company + business context with the org admin's
+ * published values (read-only), mark the form org-managed, and move off either
+ * of those steps if the form happens to be sitting on one.
+ */
+export function applyOrgContext(
+  form: FormState,
+  org: { companyContext: string | null; businessContext: string | null }
+): FormState {
+  const seed = (t: string | null): CtxFieldState => {
+    const v = (t ?? '').trim()
+    return {
+      ...emptyCtx(),
+      raw: v,
+      lastCheckedText: v,
+      finalText: v,
+      paraphraseAction: v ? 'not_offered' : '',
+      phase: 'done',
+    }
+  }
+  const next: FormState = {
+    ...form,
+    orgManaged: true,
+    ctx: { ...form.ctx, company: seed(org.companyContext), business: seed(org.businessContext) },
+  }
+  if (next.step === 'ctx_company' || next.step === 'ctx_business') {
+    next.step = nextStep(next, 'company_name')
+  }
+  return next
 }
 
 export const CTX_KIND: Record<'ctx_company' | 'ctx_business' | 'ctx_role', 'company' | 'business' | 'role'> = {
