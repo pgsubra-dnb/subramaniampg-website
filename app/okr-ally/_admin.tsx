@@ -162,10 +162,12 @@ export function AdminList({
 
   return (
     <div>
+      <DemoModePanel brand={brand} />
       <GrantCreditsPanel brand={brand} />
 
       <div style={{ fontSize: 12.5, color: T.muted, margin: '4px 0 10px' }}>
         Every completed review. Open one to add expert feedback and draft a follow-up note.
+        <span style={{ display: 'block', marginTop: 2 }}>Demo-mode submissions never appear here.</span>
       </div>
 
       <div className="grid gap-2 mb-3" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
@@ -253,6 +255,53 @@ export function AdminList({
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  Demo mode
+// ══════════════════════════════════════════════════════════════════════
+
+function DemoModePanel({ brand = DEFAULT_BRAND }: { brand?: Brand }) {
+  const v = vocab(brand)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function start() {
+    setBusy(true)
+    setErr(null)
+    try {
+      const r = await fetch('/api/okr-ally/demo/start', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ brand }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.ok) {
+        setErr(j.error || 'Could not start the demo.')
+        return
+      }
+      window.location.assign(j.redirect || v.path)
+    } catch {
+      setErr('Network problem — the demo did not start.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{ border: `1px solid ${T.gold}`, borderRadius: 12, padding: 14, marginBottom: 14, background: T.goldTint }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.gold }}>Demo mode</div>
+      <p style={{ fontSize: 12.5, color: T.gold, margin: '6px 0 10px', lineHeight: 1.5 }}>
+        Drops into a fresh first-time-visitor run of {v.product} with sign-in and payment skipped.
+        The review, scoring and report are the real product; nothing is charged, emailed, or added
+        to this list. &ldquo;Reset demo&rdquo; gives a clean slate between audiences.
+      </p>
+      <Btn small onClick={start} disabled={busy}>
+        {busy ? 'Starting…' : 'Start demo'}
+      </Btn>
+      {err && <p style={{ fontSize: 12.5, color: T.error, marginTop: 8 }}>{err}</p>}
     </div>
   )
 }

@@ -36,6 +36,7 @@ export interface SubmissionRow {
   status: SubmissionStatus
   created_at: string
   brand: Brand | null
+  is_demo: boolean
 }
 
 export interface ValidatedInput {
@@ -161,14 +162,14 @@ export async function markReviewDelivered(args: {
   )
 }
 
-export type ChargeKind = 'credit' | 'coupon' | 'org' | 'admin'
+export type ChargeKind = 'credit' | 'coupon' | 'org' | 'admin' | 'demo'
 
 export type StartResult =
   | {
       ok: true
       submission: SubmissionRow
-      /** 'admin' — an is_admin account; no credit was deducted, an
-       *  `admin_unlimited` (amount 0) audit row was written instead. */
+      /** 'admin' — an is_admin account; 'demo' — a demo session. Neither
+       *  deducts a credit; both write an `admin_unlimited` (amount 0) audit row. */
       charge: ChargeKind
       /** Set only when charge === 'org' — which organization's pool was drawn on,
        *  so refundFailedSubmission returns the credit to the right place. */
@@ -182,6 +183,9 @@ interface StartArgs {
   input: ValidatedInput
   /** A validated 100%-off coupon code for the free first review, or null. */
   freeCouponCode: string | null
+  /** A demo session — flag the submission `is_demo` and take the unlimited
+   *  (no-charge) path ahead of any coupon or balance, exactly like an admin. */
+  isDemo?: boolean
 }
 
 /** Thrown inside the startSubmission transaction to force a rollback while carrying the response. */
@@ -197,7 +201,7 @@ class RollbackWith extends Error {
  * back entirely if payment fails, so no submission is created without a charge.
  */
 export async function startSubmission(args: StartArgs): Promise<StartResult> {
-  const { userId, idempotencyKey, input, freeCouponCode } = args
+  const { userId, idempotencyKey, input, freeCouponCode, isDemo } = args
 
   try {
     return await withTransaction<StartResult>(async (client: PoolClient) => {
@@ -213,8 +217,8 @@ export async function startSubmission(args: StartArgs): Promise<StartResult> {
 
       const insert = await client.query<SubmissionRow>(
         `INSERT INTO submissions
-           (user_id, objective, krs, context_snapshot, parent_submission_id, idempotency_key, status, brand)
-         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, 'pending', $7)
+           (user_id, objective, krs, context_snapshot, parent_submission_id, idempotency_key, status, brand, is_demo)
+         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, 'pending', $7, $8)
          ON CONFLICT (idempotency_key) DO NOTHING
          RETURNING *`,
         [
@@ -225,6 +229,7 @@ export async function startSubmission(args: StartArgs): Promise<StartResult> {
           input.parentSubmissionId,
           idempotencyKey,
           input.brand,
+          !!isDemo,
         ]
       )
 
@@ -240,6 +245,17 @@ export async function startSubmission(args: StartArgs): Promise<StartResult> {
       // never consumes a coupon or a balance. An `admin_unlimited` row (amount
       // 0, one per submission) is still written so every admin review is on the
       // ledger for audit.
+      // Demo session — unlimited and never charged, checked before admin so a
+      // demo run over PGS's own admin account still takes the demo path.
+      if (isDemo) {
+        await client.query(
+          `INSERT INTO credit_transactions (user_id, submission_id, amount, type, note)
+           VALUES ($1, $2, 0, 'admin_unlimited', 'demo mode — no charge')`,
+          [userId, submission.id]
+        )
+        return { ok: true, submission, charge: 'demo' }
+      }
+
       const adminCheck = await client.query<{ is_admin: boolean }>(
         `SELECT is_admin FROM users WHERE id = $1`,
         [userId]
@@ -392,13 +408,13 @@ export async function refundFailedSubmission(args: {
          VALUES ($1, $2, 1, 'refund_failed_generation')`,
         [args.userId, args.submissionId]
       )
-    } else if (args.charge === 'admin') {
-      // Admin unlimited — nothing was charged. Record a 0-amount audit row so
-      // the failed attempt is still on the ledger, then mark failed_refunded.
+    } else if (args.charge === 'admin' || args.charge === 'demo') {
+      // Admin unlimited / demo — nothing was charged. Record a 0-amount audit
+      // row so the failed attempt is still on the ledger, then mark failed.
       await client.query(
         `INSERT INTO credit_transactions (user_id, submission_id, amount, type, note)
-         VALUES ($1, $2, 0, 'refund_failed_generation', 'admin unlimited — no charge to refund')`,
-        [args.userId, args.submissionId]
+         VALUES ($1, $2, 0, 'refund_failed_generation', $3)`,
+        [args.userId, args.submissionId, args.charge === 'demo' ? 'demo mode — no charge to refund' : 'admin unlimited — no charge to refund']
       )
     } else {
       // Free review — release the coupon so the user can try again.

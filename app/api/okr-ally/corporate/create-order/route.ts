@@ -30,6 +30,9 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       )
     }
+    if (user.is_demo) {
+      return NextResponse.json({ error: 'Purchases are disabled in demo mode.' }, { status: 403 })
+    }
 
     const bundle = getBundle(body.bundle)
     if (!bundle) return NextResponse.json({ error: 'Choose one of the three bundles' }, { status: 400 })

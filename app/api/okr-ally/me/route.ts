@@ -30,6 +30,9 @@ export async function GET(req: NextRequest) {
         isOrgAdmin: user.is_org_admin,
         organizationId: user.organization_id,
       },
+      // Demo session (migration 014) — the client shows the demo banner and
+      // routes intro/walkthrough "start" straight into the app (sign-in skipped).
+      isDemo: user.is_demo,
       seenWalkthroughs: user.seen_walkthroughs ?? [],
       creditsRemaining: credits.total,
       personalCredits: credits.personal,

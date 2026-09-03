@@ -1,3 +1,5 @@
+import { isDemoRequest } from '@/lib/okrAllyDemoContext'
+
 export async function sendBrevoEmail({
   to,
   toName,
@@ -17,6 +19,15 @@ export async function sendBrevoEmail({
   /** Skip the pgs@embiggen.co.in BCC (e.g. for a document already sent to PGS separately). */
   skipBcc?: boolean
 }): Promise<boolean> {
+  // Demo mode (OKR Ally / Goal Ally): no email EVER fires for a demo session,
+  // regardless of what was typed during it. Two independent guards —
+  //   1. the demo request context (set by runInDemoContext in the review route),
+  //   2. the reserved-TLD recipient (demo accounts use @…​.invalid).
+  if (isDemoRequest() || /\.invalid$/i.test(to.trim())) {
+    console.log(`Brevo send SKIPPED (demo mode): subject="${subject}" to=${to}`)
+    return false
+  }
+
   const apiKey = process.env.BREVO_API_KEY
   if (!apiKey) {
     console.error('BREVO_API_KEY is not set')

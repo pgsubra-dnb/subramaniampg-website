@@ -153,6 +153,42 @@ export async function setAdmin(userId: string, isAdmin: boolean): Promise<void> 
   await pool.query(`UPDATE users SET is_admin = $2 WHERE id = $1`, [userId, isAdmin])
 }
 
+export interface DemoSession {
+  /** The admin who started the demo (already signed in on `context`). */
+  admin: SignedInUser
+  /** The ephemeral demo account's user id. */
+  demoUserId: string
+  /** `okr_ally_demo=<token>` — for APIRequestContext calls. */
+  cookieHeader: string
+}
+
+/**
+ * Start a demo session: sign in as a fresh admin, POST /api/okr-ally/demo/start
+ * (which sets the `okr_ally_demo` cookie in `context` alongside the admin's
+ * `okr_ally_session`), and return both. Push `demoUserId` to your createdUsers
+ * so cleanupUsers tears down the demo account + its rows.
+ */
+export async function startDemo(
+  context: BrowserContext,
+  baseURL: string,
+  brand: 'okr_ally' | 'goal_ally' = 'okr_ally'
+): Promise<DemoSession> {
+  const admin = await signIn(context, baseURL, testEmail('demoadmin-'), { admin: true })
+  const res = await context.request.post(`${baseURL}/api/okr-ally/demo/start`, { data: { brand } })
+  if (!res.ok()) throw new Error(`startDemo: ${res.status()} ${await res.text()}`)
+
+  const demoCookie = (await context.cookies()).find((c) => c.name === 'okr_ally_demo')
+  if (!demoCookie) throw new Error('startDemo: no okr_ally_demo cookie after /demo/start')
+
+  const row = await pool.query<{ id: string }>(
+    `SELECT id FROM users WHERE is_demo ORDER BY created_at DESC LIMIT 1`
+  )
+  const demoUserId = row.rows[0]?.id
+  if (!demoUserId) throw new Error('startDemo: no is_demo user row')
+
+  return { admin, demoUserId, cookieHeader: `okr_ally_demo=${demoCookie.value}` }
+}
+
 /**
  * Promote an already-signed-in user to admin and refresh their session in
  * `context` to the 24h signed admin token — a bare-id cookie is rejected for an

@@ -31,6 +31,13 @@ import crypto from 'crypto'
 export const ADMIN_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000
 export const ADMIN_SESSION_MAX_AGE_SECONDS = ADMIN_SESSION_MAX_AGE_MS / 1000
 
+/** A demo session (lib/okrAllyDemo.ts) lasts a working day — long enough to run
+ *  it back-to-back for several corporate audiences in one sitting. It is a
+ *  SEPARATE cookie (`okr_ally_demo`) so entering/leaving demo mode never
+ *  disturbs PGS's real 24h admin session on `okr_ally_session`. */
+export const DEMO_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000
+export const DEMO_SESSION_MAX_AGE_SECONDS = DEMO_SESSION_MAX_AGE_MS / 1000
+
 function sessionKey(): string {
   const secret = process.env.OKR_ALLY_SESSION_SECRET
   if (!secret) {
@@ -83,4 +90,48 @@ export function verifyAdminSession(
   if (now - issuedAt > ADMIN_SESSION_MAX_AGE_MS) return null
 
   return { userId }
+}
+
+// ─── Demo session token (okr_ally_demo cookie) ─────────────────────────────
+//
+// Shape: `d.<demoUserId>.<issuedAtMs>.<hmacSHA256("d.<demoUserId>.<issuedAtMs>")>`
+// Four dot-parts, always led by "d." — so it can't be confused with a bare user
+// id (no dots) or an admin token (three parts). Same HMAC key + primitives as
+// the admin token above.
+
+/** A cookie value with four dot-parts led by "d." is a demo session token. */
+export function isDemoSessionToken(value: string): boolean {
+  const parts = value.split('.')
+  return parts.length === 4 && parts[0] === 'd'
+}
+
+/** Mint a demo session token. `issuedAt` is injectable for tests. */
+export function signDemoSession(demoUserId: string, issuedAt: number = Date.now()): string {
+  const body = `d.${demoUserId}.${issuedAt}`
+  return `${body}.${sign(body)}`
+}
+
+/** Verify a demo session token — valid signature AND issued within the last
+ *  12 hours. Null for a bad shape, tampered signature, future issuedAt, or an
+ *  expired token. */
+export function verifyDemoSession(
+  token: string,
+  now: number = Date.now()
+): { demoUserId: string } | null {
+  const parts = token.split('.')
+  if (parts.length !== 4 || parts[0] !== 'd') return null
+  const [, demoUserId, issuedAtStr, providedSig] = parts
+  if (!demoUserId || !issuedAtStr || !providedSig) return null
+
+  const expectedSig = sign(`d.${demoUserId}.${issuedAtStr}`)
+  const a = Buffer.from(providedSig)
+  const b = Buffer.from(expectedSig)
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null
+
+  const issuedAt = Number(issuedAtStr)
+  if (!Number.isFinite(issuedAt)) return null
+  if (issuedAt > now + 60_000) return null
+  if (now - issuedAt > DEMO_SESSION_MAX_AGE_MS) return null
+
+  return { demoUserId }
 }
