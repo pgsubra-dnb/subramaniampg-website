@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/okrAlly'
-import { paraphraseField, CONTEXT_FIELD_MAX, type ContextFieldKind } from '@/lib/okrAllyContext'
+import { paraphraseField, contextFieldMax, CONTEXT_FIELD_MAX, type ContextFieldKind } from '@/lib/okrAllyContext'
 import { allow, allowDailyContextCall } from '@/lib/okrAllyRateLimit'
 
 export const dynamic = 'force-dynamic'
@@ -35,7 +35,9 @@ export async function POST(req: NextRequest) {
   }
   const text = typeof body.text === 'string' ? body.text : ''
   if (!text.trim()) return NextResponse.json({ error: 'Nothing to paraphrase' }, { status: 400 })
-  if (text.length > CONTEXT_FIELD_MAX * 2) {
+  // `text` is the finalized field (original + any clarifying answer), so allow
+  // the field's own limit plus one more field's worth of headroom for the answer.
+  if (text.length > contextFieldMax(field) + CONTEXT_FIELD_MAX) {
     return NextResponse.json({ error: 'That text is too long to paraphrase' }, { status: 400 })
   }
 

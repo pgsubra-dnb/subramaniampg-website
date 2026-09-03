@@ -4,7 +4,10 @@ import { getProfile, saveProfile, type ProfileUpdate } from '@/lib/okrAllyForm'
 
 export const dynamic = 'force-dynamic'
 
+// Company context gets more room (matches the review form + org-admin context);
+// business + role stay at 1000.
 const CONTEXT_MAX = 1000
+const COMPANY_CONTEXT_MAX = 2000
 const NAME_MAX = 120
 const PHONE_MAX = 20
 
@@ -60,7 +63,7 @@ export async function PUT(req: NextRequest) {
     if (typeof v !== 'string') {
       return NextResponse.json({ error: `${key} must be text` }, { status: 400 })
     }
-    const max = key === 'companyName' ? NAME_MAX : CONTEXT_MAX
+    const max = key === 'companyName' ? NAME_MAX : key === 'companyContext' ? COMPANY_CONTEXT_MAX : CONTEXT_MAX
     if (v.length > max) {
       return NextResponse.json({ error: `${key} exceeds ${max} characters` }, { status: 400 })
     }

@@ -17,7 +17,17 @@ export const LIMITS = {
   krsMin: 1,
   krsMax: 6,
   initiativesPerKr: 3,
+  /** business + role context. Company context is larger — `companyContext`. */
   contextField: 1000,
+  /** Company context — the field people paste an About page into. Kept in sync
+   *  with LIMITS.companyContext in app/okr-ally/_formState.ts and
+   *  contextFieldMax() in lib/okrAllyContext.ts. */
+  companyContext: 2000,
+}
+
+/** Character limit for a stored context field's final_text. */
+export function contextFieldLimit(key: 'company_context' | 'business_context' | 'role_context'): number {
+  return key === 'company_context' ? LIMITS.companyContext : LIMITS.contextField
 }
 
 // Rate limit — submissions per user per rolling minute, independent of balance.
@@ -96,8 +106,9 @@ export function validateInput(body: unknown): { ok: true; value: ValidatedInput 
   if (typeof ctxRaw !== 'object') return { ok: false, error: 'context_snapshot must be an object' }
   for (const key of ['company_context', 'business_context', 'role_context'] as const) {
     const f = ctxRaw[key] as Record<string, unknown> | undefined
-    if (f && typeof f.final_text === 'string' && f.final_text.length > LIMITS.contextField) {
-      return { ok: false, error: `${key.replace('_', ' ')} exceeds ${LIMITS.contextField} characters` }
+    const max = contextFieldLimit(key)
+    if (f && typeof f.final_text === 'string' && f.final_text.length > max) {
+      return { ok: false, error: `${key.replace('_', ' ')} exceeds ${max} characters` }
     }
   }
 

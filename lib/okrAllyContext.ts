@@ -20,9 +20,18 @@ const ANTHROPIC_VERSION = '2023-06-01'
 const ATTEMPT_TIMEOUT_MS = 30_000
 const MAX_ATTEMPTS = 2
 
+/** business + role context. Company context is larger — `COMPANY_CONTEXT_MAX`. */
 export const CONTEXT_FIELD_MAX = 1000
+/** Company context — the field people paste an About page into. Kept in sync
+ *  with LIMITS.companyContext (app/okr-ally/_formState.ts, lib/okrAllySubmission.ts). */
+export const COMPANY_CONTEXT_MAX = 2000
 
 export type ContextFieldKind = 'company' | 'business' | 'role'
+
+/** Character limit for a context field's user-typed text. */
+export function contextFieldMax(kind: ContextFieldKind): number {
+  return kind === 'company' ? COMPANY_CONTEXT_MAX : CONTEXT_FIELD_MAX
+}
 
 const FIELD_LABEL: Record<ContextFieldKind, string> = {
   company: 'the company / organisation',
@@ -235,6 +244,10 @@ Call record_paraphrase.`
 
   const rewritten = typeof r.input.rewritten === 'string' ? r.input.rewritten.trim() : ''
   if (!rewritten) return { ok: false, reason: 'empty paraphrase' }
-  if (rewritten.length > CONTEXT_FIELD_MAX * 2) return { ok: false, reason: 'paraphrase too long' }
+  // Sanity cap on model output — 2x the field's own limit, or 2x the actual
+  // input if the input (original + clarifying answer) ran longer.
+  if (rewritten.length > Math.max(trimmed.length, contextFieldMax(fieldKind)) * 2) {
+    return { ok: false, reason: 'paraphrase too long' }
+  }
   return { ok: true, paraphrase: rewritten }
 }

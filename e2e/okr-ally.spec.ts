@@ -2,6 +2,8 @@ import crypto from 'node:crypto'
 import { test, expect, Page } from '@playwright/test'
 import { FAIL_BASE_URL } from '../playwright.config'
 import { validateReviewOutput, buildSystemPrompt, buildUserContent } from '../lib/okrAllyReview'
+import { validateInput, LIMITS } from '../lib/okrAllySubmission'
+import { contextFieldMax } from '../lib/okrAllyContext'
 import { PACKS } from '../lib/okrAllyBilling'
 import {
   signIn,
@@ -134,6 +136,36 @@ test('validateReviewOutput: KR initiative count must be 2-3 in both options', ()
 })
 
 // ══════════════════════════════════════════════════════════
+// 0b. Context field limits — company 2000, business/role 1000 (no browser)
+// ══════════════════════════════════════════════════════════
+test('validateInput: company context accepts 2000 chars, rejects 2001; business stays at 1000', () => {
+  expect(LIMITS.companyContext).toBe(2000)
+  expect(LIMITS.contextField).toBe(1000)
+  expect(contextFieldMax('company')).toBe(2000)
+  expect(contextFieldMax('business')).toBe(1000)
+  expect(contextFieldMax('role')).toBe(1000)
+
+  const body = (company: number, business: number) => ({
+    objective: 'Grow adoption',
+    krs: [{ text: 'From 10 to 20' }],
+    context_snapshot: {
+      company_context: { final_text: 'c'.repeat(company) },
+      business_context: { final_text: 'b'.repeat(business) },
+    },
+  })
+
+  expect(validateInput(body(2000, 1000)).ok).toBe(true)
+
+  const overCompany = validateInput(body(2001, 500))
+  expect(overCompany.ok).toBe(false)
+  if (!overCompany.ok) expect(overCompany.error).toMatch(/company context exceeds 2000/i)
+
+  const overBusiness = validateInput(body(500, 1001))
+  expect(overBusiness.ok).toBe(false)
+  if (!overBusiness.ok) expect(overBusiness.error).toMatch(/business context exceeds 1000/i)
+})
+
+// ══════════════════════════════════════════════════════════
 // 1. Happy path: code sign-in → completed report (live Claude call)
 // ══════════════════════════════════════════════════════════
 test('happy path: sign in, submit an OKR, get a scored report', async ({ page, context }) => {
@@ -191,6 +223,8 @@ test('happy path: sign in, submit an OKR, get a scored report', async ({ page, c
   // report screen — shared score infographic (ring + radar + legend)
   await expect(page.getByText(/Your OKR scored/i)).toBeVisible({ timeout: 200_000 })
   await expect(page.getByText('Weighted across the five criteria')).toBeVisible()
+  // caveat directly under the breakdown — the criteria aren't independent dials
+  await expect(page.getByText(/The five criteria interact — they aren't independent dials/i)).toBeVisible()
   // per-criterion rationale + weight % are NOT shown on the user-facing report
   await expect(page.getByText('Why each criterion scored the way it did')).toHaveCount(0)
   await expect(page.getByText('Refined Original')).toBeVisible()

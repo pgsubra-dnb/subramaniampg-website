@@ -131,3 +131,17 @@ export function reviewCount(brand: Brand, n: number): string {
   const v = vocab(brand)
   return `${n} ${n === 1 ? v.review : v.reviews}`
 }
+
+/** The caveat printed directly under the rubric score breakdown, on the web
+ *  report and the PDF. The five criteria aren't independent dials — one edit can
+ *  move several — so the breakdown is a starting point, not a wiring diagram.
+ *  In Ally's voice, brand-aware. */
+export function scoreBreakdownNote(brand: Brand): string {
+  const v = vocab(brand)
+  return (
+    `The five criteria interact — they aren't independent dials. One change to your ${v.objective} ` +
+    `or a ${v.kr} can move several at once, and a low score on one doesn't always come down to a single ` +
+    `line you wrote. Read the feedback below for what's actually behind each score, rather than reading a ` +
+    `straight line from one edit to one number.`
+  )
+}
