@@ -199,7 +199,7 @@ export default function PricingTab({
             {v.reviews} are spent first.
           </span>
         )}
-        {status.freeReviewAvailable && ` Your first review is free — it doesn't use an ${v.review}.`}
+        {status.freeReviewAvailable && ` Your first review is free — it won't touch your ${v.reviews}.`}
       </AllyRow>
 
       {msg && (
