@@ -32,6 +32,9 @@ export async function POST(req: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
     }
+    if (user.is_demo) {
+      return NextResponse.json({ error: 'Purchases are disabled in demo mode.' }, { status: 403 })
+    }
 
     const body = await req.json().catch(() => ({}))
     const brand = toBrand(body.brand)

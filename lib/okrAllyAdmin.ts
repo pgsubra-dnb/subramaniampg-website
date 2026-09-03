@@ -87,7 +87,9 @@ export async function listAdminReviews(
   const page = Math.max(1, Math.floor(opts.page ?? 1))
   const pageSize = Math.min(50, Math.max(1, Math.floor(opts.pageSize ?? 20)))
 
-  const where: string[] = [`s.status = 'complete'`]
+  // Demo-mode submissions (migration 014) never appear here — the admin list is
+  // real client activity only.
+  const where: string[] = [`s.status = 'complete'`, `s.is_demo = FALSE`]
   const params: unknown[] = []
   const like = (v?: string) => `%${(v ?? '').trim()}%`
   if (opts.q?.trim()) {
@@ -217,17 +219,18 @@ export async function getAdminReview(
     krs: SubmittedKR[]
     context_snapshot: ReviewContextSnapshot
     status: string
+    is_demo: boolean
     user_name: string
     user_email: string
   }>(
-    `SELECT s.id, s.objective, s.krs, s.context_snapshot, s.status,
+    `SELECT s.id, s.objective, s.krs, s.context_snapshot, s.status, s.is_demo,
             u.name AS user_name, u.email AS user_email
        FROM submissions s JOIN users u ON u.id = s.user_id
       WHERE s.id = $1`,
     [submissionId]
   )
   const sub = s.rows[0]
-  if (!sub || sub.status !== 'complete') return null
+  if (!sub || sub.status !== 'complete' || sub.is_demo) return null
 
   const r = await query<{
     id: string

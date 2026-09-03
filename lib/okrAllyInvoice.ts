@@ -5,6 +5,7 @@ import { putPdf } from '@/lib/okrAllyBlob'
 import { PACKS } from '@/lib/okrAllyBilling'
 import { GST_STATES, stateCode, stateCodeFromGstin } from '@/lib/indiaGstStates'
 import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
+import { isDemoRequest } from '@/lib/okrAllyDemoContext'
 import { tokens } from '@/lib/okrAllyTokens'
 import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
 
@@ -331,6 +332,12 @@ async function fetchExistingInvoice(
  */
 export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<CreateInvoiceResult> {
   try {
+    // Demo mode: never mint an invoice or advance the sequential counter.
+    if (isDemoRequest()) {
+      console.log('OKR Ally invoice: SKIPPED (demo mode)')
+      return { ok: false, reason: 'blocked-nonprod' }
+    }
+
     // Backstop: never mint a real invoice from a non-prod process or a fake id.
     try {
       assertFulfillmentAllowed('createAndSendInvoice', input.razorpayPaymentId)

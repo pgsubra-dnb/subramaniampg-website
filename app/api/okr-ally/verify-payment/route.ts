@@ -27,6 +27,9 @@ export async function POST(req: NextRequest) {
     if (!user) {
       return NextResponse.json({ success: false, reason: 'Not signed in' }, { status: 401 })
     }
+    if (user.is_demo) {
+      return NextResponse.json({ success: false, reason: 'Not available in demo mode' }, { status: 403 })
+    }
 
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = await req.json()
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {

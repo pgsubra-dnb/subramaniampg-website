@@ -6,6 +6,7 @@ import { PACKS } from '../lib/okrAllyBilling'
 import {
   signIn,
   mintSignInCode,
+  startDemo,
   testEmail,
   promoteToAdmin,
   seedCredits,
@@ -182,7 +183,7 @@ test('happy path: sign in, submit an OKR, get a scored report', async ({ page, c
   await page.getByRole('button', { name: 'Review everything' }).click()
 
   // confirm → submit
-  await expect(page.getByText(/One review, one credit. No undo/i)).toBeVisible()
+  await expect(page.getByText(/Submitting spends one OKR Review\. No undo/i)).toBeVisible()
   await page.getByRole('button', { name: 'Submit for review' }).click()
   // the generating indicator shows its first timed caption
   await expect(page.getByText(/Reading your objective and the context/i)).toBeVisible()
@@ -1953,6 +1954,158 @@ test('sign-in code verify: an expired code fails with a clear message', async ({
 test('the old magic-link verify endpoint is gone', async ({ request }) => {
   const r = await request.get('http://localhost:3200/api/okr-ally/verify?token=whatever')
   expect(r.status()).toBe(404)
+})
+
+// ══════════════════════════════════════════════════════════
+// 24. Demo mode (migration 014)
+// ══════════════════════════════════════════════════════════
+const BASE = 'http://localhost:3200'
+
+test('demo start: admin only; sets a separate demo cookie', async ({ request, context }) => {
+  // not signed in
+  expect((await request.post(`${BASE}/api/okr-ally/demo/start`, { data: {} })).status()).toBe(403)
+
+  // a regular user cannot start a demo
+  const reg = await signIn(context, BASE, testEmail('demoreg-'))
+  createdUsers.push(reg.userId)
+  const asReg = await context.request.post(`${BASE}/api/okr-ally/demo/start`, { data: {} })
+  expect(asReg.status()).toBe(403)
+
+  // an admin can
+  const demo = await startDemo(context, BASE)
+  createdUsers.push(demo.admin.userId, demo.demoUserId)
+
+  const meAsDemo = await request.get(`${BASE}/api/okr-ally/me`, { headers: { cookie: demo.cookieHeader } })
+  const meJson = await meAsDemo.json()
+  expect(meJson.authenticated).toBe(true)
+  expect(meJson.isDemo).toBe(true)
+  expect(meJson.user.isAdmin).toBe(false)
+
+  // the admin's own session is untouched (separate cookie)
+  const meAsAdmin = await request.get(`${BASE}/api/okr-ally/me`, { headers: { cookie: demo.admin.cookieHeader } })
+  expect((await meAsAdmin.json()).user.isAdmin).toBe(true)
+})
+
+test('demo mode: purchase + coupon routes are blocked', async ({ request, context }) => {
+  const demo = await startDemo(context, BASE)
+  createdUsers.push(demo.admin.userId, demo.demoUserId)
+  const h = { cookie: demo.cookieHeader }
+
+  expect((await request.post(`${BASE}/api/okr-ally/create-order`, { headers: h, data: { pack: 'single', buyerState: 'Karnataka' } })).status()).toBe(403)
+  expect((await request.post(`${BASE}/api/okr-ally/validate-coupon`, { headers: h, data: { code: 'ANYTHING' } })).status()).toBe(403)
+  expect((await request.post(`${BASE}/api/okr-ally/corporate/create-order`, { headers: h, data: { bundle: 'b100' } })).status()).toBe(403)
+})
+
+test('demo review: flagged is_demo, excluded from the admin list, no invoice number burned, no email', async ({ request, context }) => {
+  test.setTimeout(240_000)
+  const demo = await startDemo(context, BASE)
+  createdUsers.push(demo.admin.userId, demo.demoUserId)
+
+  const ym = (() => {
+    const d = new Date()
+    return `${String(d.getUTCFullYear()).slice(-2)}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+  })()
+  const counterBefore = await pool.query<{ last_number: number }>(
+    `SELECT last_number FROM invoice_counters WHERE year_month = $1`,
+    [ym]
+  )
+  const before = counterBefore.rows[0]?.last_number ?? 0
+
+  const objective = `Demo-mode objective ${Date.now()} — cut new-customer onboarding time`
+  const res = await request.post(`${BASE}/api/okr-ally/review`, {
+    headers: { cookie: demo.cookieHeader },
+    data: {
+      idempotencyKey: `demo-e2e-${Date.now()}`,
+      brand: 'okr_ally',
+      objective,
+      krs: [
+        { text: 'Cut median time-to-first-value from 12 days to 4 days', initiatives: [] },
+        { text: 'Raise 30-day activation from 41% to 65%', initiatives: [] },
+      ],
+      context_snapshot: {
+        company_context: { final_text: 'Series B B2B SaaS, ~180 staff, selling workflow automation to mid-market ops teams.' },
+        business_context: { final_text: 'Onboarding is the top churn driver this year; the board wants self-serve activation.' },
+        role_context: { final_text: 'I am the Head of Onboarding. I own the onboarding team and lifecycle comms; I do not own product or pricing.' },
+      },
+      couponCode: 'ANY-GARBAGE-VALUE', // demo ignores it outright — never rejected
+    },
+  })
+  expect(res.status()).toBe(200)
+  const j = await res.json()
+  expect(j.status).toBe('complete')
+  expect(j.emailed).toBe(false) // sendBrevoEmail no-ops in a demo request
+  expect(j.invoiceNumber ?? null).toBeNull()
+
+  // the submission row is flagged, and its review carries no email timestamp
+  const sub = await pool.query<{ is_demo: boolean; user_id: string }>(
+    `SELECT is_demo, user_id FROM submissions WHERE id = $1`,
+    [j.submissionId]
+  )
+  expect(sub.rows[0].is_demo).toBe(true)
+  expect(sub.rows[0].user_id).toBe(demo.demoUserId)
+  const rev = await pool.query<{ email_sent_at: string | null }>(
+    `SELECT email_sent_at FROM reviews WHERE submission_id = $1`,
+    [j.submissionId]
+  )
+  expect(rev.rows[0].email_sent_at).toBeNull()
+
+  // the invoice counter did not advance
+  const counterAfter = await pool.query<{ last_number: number }>(
+    `SELECT last_number FROM invoice_counters WHERE year_month = $1`,
+    [ym]
+  )
+  expect(counterAfter.rows[0]?.last_number ?? 0).toBe(before)
+  expect(await pool.query(`SELECT 1 FROM invoices WHERE submission_id = $1`, [j.submissionId])).toMatchObject({ rowCount: 0 })
+
+  // it does NOT appear in PGS's admin review list (search by its objective)
+  const list = await request.get(
+    `${BASE}/api/okr-ally/admin/reviews?q=${encodeURIComponent('Demo-mode objective')}`,
+    { headers: { cookie: demo.admin.cookieHeader } }
+  )
+  expect(list.status()).toBe(200)
+  const listJson = await list.json()
+  expect(listJson.items.some((i: { submissionId: string }) => i.submissionId === j.submissionId)).toBe(false)
+
+  // ...but a real review with a similar objective still would (control)
+  const realUser = await signIn(context, BASE, testEmail('democtl-'))
+  createdUsers.push(realUser.userId)
+  const { submissionId: realSub } = await seedCompletedReview(realUser.userId, 'Demo-mode objective CONTROL row')
+  const list2 = await request.get(
+    `${BASE}/api/okr-ally/admin/reviews?q=${encodeURIComponent('Demo-mode objective')}`,
+    { headers: { cookie: demo.admin.cookieHeader } }
+  )
+  const list2Json = await list2.json()
+  expect(list2Json.items.some((i: { submissionId: string }) => i.submissionId === realSub)).toBe(true)
+})
+
+test('demo reset: mints a fresh demo account and clears the previous run', async ({ request, context }) => {
+  const demo = await startDemo(context, BASE)
+  createdUsers.push(demo.admin.userId, demo.demoUserId)
+
+  // leave a footprint on the first demo account
+  await seedCompletedReview(demo.demoUserId, 'first demo run objective')
+
+  const reset = await request.post(`${BASE}/api/okr-ally/demo/reset`, {
+    headers: { cookie: demo.cookieHeader },
+    data: { brand: 'okr_ally' },
+  })
+  expect(reset.status()).toBe(200)
+  const rj = await reset.json()
+  expect(rj.redirect).toMatch(/\/okr-ally\?demo=intro$/)
+
+  // best-effort cleanup runs async — poll for the previous account to disappear
+  await expect
+    .poll(async () => (await pool.query(`SELECT 1 FROM users WHERE id = $1`, [demo.demoUserId])).rowCount, {
+      timeout: 15_000,
+    })
+    .toBe(0)
+
+  // a new demo account now exists
+  const fresh = await pool.query<{ id: string }>(
+    `SELECT id FROM users WHERE is_demo ORDER BY created_at DESC LIMIT 1`
+  )
+  expect(fresh.rows[0].id).not.toBe(demo.demoUserId)
+  createdUsers.push(fresh.rows[0].id)
 })
 
 // ── Brand vocabulary (Goal Ally) ──────────────────────────────────────────

@@ -31,6 +31,9 @@ interface Me {
   }
   orgContext?: OrgContext | null
   seenWalkthroughs?: string[]
+  /** Demo session (migration 014) — sign-in + payment are skipped, nothing is
+   *  charged/emailed/recorded-for-review. Drives the demo banner. */
+  isDemo?: boolean
 }
 interface Status {
   creditsRemaining: number
@@ -130,12 +133,22 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
     }
     // `?tab=company` — the corporate admin-welcome email links here directly.
     const wantsCompanyTab = params.get('tab') === 'company'
+    // `?demo=intro` — set by demo start/reset: show the first-time intro screen
+    // even though the demo session is already authenticated. Like `?signedout=1`,
+    // it stays in the URL until the user leaves the intro (startFlow strips it) —
+    // stripping it here would let a StrictMode re-run fall through to the app.
+    const demoWantsIntro = params.get('demo') === 'intro'
     if (params.has('tab')) window.history.replaceState({}, '', v.path)
     ;(async () => {
       try {
         const m: Me = await (await fetch('/api/okr-ally/me')).json()
         setMe(m)
         if (!m.authenticated) {
+          setPhase('intro')
+          return
+        }
+        if (m.isDemo && demoWantsIntro) {
+          refreshStatus() // populate booking/share links for the report screen
           setPhase('intro')
           return
         }
@@ -200,6 +213,16 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
     setReportId(null)
     setTab('ally')
   }, [])
+
+  // Intro / walkthrough "start". A real visitor goes to the email gate; a demo
+  // session is already authenticated, so it drops straight into the app.
+  const isDemo = !!me?.isDemo
+  const startFlow = useCallback(() => {
+    if (typeof window !== 'undefined' && window.location.search.includes('demo=')) {
+      window.history.replaceState({}, '', v.path)
+    }
+    setPhase(isDemo ? 'app' : 'email')
+  }, [isDemo, v.path])
 
   function prefillFromProfile(
     prof: {
@@ -283,7 +306,9 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
       <TopBar
         brand={brand}
         right={
-          me?.authenticated ? (
+          isDemo ? (
+            <span style={{ color: T.muted, fontSize: 12.5 }}>Demo</span>
+          ) : me?.authenticated ? (
             <>
               <span
                 style={{ color: T.muted }}
@@ -312,6 +337,8 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
 
       <InstallAppBanner brand={brand} />
 
+      {isDemo && <DemoBanner brand={brand} />}
+
       {me?.authenticated && !showingReport && !showingAdmin && (
         <TabBar tab={activeTab} onChange={setTab} isAdmin={isAdmin} isOrgAdmin={isOrgAdmin} />
       )}
@@ -326,10 +353,10 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
         />
       )}
       {phase === 'intro' && (
-        <Intro brand={brand} onStart={() => setPhase('email')} onSeeHow={() => setPhase('walkthrough')} />
+        <Intro brand={brand} onStart={startFlow} onSeeHow={() => setPhase('walkthrough')} />
       )}
       {phase === 'walkthrough' && (
-        <Walkthrough brand={brand} onBack={() => setPhase('intro')} onStart={() => setPhase('email')} />
+        <Walkthrough brand={brand} onBack={() => setPhase('intro')} onStart={startFlow} />
       )}
       {phase === 'email' && <EmailGate brand={brand} />}
 
@@ -386,6 +413,7 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
             initialForm={draft}
             orgContext={orgCtx}
             brand={brand}
+            isDemo={isDemo}
             onReachedContextScreens={() => {
               if (!hasSeen('employee')) setRoleWalkthrough('employee')
             }}
@@ -398,7 +426,11 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
       )}
 
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'pricing' && (
-        <PricingTab brand={brand} onBalanceChange={(n) => setStatus((s) => (s ? { ...s, creditsRemaining: n } : s))} />
+        <PricingTab
+          brand={brand}
+          isDemo={isDemo}
+          onBalanceChange={(n) => setStatus((s) => (s ? { ...s, creditsRemaining: n } : s))}
+        />
       )}
 
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'history' && (
@@ -537,6 +569,61 @@ function Intro({ brand, onStart, onSeeHow }: { brand: Brand; onStart: () => void
           Leadership Execution Assessment
         </a>
       </div>
+    </div>
+  )
+}
+
+function DemoBanner({ brand }: { brand: Brand }) {
+  const [busy, setBusy] = useState<'reset' | 'exit' | null>(null)
+
+  async function go(action: 'reset' | 'exit') {
+    setBusy(action)
+    try {
+      const r = await fetch(`/api/okr-ally/demo/${action}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ brand }),
+      })
+      const j = await r.json().catch(() => ({}))
+      window.location.assign(j.redirect || vocab(brand).path)
+    } catch {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div
+      className="flex items-center justify-between gap-3 flex-wrap"
+      style={{
+        background: T.goldTint,
+        border: `1px solid ${T.gold}`,
+        borderRadius: 10,
+        padding: '9px 13px',
+        margin: '0 0 16px',
+        fontSize: 12.5,
+        color: T.gold,
+      }}
+    >
+      <span style={{ lineHeight: 1.5 }}>
+        <strong>Demo mode.</strong> Nothing here is charged, emailed, or added to the review list — the
+        review itself is real.
+      </span>
+      <span className="flex gap-2 flex-shrink-0">
+        <button
+          onClick={() => go('reset')}
+          disabled={busy !== null}
+          style={{ background: 'none', border: `1px solid ${T.gold}`, borderRadius: 7, padding: '4px 10px', color: T.gold, fontWeight: 600, cursor: 'pointer', fontSize: 12 }}
+        >
+          {busy === 'reset' ? 'Resetting…' : 'Reset demo'}
+        </button>
+        <button
+          onClick={() => go('exit')}
+          disabled={busy !== null}
+          style={{ background: 'none', border: 'none', padding: '4px 6px', color: T.gold, fontWeight: 600, cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}
+        >
+          {busy === 'exit' ? 'Exiting…' : 'Exit demo'}
+        </button>
+      </span>
     </div>
   )
 }

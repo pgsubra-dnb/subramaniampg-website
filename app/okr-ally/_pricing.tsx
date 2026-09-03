@@ -40,9 +40,12 @@ const SHOW_COUPON_FIELD = false
 export default function PricingTab({
   onBalanceChange,
   brand = DEFAULT_BRAND,
+  isDemo = false,
 }: {
   onBalanceChange: (n: number) => void
   brand?: Brand
+  /** Demo session — prices are shown for the audience, but buying is disabled. */
+  isDemo?: boolean
 }) {
   const v = vocab(brand)
   const [status, setStatus] = useState<Status | null>(null)
@@ -202,6 +205,15 @@ export default function PricingTab({
         {status.freeReviewAvailable && ` Your first review is free — it won't touch your ${v.reviews}.`}
       </AllyRow>
 
+      {isDemo && (
+        <div
+          className="mb-4 text-sm rounded-lg px-4 py-3"
+          style={{ background: T.goldTint, color: T.gold, border: `1px solid ${T.gold}` }}
+        >
+          Demo mode — {v.reviews} are unlimited and nothing is charged. Prices below are for reference.
+        </div>
+      )}
+
       {msg && (
         <div
           className="mb-4 text-sm rounded-lg px-4 py-3"
@@ -241,7 +253,8 @@ export default function PricingTab({
               </div>
               <button
                 onClick={() => buy(p)}
-                disabled={busy !== null || gstinInvalid}
+                disabled={isDemo || busy !== null || gstinInvalid}
+                title={isDemo ? 'Disabled in demo mode' : undefined}
                 style={{
                   marginTop: 10,
                   width: '100%',
@@ -252,8 +265,8 @@ export default function PricingTab({
                   color: p.id === 'pack10' ? T.emeraldDark : '#fff',
                   fontWeight: 600,
                   fontSize: 13,
-                  cursor: busy ? 'not-allowed' : 'pointer',
-                  opacity: busy && busy !== p.id ? 0.6 : 1,
+                  cursor: isDemo || busy ? 'not-allowed' : 'pointer',
+                  opacity: isDemo || (busy && busy !== p.id) ? 0.6 : 1,
                 }}
               >
                 {busy === p.id ? 'Opening…' : 'Buy'}

@@ -18,6 +18,9 @@ export async function POST(req: NextRequest) {
     if (!user) {
       return NextResponse.json({ valid: false, reason: 'Not signed in' }, { status: 401 })
     }
+    if (user.is_demo) {
+      return NextResponse.json({ valid: false, reason: 'Coupons are disabled in demo mode.' }, { status: 403 })
+    }
 
     const body = await req.json().catch(() => ({}))
     if (typeof body.code !== 'string' || !body.code.trim()) {

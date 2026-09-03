@@ -1,7 +1,12 @@
 import { Pool, type QueryResultRow } from 'pg'
 import type { NextRequest } from 'next/server'
 import { okrAllySanityClient } from '@/lib/okrAllySanity'
-import { isAdminSessionToken, verifyAdminSession } from '@/lib/okrAllySession'
+import {
+  isAdminSessionToken,
+  verifyAdminSession,
+  isDemoSessionToken,
+  verifyDemoSession,
+} from '@/lib/okrAllySession'
 
 /**
  * OKR Ally — Neon data access + session helpers.
@@ -19,6 +24,10 @@ import { isAdminSessionToken, verifyAdminSession } from '@/lib/okrAllySession'
  */
 
 export const OKR_ALLY_SESSION_COOKIE = 'okr_ally_session'
+/** Demo mode runs on its own cookie so entering/leaving it never disturbs PGS's
+ *  real admin session on OKR_ALLY_SESSION_COOKIE. When present and valid it wins
+ *  in getSessionUser (see lib/okrAllyDemo.ts). */
+export const OKR_ALLY_DEMO_COOKIE = 'okr_ally_demo'
 
 let pool: Pool | undefined
 
@@ -77,11 +86,15 @@ export interface OkrAllyUser {
   /** Walkthrough keys already auto-shown to this user (migration 012):
    *  'org_admin', 'employee'. The main "How it works" one is manual-only. */
   seen_walkthroughs: string[]
+  /** True for the ephemeral account behind a demo session (migration 014).
+   *  Its submissions are flagged is_demo and excluded from the admin list; no
+   *  email or invoice ever fires for it. */
+  is_demo: boolean
   created_at: string
 }
 
 const USER_COLS =
-  'id, email, phone, name, is_admin, organization_id, is_org_admin, seen_walkthroughs, created_at'
+  'id, email, phone, name, is_admin, organization_id, is_org_admin, seen_walkthroughs, is_demo, created_at'
 
 export const WALKTHROUGH_KEYS = ['org_admin', 'employee'] as const
 export type WalkthroughKey = (typeof WALKTHROUGH_KEYS)[number]
@@ -150,8 +163,23 @@ export async function getUserById(id: string): Promise<OkrAllyUser | null> {
  * An admin account is ONLY ever authenticated through a valid, unexpired signed
  * token. A bare-id cookie naming an admin account is rejected, so an old cookie
  * (or a hand-crafted one) can't be used to skip the 24h re-verification.
+ *
+ * A valid `okr_ally_demo` cookie takes precedence: it resolves to the ephemeral
+ * demo account (is_admin false, is_demo true) so every downstream route runs as
+ * that account. An invalid/expired demo cookie is ignored and the normal
+ * session cookie is used instead.
  */
 export async function getSessionUser(req: NextRequest): Promise<OkrAllyUser | null> {
+  const demoRaw = req.cookies.get(OKR_ALLY_DEMO_COOKIE)?.value
+  if (demoRaw && isDemoSessionToken(demoRaw)) {
+    const verified = verifyDemoSession(demoRaw)
+    if (verified) {
+      const demoUser = await getUserById(verified.demoUserId)
+      if (demoUser?.is_demo) return demoUser
+    }
+    // stale/tampered demo cookie — fall through to the real session below
+  }
+
   const raw = req.cookies.get(OKR_ALLY_SESSION_COOKIE)?.value
   if (!raw) return null
 

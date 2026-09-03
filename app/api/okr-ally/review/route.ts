@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSessionUser } from '@/lib/okrAlly'
+import { getSessionUser, type OkrAllyUser } from '@/lib/okrAlly'
+import { runInDemoContext } from '@/lib/okrAllyDemoContext'
 import { validateCoupon } from '@/lib/okrAllyBilling'
 import { runReview } from '@/lib/okrAllyReview'
 import { generateStoreAndEmailReport } from '@/lib/okrAllyReport'
@@ -46,7 +47,13 @@ export async function POST(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
   }
+  // A demo session runs the whole handler inside the demo request context, so
+  // sendBrevoEmail() and createAndSendInvoice() become logged no-ops no matter
+  // what path the review takes or what was typed into it.
+  return runInDemoContext(user.is_demo, () => handleReview(req, user))
+}
 
+async function handleReview(req: NextRequest, user: OkrAllyUser): Promise<NextResponse> {
   // A review creates a submission + deducts a credit + (for the free review)
   // mints a ₹0 invoice + stores a PDF. `.env.local` points at prod, so block a
   // non-prod run unless ALLOW_NONPROD_FULFILLMENT=1 is set (Playwright sets it).
@@ -118,8 +125,11 @@ export async function POST(req: NextRequest) {
 
   // Free first review — only a 100%-off coupon qualifies here; percentage
   // coupons apply to credit-pack purchases, not individual reviews.
+  // Admin-unlimited and demo runs never spend a coupon (startSubmission takes
+  // the no-charge path first), so whatever the client sent is ignored outright
+  // — never rejected.
   let freeCouponCode: string | null = null
-  if (typeof body.couponCode === 'string' && body.couponCode.trim()) {
+  if (!user.is_admin && !user.is_demo && typeof body.couponCode === 'string' && body.couponCode.trim()) {
     const coupon = await validateCoupon(body.couponCode, user.id)
     if (!coupon.valid) {
       return NextResponse.json({ error: coupon.reason || 'Invalid coupon' }, { status: 400 })
@@ -138,6 +148,7 @@ export async function POST(req: NextRequest) {
     idempotencyKey,
     input: parsed.value,
     freeCouponCode,
+    isDemo: user.is_demo,
   })
 
   if (!start.ok) {
@@ -168,7 +179,7 @@ export async function POST(req: NextRequest) {
       {
         status: 'failed_refunded',
         error:
-          charge === 'admin'
+          charge === 'admin' || charge === 'demo'
             ? 'The review could not be generated — please try again.'
             : `The review could not be generated. Your ${vocab(parsed.value.brand).review} has been refunded — please try again.`,
         detail: result.reason,

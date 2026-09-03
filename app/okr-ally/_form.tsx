@@ -37,6 +37,9 @@ interface Props {
    *  (the profile summary, or the first context step). */
   onReachedContextScreens?: () => void
   onSubmitted: (result: ReviewResult) => void
+  /** Demo session — reviews are unlimited and nothing is charged; the confirm
+   *  screen says so instead of "spends one review". */
+  isDemo?: boolean
 }
 
 const ORG_CTX_LABEL = 'Set by your company admin'
@@ -61,7 +64,7 @@ const stepLabels = (v: ReturnType<typeof vocab>): Record<StepId, string> => ({
   confirm: 'Review & submit',
 })
 
-export default function StepForm({ initialForm, orgContext, brand = DEFAULT_BRAND, onReachedContextScreens, onSubmitted }: Props) {
+export default function StepForm({ initialForm, orgContext, brand = DEFAULT_BRAND, onReachedContextScreens, onSubmitted, isDemo = false }: Props) {
   const v = vocab(brand)
   const STEP_LABEL = stepLabels(v)
   const [form, setForm] = useState<FormState>(() => {
@@ -381,6 +384,7 @@ export default function StepForm({ initialForm, orgContext, brand = DEFAULT_BRAN
           form={form}
           busy={false}
           brand={brand}
+          isDemo={isDemo}
           onEdit={editStep}
           onToggleSave={(v) => update({ saveProfile: v })}
           onSubmit={submit}
@@ -1026,6 +1030,7 @@ function KrStep({
 function ConfirmStep({
   form,
   brand = DEFAULT_BRAND,
+  isDemo = false,
   onEdit,
   onToggleSave,
   onSubmit,
@@ -1034,6 +1039,7 @@ function ConfirmStep({
 }: {
   form: FormState
   brand?: Brand
+  isDemo?: boolean
   onEdit: (s: StepId) => void
   onToggleSave: (v: boolean) => void
   onSubmit: () => void
@@ -1095,9 +1101,18 @@ function ConfirmStep({
         className="rounded-lg p-4 mb-3 text-sm"
         style={{ background: T.goldTint, color: T.gold, lineHeight: 1.55 }}
       >
-        <strong>Submitting spends one {vv.review}. No undo.</strong> Once you submit, the {vv.review} is used
-        and Ally generates your report. There&apos;s no edit or self-serve refund after that (a failed
-        generation refunds automatically).
+        {isDemo ? (
+          <>
+            <strong>Demo mode — nothing is charged.</strong> Submit to run the real review and see the
+            full report. It is not emailed or added to the review list.
+          </>
+        ) : (
+          <>
+            <strong>Submitting spends one {vv.review}. No undo.</strong> Once you submit, the {vv.review} is
+            used and Ally generates your report. There&apos;s no edit or self-serve refund after that (a
+            failed generation refunds automatically).
+          </>
+        )}
       </div>
       <p className="text-xs italic mb-5" style={{ color: T.muted }}>
         The review reflects the quality of the context you gave me — thin context means a thinner review.
