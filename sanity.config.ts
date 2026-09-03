@@ -27,6 +27,7 @@ import bookingPurchase from './sanity/schemas/bookingPurchase'
 import okrAllySettings from './sanity/schemas/okrAllySettings'
 import okrAllyCourse from './sanity/schemas/okrAllyCourse'
 import okrAllyCoupon from './sanity/schemas/okrAllyCoupon'
+import signInCode from './sanity/schemas/signInCode'
 
 /**
  * Two workspaces under /studio (Sanity shows a workspace switcher; visiting
@@ -37,11 +38,13 @@ import okrAllyCoupon from './sanity/schemas/okrAllyCoupon'
  *                 Academy. Schema and dataset unchanged from before.
  *  - "OKR Ally" (/studio/okr-ally) → the isolated `okr-ally` dataset: only the
  *                 document types OKR Ally reads (course anchor + coupon for the
- *                 free-review flow, magicToken for auth, okrAllySettings for
+ *                 free-review flow, signInCode for auth, okrAllySettings for
  *                 footer/GST config).
  *
- * The OKR Ally workspace reuses the shared `magicToken` schema (a standalone,
- * primitive-only type) but has its own `okrAllyCourse` / `okrAllyCoupon` /
+ * Auth for OKR Ally / Goal Ally is a 6-digit `signInCode` (this dataset only).
+ * The shared `magicToken` schema is still registered here for legacy Academy
+ * parity / any un-expired old docs, but nothing writes it any more. The
+ * OKR Ally workspace has its own `okrAllyCourse` / `okrAllyCoupon` /
  * `okrAllySettings` — the Academy `course`/`coupon` schemas pull in
  * academyModule / bookingLink references that don't belong in this dataset.
  * Editing one workspace never touches the other's data.
@@ -94,7 +97,7 @@ export default defineConfig([
     plugins: [structureTool()],
 
     schema: {
-      types: [okrAllyCourse, okrAllyCoupon, magicToken, okrAllySettings],
+      types: [okrAllyCourse, okrAllyCoupon, magicToken, signInCode, okrAllySettings],
     },
   },
 ])

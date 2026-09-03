@@ -296,15 +296,15 @@ export async function fulfilCorporatePurchase(
                 Set up your company
               </a>
             </p>
-            <p style="font-size:13px;color:${tokens.textSecondary};">Sign in with this email address — it opens straight to the Company tab, where you set the context, allocate ${v.reviews} to your team, and see usage.</p>
+            <p style="font-size:13px;color:${tokens.textSecondary};">You'll be asked for a one-time code sent to this email address — sign in and you'll land on the Company tab, where you set the context, allocate ${v.reviews} to your team, and see usage.</p>
             <p style="font-size:13px;color:${tokens.textSecondary};">&mdash; Subramaniam P G</p>
           </div>`,
         textContent:
           `${company} has bought a pool of ${v.product} ${v.reviews}, and this email address is its admin. ` +
           `This purchase added ${added} ${addedUnit} — the pool now holds ${pool}.\n\n` +
           `Your first step is to set your company's shared context — your team can't run reviews until you publish it. ` +
-          `Sign in with this email address at:\n\nhttps://subramaniampg.guru${v.path}?tab=company\n\n` +
-          `That opens straight to the Company tab, where you set the context, allocate ${v.reviews}, and see usage.`,
+          `Open:\n\nhttps://subramaniampg.guru${v.path}?tab=company\n\n` +
+          `Sign in with a one-time code sent to this email address and you'll land on the Company tab, where you set the context, allocate ${v.reviews}, and see usage.`,
       })
     } catch (err) {
       console.error('OKR Ally corporate admin-notification failed:', input.razorpayPaymentId, err)

@@ -3,8 +3,8 @@ import { Pool } from 'pg'
 import type { BrowserContext, APIRequestContext } from '@playwright/test'
 
 /**
- * Shared E2E helpers: direct DB access for setup/teardown and magic-token
- * minting, so specs can drive the real magic-link sign-in without an inbox.
+ * Shared E2E helpers: direct DB access for setup/teardown and sign-in-code
+ * minting, so specs can drive the real code sign-in without an inbox.
  */
 
 const {
@@ -12,15 +12,17 @@ const {
   NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT,
   SANITY_API_TOKEN,
   BLOB_READ_WRITE_TOKEN,
+  OKR_ALLY_SESSION_SECRET,
 } = process.env
 
-// OKR Ally's Sanity content (magicToken auth included) lives in its own
+// OKR Ally's Sanity content (signInCode auth included) lives in its own
 // isolated dataset, never `production`. Keep this in sync with
 // lib/okrAllySanity.ts / NEXT_PUBLIC_OKR_ALLY_SANITY_DATASET.
 const SANITY_DATASET = process.env.NEXT_PUBLIC_OKR_ALLY_SANITY_DATASET || 'okr-ally'
 
 if (!DATABASE_URL) throw new Error('e2e: DATABASE_URL not set (need .env.local)')
 if (!SANITY_API_TOKEN) throw new Error('e2e: SANITY_API_TOKEN not set (need .env.local)')
+if (!OKR_ALLY_SESSION_SECRET) throw new Error('e2e: OKR_ALLY_SESSION_SECRET not set (need .env.local)')
 
 export const pool = new Pool({ connectionString: DATABASE_URL })
 
@@ -53,12 +55,48 @@ export interface SignedInUser {
   sessionValue: string
 }
 
+/** HMAC of a code, keyed by email + secret — mirrors codeHash() in
+ *  lib/okrAllySanity.ts so a test can mint a `signInCode` doc the server accepts. */
+function codeHash(email: string, code: string): string {
+  return crypto
+    .createHmac('sha256', OKR_ALLY_SESSION_SECRET!)
+    .update(`${email}:${code}`)
+    .digest('hex')
+}
+
 /**
- * Full magic-link sign-in against `baseURL`: mint a magicToken in Sanity, hit
- * /api/okr-ally/verify (which creates/loads the Neon user and sets the session
- * cookie in `context`), and return the user id + cookie header.
+ * Mint a `signInCode` doc directly and return the plaintext code, so a spec can
+ * exercise the verify endpoint (wrong code, expiry, lockout) end to end.
+ * `expiresInMs` defaults to 10 min; pass a negative value for an already-expired
+ * code.
+ */
+export async function mintSignInCode(
+  email: string,
+  expiresInMs = 10 * 60 * 1000
+): Promise<string> {
+  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0')
+  await sanityMutate([
+    { delete: { query: `*[_type=="signInCode" && email=="${email}"]` } },
+    {
+      create: {
+        _type: 'signInCode',
+        email,
+        codeHash: codeHash(email, code),
+        attempts: 0,
+        expiresAt: new Date(Date.now() + expiresInMs).toISOString(),
+      },
+    },
+  ])
+  return code
+}
+
+/**
+ * Full sign-in against `baseURL`: mint a `signInCode` in Sanity, POST the
+ * email + code to /api/okr-ally/sign-in-code/verify (which creates/loads the
+ * Neon user and sets the session cookie in `context`), and return the user id
+ * + cookie header.
  *
- * `opts.admin` flags the account `is_admin` BEFORE hitting /verify, so the route
+ * `opts.admin` flags the account `is_admin` BEFORE verifying, so the route
  * issues the 24h signed session token instead of a bare-id cookie (getSessionUser
  * rejects a bare-id cookie for an admin account).
  */
@@ -76,30 +114,32 @@ export async function signIn(
     )
   }
 
-  const token = crypto.randomBytes(32).toString('hex')
-  const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
+  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0')
   await sanityMutate([
+    { delete: { query: `*[_type=="signInCode" && email=="${email}"]` } },
     {
       create: {
-        _type: 'magicToken',
+        _type: 'signInCode',
         email,
-        tokenHash,
-        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+        codeHash: codeHash(email, code),
+        attempts: 0,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       },
     },
   ])
 
-  const page = await context.newPage()
-  await page.goto(`${baseURL}/api/okr-ally/verify?token=${token}`)
-  await page.close()
+  const res = await context.request.post(`${baseURL}/api/okr-ally/sign-in-code/verify`, {
+    data: { email, code },
+  })
+  if (!res.ok()) throw new Error(`signIn: verify failed (${res.status()}) ${await res.text()}`)
 
   const cookies = await context.cookies()
   const session = cookies.find((c) => c.name === 'okr_ally_session')
-  if (!session) throw new Error('signIn: no okr_ally_session cookie after /verify')
+  if (!session) throw new Error('signIn: no okr_ally_session cookie after verify')
 
   const row = await pool.query<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [email])
   const userId = row.rows[0]?.id
-  if (!userId) throw new Error('signIn: no users row after /verify')
+  if (!userId) throw new Error('signIn: no users row after verify')
 
   return {
     email,
@@ -299,7 +339,10 @@ export async function cleanupUsers(userIds: string[]): Promise<void> {
     await pool.query(`DELETE FROM users WHERE id = $1`, [uid])
   }
   try {
-    await sanityMutate([{ delete: { query: `*[_type=="magicToken" && email match "${TEST_EMAIL_PREFIX}*"]` } }])
+    await sanityMutate([
+      { delete: { query: `*[_type=="signInCode" && email match "${TEST_EMAIL_PREFIX}*"]` } },
+      { delete: { query: `*[_type=="magicToken" && email match "${TEST_EMAIL_PREFIX}*"]` } },
+    ])
   } catch {
     /* best effort */
   }
