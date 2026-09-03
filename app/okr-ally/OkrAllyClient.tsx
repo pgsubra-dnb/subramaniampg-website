@@ -12,7 +12,7 @@ import { AdminList, AdminReviewScreen } from './_admin'
 import Walkthrough, { OrgAdminWalkthrough, EmployeeWalkthrough } from './_walkthrough'
 import OrgAdminScreen from './_org'
 import { FormState, emptyForm, CtxFieldState, OrgContext } from './_formState'
-import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
+import { type Brand, DEFAULT_BRAND, vocab, reviewCount } from '@/lib/okrAllyBrand'
 
 type RoleWalkthrough = 'org_admin' | 'employee'
 
@@ -306,7 +306,7 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
                     : undefined
                 }
               >
-                {status?.creditsRemaining ?? 0} credit{(status?.creditsRemaining ?? 0) === 1 ? '' : 's'}
+                {reviewCount(brand, status?.creditsRemaining ?? 0)}
                 {status && status.orgCredits.length > 0 && (
                   <span style={{ color: T.emeraldDark }}>
                     {' '}
@@ -410,11 +410,11 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
       )}
 
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'pricing' && (
-        <PricingTab onBalanceChange={(n) => setStatus((s) => (s ? { ...s, creditsRemaining: n } : s))} />
+        <PricingTab brand={brand} onBalanceChange={(n) => setStatus((s) => (s ? { ...s, creditsRemaining: n } : s))} />
       )}
 
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'history' && (
-        <HistoryTab onOpen={(id) => setReportId(id)} />
+        <HistoryTab brand={brand} onOpen={(id) => setReportId(id)} />
       )}
 
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'help' && <HelpTab />}
@@ -425,6 +425,7 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
             See the admin walkthrough again
           </SeeAgainLink>
           <OrgAdminScreen
+            brand={brand}
             onPoolChange={() => {
               refreshStatus()
               refreshMe()
@@ -434,7 +435,7 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
       )}
 
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'admin' && isAdmin && (
-        <AdminList onOpen={(id) => setAdminId(id)} />
+        <AdminList brand={brand} onOpen={(id) => setAdminId(id)} />
       )}
 
       {phase === 'app' && showingAdmin && (
@@ -610,16 +611,17 @@ function OrgContextPending({
 }
 
 function SignedOut({ brand, onContinue }: { brand: Brand; onContinue: () => void }) {
+  const v = vocab(brand)
   return (
     <div style={{ textAlign: 'center', padding: '8px 0 24px' }}>
       <div style={{ width: 72, height: 72, borderRadius: '50%', overflow: 'hidden', margin: '0 auto 14px', border: `3px solid ${T.emerald}` }}>
-        <Image src={AVATAR} alt={vocab(brand).product} width={72} height={72} />
+        <Image src={AVATAR} alt={v.product} width={72} height={72} />
       </div>
       <h1 style={{ fontFamily: 'var(--font-inter), sans-serif', fontSize: 22, fontWeight: 600, color: T.charcoal, margin: 0 }}>
         You&apos;re signed out.
       </h1>
       <p style={{ color: T.muted, marginTop: 10, fontSize: 13.5, maxWidth: 420, marginLeft: 'auto', marginRight: 'auto' }}>
-        Your reviews and credits are saved — sign back in any time with your email.
+        Your history and {v.reviews} are saved — sign back in any time with your email.
       </p>
       <div
         style={{
@@ -750,7 +752,7 @@ function EmailGate({ error, brand }: { error: string | null; brand: Brand }) {
     <>
       <AllyRow>
         Before we start, what&apos;s your email? I&apos;ll send a one-time sign-in link — no password. It&apos;s how
-        your reviews and credits stay with you.
+        your history and {vocab(brand).reviews} stay with you.
       </AllyRow>
       {(error || localErr) && (
         <div className="mb-3 text-sm rounded-lg px-4 py-3" style={{ background: T.errorLight, color: T.error, border: `1px solid ${T.errorBorder}` }}>

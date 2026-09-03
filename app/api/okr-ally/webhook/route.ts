@@ -6,6 +6,7 @@ import { grantCredits, getPack } from '@/lib/okrAllyBilling'
 import { fulfilCorporatePurchase } from '@/lib/okrAllyOrg'
 import { createAndSendInvoice } from '@/lib/okrAllyInvoice'
 import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
+import { toBrand } from '@/lib/okrAllyBrand'
 
 export const dynamic = 'force-dynamic'
 
@@ -75,6 +76,7 @@ export async function POST(req: NextRequest) {
     if (!paymentId) {
       return NextResponse.json({ ok: true, ignored: 'no payment id' })
     }
+    const brand = toBrand(notes.brand)
 
     // ── Corporate bundle — the silent fallback for the closed-tab case.
     // Idempotent with verify-payment via the `org_purchase` unique index.
@@ -85,6 +87,7 @@ export async function POST(req: NextRequest) {
       }
       const purchaser = notes.purchaserUserId ? await getUserById(notes.purchaserUserId) : null
       const r = await fulfilCorporatePurchase({
+        brand,
         purchaserUserId: notes.purchaserUserId,
         purchaserName: purchaser?.name ?? notes.companyName,
         purchaserEmail: purchaser?.email ?? notes.adminEmail,
@@ -154,6 +157,7 @@ export async function POST(req: NextRequest) {
           placeOfSupply: notes.placeOfSupply,
           buyerName: buyer.name,
           buyerEmail: buyer.email,
+          brand,
         })
       }
     }

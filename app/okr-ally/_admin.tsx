@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AllyRow, Btn, ScoreRing, Stars, T } from './_ui'
 import { OptionCard, Section, type OkrOption } from './_report'
+import { type Brand, DEFAULT_BRAND, vocab, reviewCount } from '@/lib/okrAllyBrand'
 
 // ─── shared types (mirror lib/okrAllyAdmin.ts JSON) ─────────────────────
 
@@ -85,7 +86,13 @@ const areaStyle: React.CSSProperties = {
 
 const PAGE_SIZE = 20
 
-export function AdminList({ onOpen }: { onOpen: (submissionId: string) => void }) {
+export function AdminList({
+  onOpen,
+  brand = DEFAULT_BRAND,
+}: {
+  onOpen: (submissionId: string) => void
+  brand?: Brand
+}) {
   const [data, setData] = useState<ListResponse | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -155,7 +162,7 @@ export function AdminList({ onOpen }: { onOpen: (submissionId: string) => void }
 
   return (
     <div>
-      <GrantCreditsPanel />
+      <GrantCreditsPanel brand={brand} />
 
       <div style={{ fontSize: 12.5, color: T.muted, margin: '4px 0 10px' }}>
         Every completed review. Open one to add expert feedback and draft a follow-up note.
@@ -254,7 +261,8 @@ export function AdminList({ onOpen }: { onOpen: (submissionId: string) => void }
 //  Manual credit grant
 // ══════════════════════════════════════════════════════════════════════
 
-function GrantCreditsPanel() {
+function GrantCreditsPanel({ brand = DEFAULT_BRAND }: { brand?: Brand }) {
+  const v = vocab(brand)
   const [open, setOpen] = useState(false)
   const [email, setEmail] = useState('')
   const [credits, setCredits] = useState('1')
@@ -269,14 +277,14 @@ function GrantCreditsPanel() {
       const res = await fetch('/api/okr-ally/admin/grant-credits', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), credits: Number(credits), note: note.trim() || undefined }),
+        body: JSON.stringify({ email: email.trim(), credits: Number(credits), note: note.trim() || undefined, brand }),
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok) {
         setMsg({ kind: 'err', text: j.error || 'Grant failed.' })
         return
       }
-      const base = `${credits} credit(s) added to ${j.recipientEmail}. Balance now ${j.creditsRemaining}. ${
+      const base = `${reviewCount(brand, Number(credits))} added to ${j.recipientEmail}. Balance now ${j.creditsRemaining}. ${
         j.emailed ? 'They have been emailed.' : 'Note: the notification email did not send.'
       }`
       setMsg({ kind: j.warning ? 'warn' : 'ok', text: j.warning ? `${base} ${j.warning}` : base })
@@ -305,7 +313,7 @@ function GrantCreditsPanel() {
         onClick={() => setOpen((o) => !o)}
         style={{ background: 'none', border: 'none', color: T.emeraldDark, fontWeight: 700, cursor: 'pointer', fontSize: 13, padding: 0 }}
       >
-        {open ? '▾' : '▸'} Grant credits to an account
+        {open ? '▾' : '▸'} Grant {v.reviews} to an account
       </button>
       {open && (
         <div style={{ marginTop: 12 }}>
@@ -316,7 +324,7 @@ function GrantCreditsPanel() {
               type="number"
               min={1}
               max={100}
-              placeholder="credits"
+              placeholder="how many"
               value={credits}
               onChange={(e) => setCredits(e.target.value)}
             />
@@ -329,7 +337,7 @@ function GrantCreditsPanel() {
           />
           <div style={{ marginTop: 10 }}>
             <Btn small onClick={grant} disabled={busy || !email.trim() || !credits}>
-              {busy ? 'Granting…' : 'Grant credits'}
+              {busy ? 'Granting…' : `Grant ${v.reviews}`}
             </Btn>
           </div>
           <p style={{ fontSize: 11.5, color: T.muted, marginTop: 8 }}>

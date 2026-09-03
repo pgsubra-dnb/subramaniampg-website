@@ -9,6 +9,8 @@
  *   Key Result   → Sub-goal   (short form too — no "KR")
  *   OKR          → Goal Plan
  *   OKR Ally     → Goal Ally
+ *   credit       → OKR Review / Goal Review   (the purchasable review unit,
+ *                  as shown to the user — the DB column stays `credits_remaining`)
  *
  * This is a vocabulary layer, not a data change. Database columns
  * (`submissions.objective`, `krs`, `context_snapshot.*`) and the review tool
@@ -65,6 +67,13 @@ export interface BrandVocab {
   planLower: string
   /** Plural of `plan`, with the historical casing — "OKRs" / "Goal Plans". */
   planPlural: string
+  /** The purchasable review unit as SHOWN TO THE USER — replaces the display
+   *  word "credit". Title-case: "OKR Review" / "Goal Review". This never
+   *  renames `credits_remaining`, `credit_transactions`, or any variable —
+   *  it is copy only. */
+  review: string
+  /** Plural — "OKR Reviews" / "Goal Reviews". */
+  reviews: string
 }
 
 const OKR_ALLY: BrandVocab = {
@@ -82,6 +91,8 @@ const OKR_ALLY: BrandVocab = {
   plan: 'OKR',
   planLower: 'OKR',
   planPlural: 'OKRs',
+  review: 'OKR Review',
+  reviews: 'OKR Reviews',
 }
 
 const GOAL_ALLY: BrandVocab = {
@@ -99,6 +110,8 @@ const GOAL_ALLY: BrandVocab = {
   plan: 'Goal Plan',
   planLower: 'goal plan',
   planPlural: 'Goal Plans',
+  review: 'Goal Review',
+  reviews: 'Goal Reviews',
 }
 
 export const VOCAB: Record<Brand, BrandVocab> = {
@@ -109,4 +122,12 @@ export const VOCAB: Record<Brand, BrandVocab> = {
 /** Vocabulary for a brand. `vocab()` with no argument is the default (OKR Ally). */
 export function vocab(brand: Brand = DEFAULT_BRAND): BrandVocab {
   return VOCAB[brand]
+}
+
+/** Grammatical count of the review unit — "1 OKR Review", "3 OKR Reviews",
+ *  "1 Goal Review", "3 Goal Reviews". The user-facing replacement for
+ *  `${n} credit${n === 1 ? '' : 's'}`. */
+export function reviewCount(brand: Brand, n: number): string {
+  const v = vocab(brand)
+  return `${n} ${n === 1 ? v.review : v.reviews}`
 }

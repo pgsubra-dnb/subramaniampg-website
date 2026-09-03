@@ -8,6 +8,8 @@ import type {
   SuggestedOkrOption,
 } from '@/lib/okrAllyReview'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
+import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
+import { tokens } from '@/lib/okrAllyTokens'
 
 /**
  * OKR Ally — admin (expert) review screen (design doc §4 / §9 / §12).
@@ -579,11 +581,14 @@ ${bodyText
 const GRANT_MAX = 100
 
 export interface GrantCreditsInput {
-  /** Recipient's email — must already have an OKR Ally account. */
+  /** Recipient's email — must already have an account. */
   email: string
   credits: number
   /** Optional audit note stored on the credit_transactions row. */
   note?: string | null
+  /** Which surface the admin was on — vocabulary for the notification email.
+   *  Defaults to 'okr_ally'. */
+  brand?: Brand
 }
 
 export type GrantCreditsResult =
@@ -660,22 +665,23 @@ export async function grantCreditsAsAdmin(
     return bal.rows[0].credits_remaining
   })
 
-  const plural = credits === 1 ? 'credit' : 'credits'
+  const v = vocab(input.brand ?? DEFAULT_BRAND)
+  const unit = credits === 1 ? v.review : v.reviews
   const emailed = await sendBrevoEmail({
     to: recipient.email,
     toName: recipient.name,
-    subject: `${credits} review ${plural} added to your OKR Ally account`,
+    subject: `${credits} ${unit} added to your ${v.product} account`,
     htmlContent: `
-      <div style="font-family:Inter,Arial,sans-serif;color:#2C2C2A;line-height:1.6;">
-        <p><strong>${credits} review ${plural}</strong> ${credits === 1 ? 'has' : 'have'} been added to your OKR Ally account.</p>
+      <div style="font-family:Inter,Arial,sans-serif;color:${tokens.textPrimary};line-height:1.6;">
+        <p><strong>${credits} ${unit}</strong> ${credits === 1 ? 'has' : 'have'} been added to your ${v.product} account.</p>
         <p>Your balance is now <strong>${creditsRemaining}</strong>. Sign in at
-          <a href="https://subramaniampg.guru/okr-ally">subramaniampg.guru/okr-ally</a> to use them.</p>
-        ${note ? `<p style="font-size:13px;color:#6b6b66;">Note: ${note.replace(/</g, '&lt;')}</p>` : ''}
-        <p style="font-size:13px;color:#6b6b66;">— Subramaniam P G</p>
+          <a href="https://subramaniampg.guru${v.path}">subramaniampg.guru${v.path}</a> to use them.</p>
+        ${note ? `<p style="font-size:13px;color:${tokens.textSecondary};">Note: ${note.replace(/</g, '&lt;')}</p>` : ''}
+        <p style="font-size:13px;color:${tokens.textSecondary};">— Subramaniam P G</p>
       </div>`,
     textContent:
-      `${credits} review ${plural} ${credits === 1 ? 'has' : 'have'} been added to your OKR Ally account. ` +
-      `Your balance is now ${creditsRemaining}. Sign in at https://subramaniampg.guru/okr-ally to use them.` +
+      `${credits} ${unit} ${credits === 1 ? 'has' : 'have'} been added to your ${v.product} account. ` +
+      `Your balance is now ${creditsRemaining}. Sign in at https://subramaniampg.guru${v.path} to use them.` +
       (note ? `\n\nNote: ${note}` : ''),
     // PGS performed this grant himself from the admin screen — no self-BCC.
     // (A real purchase still copies him: invoice + "credits are ready".)

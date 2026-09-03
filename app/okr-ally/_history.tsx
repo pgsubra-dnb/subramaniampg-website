@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { AllyRow, T } from './_ui'
+import { type Brand, DEFAULT_BRAND, reviewCount } from '@/lib/okrAllyBrand'
 
 interface Item {
   submissionId: string
@@ -45,7 +46,13 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
   )
 }
 
-export default function HistoryTab({ onOpen }: { onOpen: (submissionId: string) => void }) {
+export default function HistoryTab({
+  onOpen,
+  brand = DEFAULT_BRAND,
+}: {
+  onOpen: (submissionId: string) => void
+  brand?: Brand
+}) {
   const [items, setItems] = useState<Item[] | null>(null)
   const [account, setAccount] = useState<{ purchases: Purchase[]; invoices: Invoice[] } | null>(null)
   const [q, setQ] = useState('')
@@ -156,7 +163,7 @@ export default function HistoryTab({ onOpen }: { onOpen: (submissionId: string) 
             }}
           >
             <span style={{ color: T.charcoal }}>
-              Bought {p.credits} credit{p.credits === 1 ? '' : 's'}
+              Bought {reviewCount(brand, p.credits)}
             </span>
             <span style={{ color: T.muted, fontSize: 12 }}>{fmtDate(p.date)}</span>
           </div>

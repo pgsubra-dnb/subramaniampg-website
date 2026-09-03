@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { AllyRow, Btn, T } from './_ui'
+import { type Brand, DEFAULT_BRAND, vocab, reviewCount } from '@/lib/okrAllyBrand'
 
 /**
  * Company Admin screen — visible only to `is_org_admin` (the tab itself is
@@ -55,7 +56,14 @@ const card: React.CSSProperties = {
 const fmtDate = (s: string) =>
   new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 
-export default function OrgAdminScreen({ onPoolChange }: { onPoolChange?: () => void }) {
+export default function OrgAdminScreen({
+  onPoolChange,
+  brand = DEFAULT_BRAND,
+}: {
+  onPoolChange?: () => void
+  brand?: Brand
+}) {
+  const v = vocab(brand)
   const [status, setStatus] = useState<OrgStatus | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -84,8 +92,8 @@ export default function OrgAdminScreen({ onPoolChange }: { onPoolChange?: () => 
   return (
     <div>
       <AllyRow>
-        You&apos;re the admin for <strong>{status.organization.name}</strong>. Buy credits on the{' '}
-        <a href="/okr-ally/corporate" style={{ color: T.emeraldDark, fontWeight: 600 }}>
+        You&apos;re the admin for <strong>{status.organization.name}</strong>. Buy {v.reviews} on the{' '}
+        <a href={`${v.path}/corporate`} style={{ color: T.emeraldDark, fontWeight: 600 }}>
           corporate page
         </a>
         , then hand them to your team here.
@@ -98,13 +106,13 @@ export default function OrgAdminScreen({ onPoolChange }: { onPoolChange?: () => 
       </div>
 
       <ContextPanel status={status} onDone={refresh} />
-      <AllocatePanel available={status.poolAvailable} onDone={refresh} />
-      <ReclaimPanel onDone={refresh} />
-      <ReportPanel />
+      <AllocatePanel available={status.poolAvailable} brand={brand} onDone={refresh} />
+      <ReclaimPanel brand={brand} onDone={refresh} />
+      <ReportPanel brand={brand} />
 
       <p style={{ fontSize: 11.5, color: T.muted, marginTop: 4 }}>
-        GSTIN {status.organization.gstin}. Company-allocated credits are tracked separately from each
-        employee&apos;s personal credits and never touch them.
+        GSTIN {status.organization.gstin}. Company-allocated {v.reviews} are tracked separately from each
+        employee&apos;s personal {v.reviews} and never touch them.
       </p>
     </div>
   )
@@ -227,7 +235,16 @@ function ContextPanel({ status, onDone }: { status: OrgStatus; onDone: () => voi
   )
 }
 
-function AllocatePanel({ available, onDone }: { available: number; onDone: () => void }) {
+function AllocatePanel({
+  available,
+  brand,
+  onDone,
+}: {
+  available: number
+  brand: Brand
+  onDone: () => void
+}) {
+  const v = vocab(brand)
   const [email, setEmail] = useState('')
   const [credits, setCredits] = useState('1')
   const [busy, setBusy] = useState(false)
@@ -240,7 +257,7 @@ function AllocatePanel({ available, onDone }: { available: number; onDone: () =>
       const res = await fetch('/api/okr-ally/org/allocate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), credits: Number(credits) }),
+        body: JSON.stringify({ email: email.trim(), credits: Number(credits), brand }),
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -250,7 +267,7 @@ function AllocatePanel({ available, onDone }: { available: number; onDone: () =>
       setMsg({
         kind: 'ok',
         text:
-          `${j.credits} credit${j.credits === 1 ? '' : 's'} allocated to ${j.email} ` +
+          `${reviewCount(brand, j.credits)} allocated to ${j.email} ` +
           `(their company balance: ${j.employeeOrgBalance}; pool left: ${j.poolAvailable}). ` +
           (j.emailed ? 'They have been emailed.' : 'Note: the notification email did not send.'),
       })
@@ -267,7 +284,7 @@ function AllocatePanel({ available, onDone }: { available: number; onDone: () =>
   return (
     <div style={card}>
       <div style={{ fontWeight: 700, fontSize: 13.5, color: T.charcoal, marginBottom: 10 }}>
-        Allocate credits to an employee
+        Allocate {v.reviews} to an employee
       </div>
       <div className="grid gap-2" style={{ gridTemplateColumns: '2fr 1fr' }}>
         <input style={input} placeholder="employee email" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -275,7 +292,7 @@ function AllocatePanel({ available, onDone }: { available: number; onDone: () =>
           style={input}
           type="number"
           min={1}
-          placeholder="credits"
+          placeholder="how many"
           value={credits}
           onChange={(e) => setCredits(e.target.value)}
         />
@@ -288,14 +305,15 @@ function AllocatePanel({ available, onDone }: { available: number; onDone: () =>
       </div>
       <p style={{ fontSize: 11.5, color: T.muted, marginTop: 8 }}>
         Creates the account if it doesn&apos;t exist. The employee is emailed. Their reviews spend these
-        before any personal credits.
+        before any personal {v.reviews}.
       </p>
       <Msg m={msg} />
     </div>
   )
 }
 
-function ReclaimPanel({ onDone }: { onDone: () => void }) {
+function ReclaimPanel({ brand, onDone }: { brand: Brand; onDone: () => void }) {
+  const v = vocab(brand)
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
@@ -307,7 +325,7 @@ function ReclaimPanel({ onDone }: { onDone: () => void }) {
       const res = await fetch('/api/okr-ally/org/reclaim', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email: email.trim(), brand }),
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -318,8 +336,8 @@ function ReclaimPanel({ onDone }: { onDone: () => void }) {
         kind: 'ok',
         text:
           j.reclaimed > 0
-            ? `Reclaimed ${j.reclaimed} unused credit${j.reclaimed === 1 ? '' : 's'} from ${j.email}. Pool now: ${j.poolAvailable}.`
-            : `${j.email} has no unused credits to reclaim. Credits already spent on reviews are not clawed back.`,
+            ? `Reclaimed ${reviewCount(brand, j.reclaimed)} from ${j.email} — unused, back in the pool. Pool now: ${j.poolAvailable}.`
+            : `${j.email} has no unused ${v.reviews} to reclaim. Anything already spent on a review isn't clawed back.`,
       })
       setEmail('')
       onDone()
@@ -333,7 +351,7 @@ function ReclaimPanel({ onDone }: { onDone: () => void }) {
   return (
     <div style={card}>
       <div style={{ fontWeight: 700, fontSize: 13.5, color: T.charcoal, marginBottom: 10 }}>
-        Reclaim unused credits
+        Reclaim unused {v.reviews}
       </div>
       <div className="flex gap-2">
         <input style={input} placeholder="employee email" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -342,14 +360,14 @@ function ReclaimPanel({ onDone }: { onDone: () => void }) {
         </Btn>
       </div>
       <p style={{ fontSize: 11.5, color: T.muted, marginTop: 8 }}>
-        Returns only what&apos;s still unused to the pool. Spent credits stay spent.
+        Returns only what&apos;s still unused to the pool. Spent {v.reviews} stay spent.
       </p>
       <Msg m={msg} />
     </div>
   )
 }
 
-function ReportPanel() {
+function ReportPanel({ brand }: { brand: Brand }) {
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [report, setReport] = useState<Report | null>(null)
@@ -360,7 +378,7 @@ function ReportPanel() {
     setErr(null)
     setReport(null)
     try {
-      const res = await fetch(`/api/okr-ally/org/report?email=${encodeURIComponent(email.trim())}`)
+      const res = await fetch(`/api/okr-ally/org/report?email=${encodeURIComponent(email.trim())}&brand=${brand}`)
       const j = await res.json().catch(() => ({}))
       if (!res.ok) {
         setErr(j.error || 'Could not load the report.')
@@ -414,7 +432,7 @@ function ReportPanel() {
           )}
           <div style={{ marginTop: 12 }}>
             <a
-              href={`/api/okr-ally/org/report/pdf?email=${encodeURIComponent(report.email)}`}
+              href={`/api/okr-ally/org/report/pdf?email=${encodeURIComponent(report.email)}&brand=${brand}`}
               target="_blank"
               rel="noopener noreferrer"
             >

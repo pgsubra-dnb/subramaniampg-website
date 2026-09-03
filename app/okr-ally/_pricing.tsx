@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { AllyRow, Btn, T } from './_ui'
 import { GST_STATES, GSTIN_RE } from '@/lib/indiaGstStates'
+import { type Brand, DEFAULT_BRAND, vocab, reviewCount } from '@/lib/okrAllyBrand'
 
 interface Pack {
   id: string
@@ -36,7 +37,14 @@ const money = (n: number) => `₹${n.toLocaleString('en-IN')}`
  */
 const SHOW_COUPON_FIELD = false
 
-export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: number) => void }) {
+export default function PricingTab({
+  onBalanceChange,
+  brand = DEFAULT_BRAND,
+}: {
+  onBalanceChange: (n: number) => void
+  brand?: Brand
+}) {
+  const v = vocab(brand)
   const [status, setStatus] = useState<Status | null>(null)
   const [state, setState] = useState('')
   const [gstin, setGstin] = useState('')
@@ -106,6 +114,7 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           pack: pack.id,
+          brand,
           buyerState: state,
           buyerGstin: gstin.trim() || undefined,
           couponCode: couponApplied?.code,
@@ -118,7 +127,7 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
         return
       }
       if (order.free) {
-        setMsg({ kind: 'ok', text: `${order.credits} credit(s) added.` })
+        setMsg({ kind: 'ok', text: `${reviewCount(brand, order.credits)} added.` })
         refresh()
         setBusy(null)
         return
@@ -129,8 +138,8 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
         key: order.keyId,
         amount: order.amount,
         currency: 'INR',
-        name: 'OKR Ally',
-        description: `${order.credits} review credit${order.credits > 1 ? 's' : ''}`,
+        name: v.product,
+        description: reviewCount(brand, order.credits),
         order_id: order.orderId,
         prefill: order.prefill,
         theme: { color: T.primary },
@@ -144,7 +153,7 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
           if (vj.success) {
             setMsg({
               kind: 'ok',
-              text: `Payment confirmed — ${order.credits} credit${order.credits > 1 ? 's' : ''} added. Your GST invoice is on its way by email.`,
+              text: `Payment confirmed — ${reviewCount(brand, order.credits)} added. Your GST invoice is on its way by email.`,
             })
             refresh()
           } else {
@@ -181,16 +190,16 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
   return (
     <div>
       <AllyRow>
-        You have <strong>{status.creditsRemaining}</strong> review credit
-        {status.creditsRemaining === 1 ? '' : 's'}.
+        You have <strong>{status.creditsRemaining}</strong>{' '}
+        {status.creditsRemaining === 1 ? v.review : v.reviews}.
         {status.orgCredits.length > 0 && (
           <span style={{ display: 'block', marginTop: 4, fontSize: 12.5, opacity: 0.85 }}>
             {status.personalCredits} personal ·{' '}
-            {status.orgCredits.map((o) => `${o.credits} from ${o.name}`).join(' · ')}. Company credits are
-            spent first.
+            {status.orgCredits.map((o) => `${o.credits} from ${o.name}`).join(' · ')}. Company{' '}
+            {v.reviews} are spent first.
           </span>
         )}
-        {status.freeReviewAvailable && ' Your first review is free — no credit needed.'}
+        {status.freeReviewAvailable && ` Your first review is free — it doesn't use an ${v.review}.`}
       </AllyRow>
 
       {msg && (
@@ -222,7 +231,7 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
             >
               <div style={{ fontFamily: 'var(--font-inter), sans-serif', fontWeight: 600, fontSize: 15 }}>{p.label}</div>
               <div style={{ fontSize: 12.5, opacity: 0.85 }}>
-                {p.credits} review{p.credits > 1 ? 's' : ''} · {money(price.perReview ?? p.base / p.credits)}/review
+                {reviewCount(brand, p.credits)} · {money(price.perReview ?? p.base / p.credits)} each
               </div>
               <div style={{ fontSize: 20, fontWeight: 700, marginTop: 8, fontFamily: 'var(--font-inter), sans-serif' }}>
                 {money(price.total)}
@@ -317,7 +326,7 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
       </p>
 
       <a
-        href="/okr-ally/corporate"
+        href={`${v.path}/corporate`}
         style={{
           display: 'block',
           marginTop: 18,
@@ -329,10 +338,10 @@ export default function PricingTab({ onBalanceChange }: { onBalanceChange: (n: n
         }}
       >
         <div style={{ fontFamily: 'var(--font-inter), sans-serif', fontWeight: 600, fontSize: 15, color: T.bubbleText }}>
-          Looking for team or company credits?
+          Looking for team or company {v.reviews}?
         </div>
         <div style={{ fontSize: 12.5, color: T.bubbleText, opacity: 0.85, marginTop: 4 }}>
-          Buy a pool of 100, 200 or 500 credits against your company GSTIN and hand them to your team.
+          Buy a pool of 100, 200 or 500 {v.reviews} against your company GSTIN and hand them to your team.
           One GST invoice, one admin, clean cost reporting.
         </div>
         <div style={{ fontSize: 12.5, fontWeight: 700, color: T.emeraldDark, marginTop: 8 }}>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/okrAlly'
 import { getEmployeeOrgReport, OrgError } from '@/lib/okrAllyOrg'
+import { toBrand, vocab } from '@/lib/okrAllyBrand'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,9 +11,10 @@ export async function GET(req: NextRequest) {
   const user = await getSessionUser(req)
   if (!user) return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
   const email = req.nextUrl.searchParams.get('email') ?? ''
+  const v = vocab(toBrand(req.nextUrl.searchParams.get('brand')))
   try {
     const report = await getEmployeeOrgReport(user, email)
-    if (!report) return NextResponse.json({ error: 'Your organization has not allocated credits to that email.' }, { status: 404 })
+    if (!report) return NextResponse.json({ error: `Your organization has not allocated ${v.reviews} to that email.` }, { status: 404 })
     return NextResponse.json(report)
   } catch (e) {
     if (e instanceof OrgError) {

@@ -6,6 +6,7 @@ import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 import { pdfSafe } from '@/lib/okrAllyReport'
 import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
 import { tokens } from '@/lib/okrAllyTokens'
+import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
 
 /**
  * OKR Ally — self-serve corporate / organization credits (migration 009).
@@ -63,6 +64,9 @@ const ALLOC_MAX = 5000
 // ─── Corporate purchase fulfilment (verify-payment + webhook) ──────────────
 
 export interface FulfilCorporateInput {
+  /** Which surface the purchase came through — sets the vocabulary in the
+   *  admin-welcome email and on the invoice line item. Defaults to 'okr_ally'. */
+  brand?: Brand
   purchaserUserId: string
   purchaserName: string
   purchaserEmail: string
@@ -170,6 +174,8 @@ async function alertCorporateInvoiceUnissued(
 export async function fulfilCorporatePurchase(
   input: FulfilCorporateInput
 ): Promise<FulfilCorporateResult> {
+  const brand: Brand = input.brand ?? DEFAULT_BRAND
+  const v = vocab(brand)
   try {
     assertFulfillmentAllowed('okr-ally corporate fulfil', input.razorpayPaymentId, input.razorpayOrderId)
   } catch (e) {
@@ -249,8 +255,9 @@ export async function fulfilCorporatePurchase(
         placeOfSupply: input.placeOfSupply,
         buyerName: input.companyName.trim(),
         buyerEmail: input.purchaserEmail,
-        serviceLabel: `OKR Ally — corporate review credits (${input.credits})`,
-        emailDescriptor: `for ${input.companyName.trim()}'s OKR Ally credit bundle`,
+        brand,
+        serviceLabel: `${v.product} — corporate ${v.reviews} (${input.credits})`,
+        emailDescriptor: `for ${input.companyName.trim()}'s pool of ${v.reviews}`,
       })
       if (inv.ok) invoiceNumber = inv.invoice.invoice_number
       else await alertCorporateInvoiceUnissued(input, txnResult.organizationId, `soft-fail (${inv.reason})`)
@@ -274,29 +281,30 @@ export async function fulfilCorporatePurchase(
       const company = input.companyName.trim()
       const pool = txnResult.creditsPurchased ?? input.credits
       const added = input.credits
+      const addedUnit = added === 1 ? v.review : v.reviews
       adminNotified = await sendBrevoEmail({
         to: input.adminEmail,
         toName: company,
-        subject: `You're the OKR Ally admin for ${company}`,
+        subject: `You're the ${v.product} admin for ${company}`,
         htmlContent: `
           <div style="font-family:Inter,Arial,sans-serif;color:${tokens.textPrimary};line-height:1.6;">
-            <p>${company} has bought a pool of OKR Ally review credits, and this email address is its admin.</p>
-            <p>This purchase added <strong>${added}</strong> credit${added === 1 ? '' : 's'} &mdash; the pool now holds <strong>${pool}</strong>.</p>
+            <p>${company} has bought a pool of ${v.product} ${v.reviews}, and this email address is its admin.</p>
+            <p>This purchase added <strong>${added}</strong> ${addedUnit} &mdash; the pool now holds <strong>${pool}</strong>.</p>
             <p>Your first step is to set your company's shared context — your team can't run reviews until you publish it.</p>
             <p>
-              <a href="https://subramaniampg.guru/okr-ally?tab=company" style="background:${tokens.primary};color:${tokens.onPrimary};padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
+              <a href="https://subramaniampg.guru${v.path}?tab=company" style="background:${tokens.primary};color:${tokens.onPrimary};padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
                 Set up your company
               </a>
             </p>
-            <p style="font-size:13px;color:${tokens.textSecondary};">Sign in with this email address — it opens straight to the Company tab, where you set the context, allocate credits to your team, and see usage.</p>
+            <p style="font-size:13px;color:${tokens.textSecondary};">Sign in with this email address — it opens straight to the Company tab, where you set the context, allocate ${v.reviews} to your team, and see usage.</p>
             <p style="font-size:13px;color:${tokens.textSecondary};">&mdash; Subramaniam P G</p>
           </div>`,
         textContent:
-          `${company} has bought a pool of OKR Ally review credits, and this email address is its admin. ` +
-          `This purchase added ${added} credit${added === 1 ? '' : 's'} — the pool now holds ${pool}.\n\n` +
+          `${company} has bought a pool of ${v.product} ${v.reviews}, and this email address is its admin. ` +
+          `This purchase added ${added} ${addedUnit} — the pool now holds ${pool}.\n\n` +
           `Your first step is to set your company's shared context — your team can't run reviews until you publish it. ` +
-          `Sign in with this email address at:\n\nhttps://subramaniampg.guru/okr-ally?tab=company\n\n` +
-          `That opens straight to the Company tab, where you set the context, allocate credits, and see usage.`,
+          `Sign in with this email address at:\n\nhttps://subramaniampg.guru${v.path}?tab=company\n\n` +
+          `That opens straight to the Company tab, where you set the context, allocate ${v.reviews}, and see usage.`,
       })
     } catch (err) {
       console.error('OKR Ally corporate admin-notification failed:', input.razorpayPaymentId, err)
@@ -467,8 +475,9 @@ export type AllocateOutcome = AllocateResult | { ok: false; error: string }
  */
 export async function allocateOrgCredits(
   user: OkrAllyUser,
-  input: { email: string; credits: number }
+  input: { email: string; credits: number; brand?: Brand }
 ): Promise<AllocateOutcome> {
+  const v = vocab(input.brand ?? DEFAULT_BRAND)
   const orgId = requireOrgAdmin(user)
   const email = (input.email || '').trim().toLowerCase()
   if (!EMAIL_RE.test(email)) return { ok: false, error: 'Enter a valid employee email address.' }
@@ -491,7 +500,7 @@ export async function allocateOrgCredits(
       const available = o.credits_purchased - o.credits_allocated
       if (credits > available) {
         throw new Rollback(
-          `Only ${available} credit${available === 1 ? '' : 's'} left in the pool. Buy more, or reclaim unused credits first.`
+          `Only ${available === 1 ? `1 ${v.review}` : `${available} ${v.reviews}`} left in the pool. Buy more, or reclaim unused ${v.reviews} first.`
         )
       }
 
@@ -525,21 +534,21 @@ export async function allocateOrgCredits(
   }
 
   const ctx = await getOrgAdminContext(user)
-  const plural = credits === 1 ? 'credit' : 'credits'
+  const unit = credits === 1 ? v.review : v.reviews
   const emailed = await sendBrevoEmail({
     to: recipient.email,
     toName: recipient.name,
-    subject: `${credits} OKR Ally review ${plural} from ${ctx.organization.name}`,
+    subject: `${credits} ${unit} from ${ctx.organization.name}`,
     htmlContent: `
       <div style="font-family:Inter,Arial,sans-serif;color:${tokens.textPrimary};line-height:1.6;">
-        <p><strong>${ctx.organization.name}</strong> has given you <strong>${credits} OKR Ally review ${plural}</strong>.</p>
-        <p>Sign in at <a href="https://subramaniampg.guru/okr-ally">subramaniampg.guru/okr-ally</a> with this email address to use them. These are separate from any personal credits you may have — your reviews spend the company credits first.</p>
+        <p><strong>${ctx.organization.name}</strong> has given you <strong>${credits} ${unit}</strong> in ${v.product}.</p>
+        <p>Sign in at <a href="https://subramaniampg.guru${v.path}">subramaniampg.guru${v.path}</a> with this email address to use them. These are separate from any ${v.reviews} you bought yourself — your reviews spend the company ones first.</p>
         <p style="font-size:13px;color:${tokens.textSecondary};">— Subramaniam P G</p>
       </div>`,
     textContent:
-      `${ctx.organization.name} has given you ${credits} OKR Ally review ${plural}. ` +
-      `Sign in at https://subramaniampg.guru/okr-ally with this email address to use them. ` +
-      `They are separate from any personal credits; your reviews spend the company credits first.`,
+      `${ctx.organization.name} has given you ${credits} ${unit} in ${v.product}. ` +
+      `Sign in at https://subramaniampg.guru${v.path} with this email address to use them. ` +
+      `They are separate from any ${v.reviews} you bought yourself; your reviews spend the company ones first.`,
     // An org admin allocating from their own pool is not a payment event —
     // PGS is not copied. The corporate purchase itself (invoice + the
     // "you're the admin" email) already copied him.
@@ -575,8 +584,9 @@ export type ReclaimOutcome = ReclaimResult | { ok: false; error: string }
  */
 export async function reclaimOrgCredits(
   user: OkrAllyUser,
-  input: { email: string }
+  input: { email: string; brand?: Brand }
 ): Promise<ReclaimOutcome> {
+  const v = vocab(input.brand ?? DEFAULT_BRAND)
   const orgId = requireOrgAdmin(user)
   const email = (input.email || '').trim().toLowerCase()
   if (!EMAIL_RE.test(email)) return { ok: false, error: 'Enter a valid employee email address.' }
@@ -591,7 +601,7 @@ export async function reclaimOrgCredits(
     [orgId, email]
   )
   if (Number(allocated.rows[0].n) === 0) {
-    return { ok: false, error: 'Your organization has not allocated credits to that email.' }
+    return { ok: false, error: `Your organization has not allocated ${v.reviews} to that email.` }
   }
 
   const out = await withTransaction(async (client) => {
@@ -714,7 +724,11 @@ export async function getEmployeeOrgReport(
 }
 
 /** The usage report as a PDF (jsPDF, same font conventions as the review report). */
-export async function renderOrgReportPdf(report: EmployeeOrgReport): Promise<Buffer> {
+export async function renderOrgReportPdf(
+  report: EmployeeOrgReport,
+  brand: Brand = DEFAULT_BRAND
+): Promise<Buffer> {
+  const v = vocab(brand)
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const M = 18
@@ -723,7 +737,7 @@ export async function renderOrgReportPdf(report: EmployeeOrgReport): Promise<Buf
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(15)
-  doc.text('OKR Ally — Credit usage report', M, y)
+  doc.text(`${v.product} — ${v.review} usage report`, M, y)
   y += 8
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)
@@ -742,7 +756,7 @@ export async function renderOrgReportPdf(report: EmployeeOrgReport): Promise<Buf
   y += 10
 
   const rows: [string, string][] = [
-    ['Allocated by this organization', String(report.allocated)],
+    [`${v.reviews} allocated by this organization`, String(report.allocated)],
     ['Used on reviews', String(report.used)],
     ['Reclaimed by this organization', String(report.reclaimed)],
     ['Remaining', String(report.remaining)],

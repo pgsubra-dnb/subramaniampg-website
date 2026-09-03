@@ -3,6 +3,7 @@ import Razorpay from 'razorpay'
 import { getSessionUser, getCreditsRemaining } from '@/lib/okrAlly'
 import { getPack, gstBreakdown, validateCoupon } from '@/lib/okrAllyBilling'
 import { GST_STATES, stateCode, GSTIN_RE } from '@/lib/indiaGstStates'
+import { toBrand, vocab } from '@/lib/okrAllyBrand'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,6 +34,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}))
+    const brand = toBrand(body.brand)
     const pack = getPack(body.pack)
     if (!pack) {
       return NextResponse.json({ error: 'Unknown pack' }, { status: 400 })
@@ -57,8 +59,7 @@ export async function POST(req: NextRequest) {
     if (amountInPaise < 100) {
       return NextResponse.json(
         {
-          error:
-            'This coupon covers a full review at no cost. You don’t need to buy credits — start your review and enter the code there.',
+          error: `This coupon covers a full review at no cost. You don’t need to buy ${vocab(brand).reviews} — start your review and enter the code there.`,
           applyAtSubmission: true,
         },
         { status: 400 }
@@ -96,6 +97,7 @@ export async function POST(req: NextRequest) {
       receipt: `okr_${Date.now()}_${user.id.slice(0, 8)}`.slice(0, 40),
       notes: {
         app: 'okr-ally',
+        brand,
         userId: user.id,
         pack: pack.id,
         credits: String(pack.credits),
