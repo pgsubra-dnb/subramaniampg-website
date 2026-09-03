@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/okrAlly'
 import { getEmployeeOrgReport, renderOrgReportPdf, OrgError } from '@/lib/okrAllyOrg'
+import { toBrand } from '@/lib/okrAllyBrand'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,7 +13,7 @@ export async function GET(req: NextRequest) {
   try {
     const report = await getEmployeeOrgReport(user, email)
     if (!report) return NextResponse.json({ error: 'Nothing to report for that email.' }, { status: 404 })
-    const bytes = await renderOrgReportPdf(report)
+    const bytes = await renderOrgReportPdf(report, toBrand(req.nextUrl.searchParams.get('brand')))
     return new NextResponse(new Uint8Array(bytes), {
       headers: {
         'Content-Type': 'application/pdf',

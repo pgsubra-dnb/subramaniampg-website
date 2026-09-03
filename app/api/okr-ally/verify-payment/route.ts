@@ -7,6 +7,8 @@ import { fulfilCorporatePurchase } from '@/lib/okrAllyOrg'
 import { createAndSendInvoice } from '@/lib/okrAllyInvoice'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
+import { toBrand, vocab } from '@/lib/okrAllyBrand'
+import { tokens } from '@/lib/okrAllyTokens'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,6 +58,8 @@ export async function POST(req: NextRequest) {
     })
     const order = await razorpay.orders.fetch(razorpay_order_id)
     const notes = (order.notes || {}) as Record<string, string>
+    const brand = toBrand(notes.brand)
+    const v = vocab(brand)
 
     // ── Corporate bundle: fulfil the org pool, tag the admin, invoice the company.
     // Idempotent with the webhook via the `org_purchase` unique index.
@@ -68,6 +72,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, reason: 'Order has no credits' }, { status: 400 })
       }
       const r = await fulfilCorporatePurchase({
+        brand,
         purchaserUserId: user.id,
         purchaserName: user.name,
         purchaserEmail: user.email,
@@ -117,18 +122,19 @@ export async function POST(req: NextRequest) {
     if (result.granted) {
       const settings = await getSiteSettings()
       const signoff = settings.legalBusinessName || 'Embiggen Consulting LLP'
+      const unit = credits === 1 ? v.review : v.reviews
       await sendBrevoEmail({
         to: user.email,
         toName: user.name,
-        subject: 'Your OKR Ally credits are ready',
+        subject: `Your ${v.reviews} are ready`,
         htmlContent: `
-          <div style="font-family:Inter,Arial,sans-serif;color:#2C2C2A;line-height:1.6;">
-            <p>Your payment is confirmed. <strong>${credits} review credit${credits > 1 ? 's' : ''}</strong> ${credits > 1 ? 'have' : 'has'} been added to your account.</p>
+          <div style="font-family:Inter,Arial,sans-serif;color:${tokens.textPrimary};line-height:1.6;">
+            <p>Your payment is confirmed. <strong>${credits} ${unit}</strong> ${credits > 1 ? 'have' : 'has'} been added to your account.</p>
             <p>Balance: <strong>${result.creditsRemaining}</strong>. Your GST invoice follows in a separate email.</p>
-            <p style="font-size:13px;color:#6b6b66;">Subramaniam P G &middot; ${signoff}</p>
+            <p style="font-size:13px;color:${tokens.textSecondary};">Subramaniam P G &middot; ${signoff}</p>
           </div>`,
         textContent:
-          `Your payment is confirmed. ${credits} review credit(s) added. ` +
+          `Your payment is confirmed. ${credits} ${unit} added. ` +
           `Balance: ${result.creditsRemaining}. Your GST invoice follows separately.`,
       })
     }
@@ -154,6 +160,7 @@ export async function POST(req: NextRequest) {
         placeOfSupply: notes.placeOfSupply,
         buyerName: user.name,
         buyerEmail: user.email,
+        brand,
       })
       if (inv.ok) invoiceNumber = inv.invoice.invoice_number
     } else {

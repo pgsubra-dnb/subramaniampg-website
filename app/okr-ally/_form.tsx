@@ -346,12 +346,12 @@ export default function StepForm({ initialForm, orgContext, brand = DEFAULT_BRAN
       setError(
         j.error ||
           (j.status === 'failed_refunded'
-            ? 'The review could not be generated. Your credit has been refunded — try again.'
+            ? `The review could not be generated. Your ${v.review} has been refunded — try again.`
             : 'Something went wrong. Please try again.')
       )
     } catch {
       setSubmitState('failed')
-      setError('Network problem reaching Ally. Your credit is safe — try again.')
+      setError(`Network problem reaching Ally. Your ${v.review} is safe — try again.`)
     }
   }
 
@@ -1095,8 +1095,9 @@ function ConfirmStep({
         className="rounded-lg p-4 mb-3 text-sm"
         style={{ background: T.goldTint, color: T.gold, lineHeight: 1.55 }}
       >
-        <strong>One review, one credit. No undo.</strong> Once you submit, a credit is used and the review runs.
-        There&apos;s no edit or self-serve refund after that (a failed generation refunds automatically).
+        <strong>Submitting spends one {vv.review}. No undo.</strong> Once you submit, the {vv.review} is used
+        and Ally generates your report. There&apos;s no edit or self-serve refund after that (a failed
+        generation refunds automatically).
       </div>
       <p className="text-xs italic mb-5" style={{ color: T.muted }}>
         The review reflects the quality of the context you gave me — thin context means a thinner review.

@@ -455,11 +455,20 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<C
 
     if (!created) return { ok: true, created: false, invoice: row }
 
+    // Line item: caller's explicit label wins; otherwise a Goal Ally invoice
+    // gets "Goal Ally — Goal Reviews", and everything else falls through to
+    // renderInvoicePdf's historical "OKR Ally — OKR review" default.
+    const lineLabel =
+      input.serviceLabel ??
+      (input.brand === 'goal_ally'
+        ? `${vocab('goal_ally').product} — ${vocab('goal_ally').reviews}`
+        : undefined)
+
     try {
       const pdfBase64 = await renderInvoicePdf(
         row,
         { name: input.buyerName, email: input.buyerEmail },
-        input.serviceLabel
+        lineLabel
       )
 
       // Store to Vercel Blob (step 7 — same store as the review report). Best
@@ -550,10 +559,7 @@ export async function createAndSendFreeReviewInvoice(input: {
     buyerName: input.buyerName,
     buyerEmail: input.buyerEmail,
     brand,
-    // okr_ally keeps its historical default line item ("OKR Ally — OKR review");
-    // Goal Ally's is spelled out per spec.
-    ...(brand === 'goal_ally'
-      ? { serviceLabel: `${v.product} — ${v.objective} review credits` }
-      : {}),
+    // okr_ally keeps its historical default line item ("OKR Ally — OKR review").
+    ...(brand === 'goal_ally' ? { serviceLabel: `${v.product} — ${v.reviews}` } : {}),
   })
 }

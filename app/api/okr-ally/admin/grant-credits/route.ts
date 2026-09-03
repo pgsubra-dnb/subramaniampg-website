@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/okrAlly'
 import { grantCreditsAsAdmin } from '@/lib/okrAllyAdmin'
+import { toBrand, vocab } from '@/lib/okrAllyBrand'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,10 +16,12 @@ export async function POST(req: NextRequest) {
   if (!user.is_admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const body = await req.json().catch(() => ({}))
+  const brand = toBrand(body.brand)
   const result = await grantCreditsAsAdmin(user, {
     email: typeof body.email === 'string' ? body.email : '',
     credits: Number(body.credits),
     note: typeof body.note === 'string' ? body.note : null,
+    brand,
   })
 
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 })
@@ -30,7 +33,7 @@ export async function POST(req: NextRequest) {
     recipientName: result.recipientName,
     emailed: result.emailed,
     ...(result.firstReviewPending
-      ? { warning: 'This account has not completed a review yet — the credits are still added.' }
+      ? { warning: `This account has not completed a review yet — the ${vocab(brand).reviews} are still added.` }
       : {}),
   })
 }

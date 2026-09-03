@@ -420,11 +420,13 @@ export function GeneratingIndicator({ brand = DEFAULT_BRAND }: { brand?: Brand }
   const GENERATING_STEPS = generatingSteps(vocab(brand))
   const [idx, setIdx] = useState(0)
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
+  // Timer schedule (the `.at` offsets) is identical for every brand; only the
+  // caption text differs, and that's read on render, not here.
+  const stepOffsets = generatingSteps(vocab('okr_ally')).map((s) => s.at)
   useEffect(() => {
-    timers.current = GENERATING_STEPS.slice(1).map((s, i) =>
-      setTimeout(() => setIdx(i + 1), s.at)
-    )
+    timers.current = stepOffsets.slice(1).map((at, i) => setTimeout(() => setIdx(i + 1), at))
     return () => timers.current.forEach(clearTimeout)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   return (
     <div className="flex gap-2.5 mb-4 items-end" style={{ animation: 'okraIn .35s ease both' }}>

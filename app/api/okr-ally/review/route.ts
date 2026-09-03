@@ -6,6 +6,7 @@ import { generateStoreAndEmailReport } from '@/lib/okrAllyReport'
 import { createAndSendFreeReviewInvoice } from '@/lib/okrAllyInvoice'
 import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
 import { getOrgContextForMember } from '@/lib/okrAllyOrg'
+import { vocab } from '@/lib/okrAllyBrand'
 import {
   validateInput,
   isRateLimited,
@@ -125,7 +126,7 @@ export async function POST(req: NextRequest) {
     }
     if (coupon.discountPercent !== 100) {
       return NextResponse.json(
-        { error: 'That coupon applies to credit packs, not a single review' },
+        { error: `That coupon applies to ${vocab(parsed.value.brand).review} packs, not a single review` },
         { status: 400 }
       )
     }
@@ -169,7 +170,7 @@ export async function POST(req: NextRequest) {
         error:
           charge === 'admin'
             ? 'The review could not be generated — please try again.'
-            : 'The review could not be generated. Your credit has been refunded — please try again.',
+            : `The review could not be generated. Your ${vocab(parsed.value.brand).review} has been refunded — please try again.`,
         detail: result.reason,
         refunded: charge,
       },

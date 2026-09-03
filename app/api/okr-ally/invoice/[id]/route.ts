@@ -36,7 +36,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       )
       const brand = toBrand(b.rows[0]?.brand)
       if (brand === 'goal_ally') {
-        serviceLabel = `${vocab(brand).product} — ${vocab(brand).objective} review credits`
+        serviceLabel = `${vocab(brand).product} — ${vocab(brand).reviews}`
       }
     }
     const pdfBase64 = await renderInvoicePdf(invoice, { name: user.name, email: user.email }, serviceLabel)

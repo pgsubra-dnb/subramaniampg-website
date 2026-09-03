@@ -3,6 +3,7 @@ import Razorpay from 'razorpay'
 import { getSessionUser } from '@/lib/okrAlly'
 import { getBundle, bundlePricing } from '@/lib/okrAllyOrg'
 import { GST_STATES, stateCode, GSTIN_RE } from '@/lib/indiaGstStates'
+import { toBrand, vocab } from '@/lib/okrAllyBrand'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,9 +22,15 @@ export const dynamic = 'force-dynamic'
 export async function POST(req: NextRequest) {
   try {
     const user = await getSessionUser(req)
-    if (!user) return NextResponse.json({ error: 'Sign in to buy corporate credits' }, { status: 401 })
-
     const body = await req.json().catch(() => ({}))
+    const brand = toBrand(body.brand)
+    if (!user) {
+      return NextResponse.json(
+        { error: `Sign in to buy corporate ${vocab(brand).reviews}` },
+        { status: 401 }
+      )
+    }
+
     const bundle = getBundle(body.bundle)
     if (!bundle) return NextResponse.json({ error: 'Choose one of the three bundles' }, { status: 400 })
 
@@ -68,6 +75,7 @@ export async function POST(req: NextRequest) {
       notes: {
         app: 'okr-ally',
         kind: 'corporate',
+        brand,
         purchaserUserId: user.id,
         adminEmail,
         companyName,

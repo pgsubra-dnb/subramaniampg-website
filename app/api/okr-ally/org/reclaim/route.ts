@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/okrAlly'
 import { reclaimOrgCredits, OrgError } from '@/lib/okrAllyOrg'
+import { toBrand } from '@/lib/okrAllyBrand'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,6 +14,7 @@ export async function POST(req: NextRequest) {
   try {
     const result = await reclaimOrgCredits(user, {
       email: typeof body.email === 'string' ? body.email : '',
+      brand: toBrand(body.brand),
     })
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 })
     return NextResponse.json(result)
