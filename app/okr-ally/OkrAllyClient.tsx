@@ -40,12 +40,6 @@ interface Status {
   links: { booking: string | null; substack: string | null; linkedin: string | null }
 }
 
-const VERIFY_ERROR: Record<string, string> = {
-  'invalid-link': 'That sign-in link isn’t valid. Enter your email below for a new one.',
-  'link-expired': 'That link has expired — they last 15 minutes. Enter your email for a new one.',
-  'server-error': 'Something went wrong signing you in. Try again below.',
-}
-
 export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand }) {
   const v = vocab(brand)
   const [phase, setPhase] = useState<Phase>('loading')
@@ -58,7 +52,6 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
   const [reportId, setReportId] = useState<string | null>(null)
   const [report, setReport] = useState<FullReport | null>(null)
   const [adminId, setAdminId] = useState<string | null>(null)
-  const [verifyError, setVerifyError] = useState<string | null>(null)
   const [roleWalkthrough, setRoleWalkthrough] = useState<RoleWalkthrough | null>(null)
 
   const isAdmin = !!me?.user?.isAdmin
@@ -135,11 +128,6 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
       setPhase('signedout')
       return
     }
-    const err = params.get('error')
-    if (err) {
-      setVerifyError(VERIFY_ERROR[err] || VERIFY_ERROR['invalid-link'])
-      window.history.replaceState({}, '', v.path)
-    }
     // `?tab=company` — the corporate admin-welcome email links here directly.
     const wantsCompanyTab = params.get('tab') === 'company'
     if (params.has('tab')) window.history.replaceState({}, '', v.path)
@@ -148,7 +136,7 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
         const m: Me = await (await fetch('/api/okr-ally/me')).json()
         setMe(m)
         if (!m.authenticated) {
-          setPhase(err ? 'email' : 'intro')
+          setPhase('intro')
           return
         }
         // A corporate admin whose org context isn't published yet has one real
@@ -343,7 +331,7 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
       {phase === 'walkthrough' && (
         <Walkthrough onBack={() => setPhase('intro')} onStart={() => setPhase('email')} />
       )}
-      {phase === 'email' && <EmailGate error={verifyError} brand={brand} />}
+      {phase === 'email' && <EmailGate brand={brand} />}
 
       {phase === 'app' && showingReport && (
         <>
@@ -650,8 +638,9 @@ function SignedOut({ brand, onContinue }: { brand: Brand; onContinue: () => void
 const RESEND_COOLDOWN_S = 60
 const MAX_RESENDS = 3
 
-function EmailGate({ error, brand }: { error: string | null; brand: Brand }) {
+function EmailGate({ brand }: { brand: Brand }) {
   const [email, setEmail] = useState('')
+  const [code, setCode] = useState('')
   const [sent, setSent] = useState(false)
   const [busy, setBusy] = useState(false)
   const [localErr, setLocalErr] = useState<string | null>(null)
@@ -681,28 +670,29 @@ function EmailGate({ error, brand }: { error: string | null; brand: Brand }) {
     setLocalErr(null)
     setJustResent(false)
     try {
-      const r = await fetch('/api/okr-ally/magic-link', {
+      const r = await fetch('/api/okr-ally/sign-in-code', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email, brand }),
       })
       if (r.status === 429) {
         const j = await r.json().catch(() => ({}))
-        setLocalErr(j.error || 'Too many sign-in links requested — please wait a few minutes.')
+        setLocalErr(j.error || 'Too many sign-in codes requested — please wait a few minutes.')
         return
       }
       if (!r.ok) {
-        setLocalErr('Could not send the link. Try again in a moment.')
+        setLocalErr('Could not send the code. Try again in a moment.')
         return
       }
       setSent(true)
+      setCode('')
       setCooldownEndsAt(Date.now() + RESEND_COOLDOWN_S * 1000)
       if (isResend) {
         setResends((n) => n + 1)
         setJustResent(true)
       }
     } catch {
-      setLocalErr('Could not send the link. Try again in a moment.')
+      setLocalErr('Could not send the code. Try again in a moment.')
     } finally {
       setBusy(false)
     }
@@ -710,25 +700,69 @@ function EmailGate({ error, brand }: { error: string | null; brand: Brand }) {
   const send = () => request(false)
   const resend = () => request(true)
 
+  async function verify() {
+    if (!/^\d{6}$/.test(code)) {
+      setLocalErr('Enter the 6-digit code from the email.')
+      return
+    }
+    setBusy(true)
+    setLocalErr(null)
+    setJustResent(false)
+    try {
+      const r = await fetch('/api/okr-ally/sign-in-code/verify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, code, brand }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (r.ok && j.ok) {
+        // Full reload so the load effect picks up the freshly-set session cookie.
+        window.location.assign(j.redirect || vocab(brand).path)
+        return
+      }
+      setLocalErr(j.error || 'That code isn’t right. Check it and try again, or request a new one.')
+    } catch {
+      setLocalErr('Something went wrong signing you in. Try again in a moment.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (sent) {
     const hitCap = resends >= MAX_RESENDS
     return (
       <>
         <AllyRow>
-          Check your inbox — I&apos;ve sent a sign-in link to <strong>{email}</strong>. It works once and expires in 15
-          minutes. Come back here after you click it.
+          I&apos;ve sent a 6-digit code to <strong>{email}</strong>. Enter it below — it expires in 10 minutes.
         </AllyRow>
-        <p style={{ fontSize: 12.5, color: T.muted, marginTop: 8 }}>
-          Didn&apos;t get it? Check your spam or junk folder{cooldown > 0 ? ', then resend it below' : ''}.
-        </p>
         {justResent && (
-          <p style={{ fontSize: 12.5, color: T.emeraldDark, marginTop: 4 }}>New link sent to {email}.</p>
+          <p style={{ fontSize: 12.5, color: T.emeraldDark, marginTop: 4 }}>New code sent to {email}.</p>
         )}
         {localErr && (
           <div className="mt-2 mb-1 text-sm rounded-lg px-4 py-3" style={{ background: T.errorLight, color: T.error, border: `1px solid ${T.errorBorder}` }}>
             {localErr}
           </div>
         )}
+        <div className="flex gap-2" style={{ marginTop: 10 }}>
+          <div className="flex-1">
+            <Field
+              value={code}
+              onChange={(x) => setCode(x.replace(/\D/g, '').slice(0, 6))}
+              placeholder="123456"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              ariaLabel="6-digit sign-in code"
+              onEnter={verify}
+              autoFocus
+            />
+          </div>
+          <Btn onClick={verify} disabled={busy || code.length !== 6}>
+            {busy ? 'Checking…' : 'Verify'}
+          </Btn>
+        </div>
+        <p style={{ fontSize: 12.5, color: T.muted, marginTop: 8 }}>
+          Didn&apos;t get it? Check your spam or junk folder{cooldown > 0 ? ', then resend it below' : ''}.
+        </p>
         <div style={{ marginTop: 10 }}>
           {hitCap ? (
             <p style={{ fontSize: 12.5, color: T.muted }}>
@@ -740,9 +774,17 @@ function EmailGate({ error, brand }: { error: string | null; brand: Brand }) {
             </p>
           ) : (
             <Btn variant="ghost" onClick={resend} disabled={busy || cooldown > 0}>
-              {busy ? 'Sending…' : cooldown > 0 ? `Resend link (${cooldown}s)` : 'Resend link'}
+              {busy ? 'Sending…' : cooldown > 0 ? `Resend code (${cooldown}s)` : 'Resend code'}
             </Btn>
           )}
+        </div>
+        <div style={{ marginTop: 6 }}>
+          <button
+            onClick={() => { setSent(false); setCode(''); setLocalErr(null); setJustResent(false) }}
+            style={{ background: 'none', border: 'none', color: T.emeraldDark, fontWeight: 600, cursor: 'pointer', fontSize: 12.5, padding: 0 }}
+          >
+            Use a different email
+          </button>
         </div>
       </>
     )
@@ -751,20 +793,20 @@ function EmailGate({ error, brand }: { error: string | null; brand: Brand }) {
   return (
     <>
       <AllyRow>
-        Before we start, what&apos;s your email? I&apos;ll send a one-time sign-in link — no password. It&apos;s how
+        Before we start, what&apos;s your email? I&apos;ll send a one-time 6-digit code — no password. It&apos;s how
         your history and {vocab(brand).reviews} stay with you.
       </AllyRow>
-      {(error || localErr) && (
+      {localErr && (
         <div className="mb-3 text-sm rounded-lg px-4 py-3" style={{ background: T.errorLight, color: T.error, border: `1px solid ${T.errorBorder}` }}>
-          {localErr || error}
+          {localErr}
         </div>
       )}
       <div className="flex gap-2">
         <div className="flex-1">
-          <Field value={email} onChange={setEmail} placeholder="you@company.com" autoFocus />
+          <Field value={email} onChange={setEmail} placeholder="you@company.com" autoComplete="email" onEnter={send} autoFocus />
         </div>
         <Btn onClick={send} disabled={busy}>
-          {busy ? 'Sending…' : 'Send link'}
+          {busy ? 'Sending…' : 'Send code'}
         </Btn>
       </div>
     </>

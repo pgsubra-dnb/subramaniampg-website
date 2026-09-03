@@ -128,7 +128,7 @@ const HOW_IT_WORKS: Slide[] = [
     h: 604,
     alt: 'The email sign-in step',
     caption:
-      "First, your email. I send a one-time sign-in link — no password to set or remember. It's how your reviews, credits and saved context stay tied to you between visits.",
+      "First, your email. I send a one-time 6-digit code — no password to set or remember. It's how your reviews, credits and saved context stay tied to you between visits.",
   },
   {
     kind: 'shot',

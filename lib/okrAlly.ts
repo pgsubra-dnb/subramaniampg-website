@@ -10,11 +10,12 @@ import { isAdminSessionToken, verifyAdminSession } from '@/lib/okrAllySession'
  * POSTGRES_URL). The OKR Ally tables live in the same Neon database that is
  * already linked to the Vercel project — see okr-ally-schema-migration.sql.
  *
- * Auth reuses the magic-link token primitives in lib/academy.ts as-is
- * (generateToken / storeMagicToken / verifyMagicToken, tokens in Sanity,
- * 15-minute expiry). What is new here: a successful verification resolves to
- * (or creates) a row in the Neon `users` table, and the session cookie holds
- * that Neon user's UUID — not a Sanity document id.
+ * Auth is a 6-digit sign-in code (lib/okrAllySanity.ts — generateSignInCode /
+ * storeSignInCode / verifySignInCode, hashed in the isolated `okr-ally` Sanity
+ * dataset, 10-minute expiry, 5-attempt cap). There is no magic-link URL. A
+ * successful verification resolves to (or creates) a row in the Neon `users`
+ * table, and the session cookie holds that Neon user's UUID — not a Sanity
+ * document id.
  */
 
 export const OKR_ALLY_SESSION_COOKIE = 'okr_ally_session'
@@ -104,7 +105,7 @@ function placeholderName(email: string): string {
 
 /**
  * Resolve the Neon users row for this email, creating it on first sight.
- * Called from the magic-link verify route once the token is confirmed.
+ * Called from the sign-in-code verify route once the code is confirmed.
  *
  * `name` is NOT NULL in the schema; at the email-gate step we only have the
  * email, so a new row is seeded with the email's local part as a placeholder.

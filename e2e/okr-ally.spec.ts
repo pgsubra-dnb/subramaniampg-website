@@ -5,6 +5,8 @@ import { validateReviewOutput, buildSystemPrompt, buildUserContent } from '../li
 import { PACKS } from '../lib/okrAllyBilling'
 import {
   signIn,
+  mintSignInCode,
+  testEmail,
   promoteToAdmin,
   seedCredits,
   seedProfile,
@@ -131,7 +133,7 @@ test('validateReviewOutput: KR initiative count must be 2-3 in both options', ()
 })
 
 // ══════════════════════════════════════════════════════════
-// 1. Happy path: magic link → completed report (live Claude call)
+// 1. Happy path: code sign-in → completed report (live Claude call)
 // ══════════════════════════════════════════════════════════
 test('happy path: sign in, submit an OKR, get a scored report', async ({ page, context }) => {
   test.setTimeout(240_000)
@@ -1794,12 +1796,12 @@ test('routing: ?tab=company opens the Company tab for a signed-in org admin', as
 })
 
 // ══════════════════════════════════════════════════════════
-// 23. Magic-link "Resend link" — cooldown, real resend, session cap
+// 23. Sign-in code "Resend code" — cooldown, real resend, session cap
 // ══════════════════════════════════════════════════════════
-test('magic link: resend button has a 60s cooldown, then resends, then hits a session cap', async ({ page }) => {
+test('sign-in code: resend button has a 60s cooldown, then resends, then hits a session cap', async ({ page }) => {
   test.setTimeout(120_000)
   let calls = 0
-  await page.route('**/api/okr-ally/magic-link', async (route) => {
+  await page.route('**/api/okr-ally/sign-in-code', async (route) => {
     calls++
     await route.fulfill({ status: 200, contentType: 'application/json', body: '{"success":true}' })
   })
@@ -1808,49 +1810,96 @@ test('magic link: resend button has a 60s cooldown, then resends, then hits a se
   await page.getByRole('button', { name: 'Say hi to Ally' }).click()
   await page.getByPlaceholder('you@company.com').fill('resend-test@example.com')
   await page.clock.install()
-  await page.getByRole('button', { name: 'Send link' }).click()
-  await expect(page.getByText(/sent a sign-in link to/i)).toBeVisible()
+  await page.getByRole('button', { name: 'Send code' }).click()
+  await expect(page.getByText(/sent a 6-digit code to/i)).toBeVisible()
   expect(calls).toBe(1)
 
-  const resend = () => page.getByRole('button', { name: /^Resend link/ })
+  const resend = () => page.getByRole('button', { name: /^Resend code/ })
   await expect(resend()).toBeDisabled()
-  await expect(resend()).toContainText(/Resend link \(\d+s\)/)
+  await expect(resend()).toContainText(/Resend code \(\d+s\)/)
 
   await page.clock.runFor(30_000)
   await expect(resend()).toBeDisabled() // still cooling down
 
   await page.clock.runFor(31_000)
-  const enabled = page.getByRole('button', { name: 'Resend link', exact: true })
+  const enabled = page.getByRole('button', { name: 'Resend code', exact: true })
   await expect(enabled).toBeEnabled()
   await enabled.click()
-  await expect(page.getByText(/New link sent to resend-test@example\.com/i)).toBeVisible()
+  await expect(page.getByText(/New code sent to resend-test@example\.com/i)).toBeVisible()
   expect(calls).toBe(2)
 
   for (let i = 0; i < 2; i++) {
     await page.clock.runFor(61_000)
-    await page.getByRole('button', { name: 'Resend link', exact: true }).click()
-    await expect(page.getByText(/New link sent/i)).toBeVisible()
+    await page.getByRole('button', { name: 'Resend code', exact: true }).click()
+    await expect(page.getByText(/New code sent/i)).toBeVisible()
   }
   expect(calls).toBe(4) // initial + 3 resends
 
   await page.clock.runFor(61_000)
-  await expect(page.getByRole('button', { name: /Resend link/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Resend code/ })).toHaveCount(0)
   await expect(page.getByText(/resend limit for now/i)).toBeVisible()
   await expect(page.getByText('pgs@embiggen.co.in')).toBeVisible()
   expect(calls).toBe(4) // no further requests after the cap
 })
 
-test('magic link API: rate-limited after repeated requests for one email', async ({ request }) => {
+test('sign-in code API: rate-limited after repeated requests for one email', async ({ request }) => {
   const email = `okr-e2e-rl-${Date.now()}@example.com`
   const codes: number[] = []
   for (let i = 0; i < 9; i++) {
-    const r = await request.post('http://localhost:3200/api/okr-ally/magic-link', { data: { email } })
+    const r = await request.post('http://localhost:3200/api/okr-ally/sign-in-code', { data: { email } })
     codes.push(r.status())
   }
   expect(codes.slice(0, 6)).toEqual([200, 200, 200, 200, 200, 200])
   expect(codes.slice(6).every((c) => c === 429)).toBe(true)
-  const last = await (await request.post('http://localhost:3200/api/okr-ally/magic-link', { data: { email } })).json()
-  expect(last.error).toMatch(/too many sign-in links/i)
+  const last = await (await request.post('http://localhost:3200/api/okr-ally/sign-in-code', { data: { email } })).json()
+  expect(last.error).toMatch(/too many sign-in codes/i)
+})
+
+// ══════════════════════════════════════════════════════════
+// 23c. Sign-in code verify — wrong code, lockout, expiry, old /verify gone
+// ══════════════════════════════════════════════════════════
+test('sign-in code verify: wrong code fails generically, 5 wrong tries lock the code', async ({ request }) => {
+  const email = testEmail('codelock-')
+  const good = await mintSignInCode(email)
+  const wrong = good === '000000' ? '000001' : '000000'
+
+  for (let i = 0; i < 4; i++) {
+    const r = await request.post('http://localhost:3200/api/okr-ally/sign-in-code/verify', {
+      data: { email, code: wrong },
+    })
+    expect(r.status()).toBe(401)
+    const j = await r.json()
+    expect(j.error).toMatch(/isn.t right/i)
+    expect(j.error).not.toMatch(/\d+ (attempts|tries)/i) // no remaining-count leak
+  }
+
+  // 5th wrong try trips the cap and destroys the code
+  const fifth = await request.post('http://localhost:3200/api/okr-ally/sign-in-code/verify', {
+    data: { email, code: wrong },
+  })
+  expect(fifth.status()).toBe(401)
+  expect((await fifth.json()).error).toMatch(/expired/i)
+
+  // the (previously correct) code no longer works — a fresh request is required
+  const afterLock = await request.post('http://localhost:3200/api/okr-ally/sign-in-code/verify', {
+    data: { email, code: good },
+  })
+  expect(afterLock.status()).toBe(401)
+})
+
+test('sign-in code verify: an expired code fails with a clear message', async ({ request }) => {
+  const email = testEmail('codeexp-')
+  const code = await mintSignInCode(email, -1000) // already expired
+  const r = await request.post('http://localhost:3200/api/okr-ally/sign-in-code/verify', {
+    data: { email, code },
+  })
+  expect(r.status()).toBe(401)
+  expect((await r.json()).error).toMatch(/expired/i)
+})
+
+test('the old magic-link verify endpoint is gone', async ({ request }) => {
+  const r = await request.get('http://localhost:3200/api/okr-ally/verify?token=whatever')
+  expect(r.status()).toBe(404)
 })
 
 // ── Brand vocabulary (Goal Ally) ──────────────────────────────────────────

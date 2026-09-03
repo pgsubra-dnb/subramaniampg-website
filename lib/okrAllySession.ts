@@ -4,9 +4,9 @@ import crypto from 'crypto'
  * OKR Ally — signed session token for admin accounts.
  *
  * Regular users get a 7-day session whose cookie value is just their Neon user
- * id (see app/api/okr-ally/verify). That is fine for them, but an admin
- * (pgs@embiggen.co.in, users.is_admin = true) must re-authenticate every 24
- * hours and the expiry must not be forgeable by holding onto an old cookie.
+ * id (see app/api/okr-ally/sign-in-code/verify). That is fine for them, but an
+ * admin (pgs@embiggen.co.in, users.is_admin = true) must re-authenticate every
+ * 24 hours and the expiry must not be forgeable by holding onto an old cookie.
  *
  * So an admin's cookie is instead a stateless signed token:
  *

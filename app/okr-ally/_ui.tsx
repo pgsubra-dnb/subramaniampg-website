@@ -173,6 +173,10 @@ export function Field({
   max,
   multiline,
   autoFocus,
+  inputMode,
+  autoComplete,
+  onEnter,
+  ariaLabel,
 }: {
   value: string
   onChange: (v: string) => void
@@ -180,6 +184,10 @@ export function Field({
   max?: number
   multiline?: boolean
   autoFocus?: boolean
+  inputMode?: 'text' | 'numeric'
+  autoComplete?: string
+  onEnter?: () => void
+  ariaLabel?: string
 }) {
   const common: React.CSSProperties = {
     width: '100%',
@@ -206,9 +214,13 @@ export function Field({
     <input
       autoFocus={autoFocus}
       type="text"
+      inputMode={inputMode}
+      autoComplete={autoComplete}
+      aria-label={ariaLabel}
       value={value}
       placeholder={placeholder}
       onChange={(e) => onChange(max ? e.target.value.slice(0, max + 40) : e.target.value)}
+      onKeyDown={onEnter ? (e) => { if (e.key === 'Enter') { e.preventDefault(); onEnter() } } : undefined}
       style={common}
     />
   )
