@@ -5,20 +5,21 @@ const nextConfig = {
     formats: ['image/avif', 'image/webp'],
   },
   async headers() {
-    return [
-      {
-        // The OKR Ally service worker is served from /okr-ally/ but must control
-        // the /okr-ally page (and its start_url), so it needs a broader scope
-        // than its own path — granted via Service-Worker-Allowed. no-cache so
-        // an updated worker is picked up promptly.
-        source: '/okr-ally/sw.js',
-        headers: [
-          { key: 'Service-Worker-Allowed', value: '/okr-ally' },
-          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
-          { key: 'Content-Type', value: 'application/javascript; charset=utf-8' },
-        ],
-      },
-    ]
+    // Both review surfaces register a service worker from `<base>/sw.js` that
+    // must control the bare `<base>` page (and its manifest start_url), i.e. a
+    // scope one level broader than the script's own directory. `Service-Worker-
+    // Allowed` grants that; without it `register('<base>/sw.js', {scope:'<base>'})`
+    // is rejected outright and the PWA never becomes installable. no-cache so an
+    // updated worker is picked up promptly.
+    const swHeaders = (base) => ({
+      source: `${base}/sw.js`,
+      headers: [
+        { key: 'Service-Worker-Allowed', value: base },
+        { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+        { key: 'Content-Type', value: 'application/javascript; charset=utf-8' },
+      ],
+    })
+    return [swHeaders('/okr-ally'), swHeaders('/goal-ally')]
   },
 };
 
