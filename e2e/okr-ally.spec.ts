@@ -848,6 +848,59 @@ test('walkthrough: intro → step every slide → CTA lands on the email gate', 
 })
 
 // ══════════════════════════════════════════════════════════
+// 15b. Goal Ally — walkthrough + Help read entirely in Goal vocabulary
+// ══════════════════════════════════════════════════════════
+test('goal ally: the "how it works" walkthrough is fully branded (no OKR wording)', async ({ page }) => {
+  test.setTimeout(90_000)
+  await page.goto('/goal-ally')
+  await page.getByRole('button', { name: /See how it works/i }).click()
+  await expect(page.getByRole('heading', { name: 'How Goal Ally works' })).toBeVisible()
+  await expect(page.getByText(/the Goal and Sub-goals you've already drafted/i)).toBeVisible()
+
+  // step every slide, collecting the visible text
+  let seen = ''
+  for (let i = 1; i <= 10; i++) {
+    await expect(page.getByText(`${i} / 10`)).toBeVisible()
+    seen += ' ' + (await page.locator('body').innerText())
+    if (i < 10) await page.getByRole('button', { name: 'Next', exact: true }).click()
+  }
+  // Goal vocab present, OKR vocab absent
+  expect(seen).toMatch(/\bGoal\b/)
+  expect(seen).toMatch(/\bSub-goals?\b/)
+  expect(seen).not.toMatch(/\bObjectives?\b/)
+  expect(seen).not.toMatch(/\bKey Results?\b/)
+  expect(seen).not.toMatch(/\bKRs?\b/)
+  expect(seen).not.toMatch(/\bOKR/)
+  expect(seen).not.toMatch(/\bcredits?\b/)
+
+  await page.getByRole('button', { name: /Start my free review/i }).click()
+  await expect(page.getByPlaceholder('you@company.com')).toBeVisible()
+})
+
+test('goal ally: the Help tab reads in Goal vocabulary (packs, corporate, reclaim)', async ({ page, context }) => {
+  const u = await signIn(context, 'http://localhost:3200', testEmail('gahelp-'))
+  createdUsers.push(u.userId)
+  await page.goto('/goal-ally')
+  await page.getByRole('button', { name: 'Help', exact: true }).click()
+
+  await expect(page.getByRole('heading', { name: 'Goal Review packs' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Corporate & team Goal Reviews' })).toBeVisible()
+  await expect(page.getByText(/take unused Goal Reviews back/)).toBeVisible() // Q summary
+
+  // expand every Q&A, then check all help content for OKR leaks
+  for (const s of await page.locator('details summary').all()) await s.click()
+  await expect(page.getByText(/“Reclaim unused Goal Reviews” on the Company tab/)).toBeVisible()
+  await expect(page.getByText(/submit it fresh/)).toBeVisible() // scoring topic, branded
+  const helpText = (await page.locator('section').allInnerTexts()).join('\n')
+  expect(helpText).not.toMatch(/\bObjectives?\b/)
+  expect(helpText).not.toMatch(/\bKey Results?\b/)
+  expect(helpText).not.toMatch(/\bKRs?\b/)
+  expect(helpText).not.toMatch(/\bOKR/)
+  expect(helpText).not.toMatch(/\bcredits?\b/)
+  expect(helpText).toMatch(/Goal Plans?/)
+})
+
+// ══════════════════════════════════════════════════════════
 // 16. Corporate credits — purchase, allocate/reclaim, org-first deduction,
 //     access control, report isolation, existing-account safety.
 // ══════════════════════════════════════════════════════════
@@ -1608,7 +1661,7 @@ test('walkthrough: org admin sees the admin walkthrough once on the first Compan
 
   // auto-shows on first visit
   await expect(page.getByRole('heading', { name: 'Running OKR Ally for your company' })).toBeVisible()
-  await expect(page.getByText(/The credit pool/i)).toBeVisible()
+  await expect(page.getByText(/The OKR Review pool/i)).toBeVisible()
   for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Next', exact: true }).click()
   await expect(page.getByText(/Seeing usage/i)).toBeVisible()
   await page.getByRole('button', { name: 'Got it' }).click()

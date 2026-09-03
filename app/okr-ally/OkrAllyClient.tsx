@@ -272,9 +272,9 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
         <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: T.cream, overflowY: 'auto' }}>
           <div style={{ maxWidth: 640, margin: '0 auto', padding: '28px 24px 80px' }}>
             {roleWalkthrough === 'org_admin' ? (
-              <OrgAdminWalkthrough onClose={() => dismissRoleWalkthrough('org_admin')} />
+              <OrgAdminWalkthrough brand={brand} onClose={() => dismissRoleWalkthrough('org_admin')} />
             ) : (
-              <EmployeeWalkthrough onClose={() => dismissRoleWalkthrough('employee')} />
+              <EmployeeWalkthrough brand={brand} onClose={() => dismissRoleWalkthrough('employee')} />
             )}
           </div>
         </div>
@@ -329,7 +329,7 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
         <Intro brand={brand} onStart={() => setPhase('email')} onSeeHow={() => setPhase('walkthrough')} />
       )}
       {phase === 'walkthrough' && (
-        <Walkthrough onBack={() => setPhase('intro')} onStart={() => setPhase('email')} />
+        <Walkthrough brand={brand} onBack={() => setPhase('intro')} onStart={() => setPhase('email')} />
       )}
       {phase === 'email' && <EmailGate brand={brand} />}
 
@@ -405,7 +405,7 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
         <HistoryTab brand={brand} onOpen={(id) => setReportId(id)} />
       )}
 
-      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'help' && <HelpTab />}
+      {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'help' && <HelpTab brand={brand} />}
 
       {phase === 'app' && !showingReport && !showingAdmin && activeTab === 'company' && isOrgAdmin && (
         <>
