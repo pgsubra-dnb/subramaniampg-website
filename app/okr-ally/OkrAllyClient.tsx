@@ -31,9 +31,12 @@ interface Me {
   }
   orgContext?: OrgContext | null
   seenWalkthroughs?: string[]
-  /** Demo session (migration 014) — sign-in + payment are skipped, nothing is
-   *  charged/emailed/recorded-for-review. Drives the demo banner. */
+  /** Demo session (migrations 014/015) — nothing is charged/emailed/recorded.
+   *  Drives the demo banner and the simulated sign-in. */
   isDemo?: boolean
+  /** Corporate demo — enables the "View as employee / admin" toggle. */
+  demoCorporate?: boolean
+  demoRole?: 'admin' | 'employee' | null
 }
 interface Status {
   creditsRemaining: number
@@ -149,6 +152,9 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
         }
         if (m.isDemo && demoWantsIntro) {
           refreshStatus() // populate booking/share links for the report screen
+          // Corporate demo, admin view, context not yet published → land on the
+          // Company tab once past the intro (mirrors the real org-admin route).
+          if (m.user?.isOrgAdmin && m.orgContext && !m.orgContext.confirmed) setTab('company')
           setPhase('intro')
           return
         }
@@ -214,15 +220,16 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
     setTab('ally')
   }, [])
 
-  // Intro / walkthrough "start". A real visitor goes to the email gate; a demo
-  // session is already authenticated, so it drops straight into the app.
+  // Intro / walkthrough "start" → the email gate. In demo mode the gate is the
+  // real screens but simulated (no email sent, any 6 digits advance) — the
+  // sign-in step is shown, not skipped.
   const isDemo = !!me?.isDemo
   const startFlow = useCallback(() => {
     if (typeof window !== 'undefined' && window.location.search.includes('demo=')) {
       window.history.replaceState({}, '', v.path)
     }
-    setPhase(isDemo ? 'app' : 'email')
-  }, [isDemo, v.path])
+    setPhase('email')
+  }, [v.path])
 
   function prefillFromProfile(
     prof: {
@@ -337,9 +344,11 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
 
       <InstallAppBanner brand={brand} />
 
-      {isDemo && <DemoBanner brand={brand} />}
+      {isDemo && (
+        <DemoBanner brand={brand} corporate={!!me?.demoCorporate} role={me?.demoRole ?? null} />
+      )}
 
-      {me?.authenticated && !showingReport && !showingAdmin && (
+      {me?.authenticated && phase === 'app' && !showingReport && !showingAdmin && (
         <TabBar tab={activeTab} onChange={setTab} isAdmin={isAdmin} isOrgAdmin={isOrgAdmin} />
       )}
 
@@ -358,7 +367,9 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
       {phase === 'walkthrough' && (
         <Walkthrough brand={brand} onBack={() => setPhase('intro')} onStart={startFlow} />
       )}
-      {phase === 'email' && <EmailGate brand={brand} />}
+      {phase === 'email' && (
+        <EmailGate brand={brand} isDemo={isDemo} onDemoVerified={() => setPhase('app')} />
+      )}
 
       {phase === 'app' && showingReport && (
         <>
@@ -573,8 +584,16 @@ function Intro({ brand, onStart, onSeeHow }: { brand: Brand; onStart: () => void
   )
 }
 
-function DemoBanner({ brand }: { brand: Brand }) {
-  const [busy, setBusy] = useState<'reset' | 'exit' | null>(null)
+function DemoBanner({
+  brand,
+  corporate,
+  role,
+}: {
+  brand: Brand
+  corporate: boolean
+  role: 'admin' | 'employee' | null
+}) {
+  const [busy, setBusy] = useState<'reset' | 'exit' | 'view' | null>(null)
 
   async function go(action: 'reset' | 'exit') {
     setBusy(action)
@@ -591,6 +610,32 @@ function DemoBanner({ brand }: { brand: Brand }) {
     }
   }
 
+  async function viewAs(next: 'admin' | 'employee') {
+    setBusy('view')
+    try {
+      const r = await fetch('/api/okr-ally/demo/view-as', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ brand, role: next }),
+      })
+      const j = await r.json().catch(() => ({}))
+      window.location.assign(j.redirect || vocab(brand).path)
+    } catch {
+      setBusy(null)
+    }
+  }
+
+  const btn: React.CSSProperties = {
+    background: 'none',
+    border: `1px solid ${T.gold}`,
+    borderRadius: 7,
+    padding: '4px 10px',
+    color: T.gold,
+    fontWeight: 600,
+    cursor: 'pointer',
+    fontSize: 12,
+  }
+
   return (
     <div
       className="flex items-center justify-between gap-3 flex-wrap"
@@ -605,15 +650,24 @@ function DemoBanner({ brand }: { brand: Brand }) {
       }}
     >
       <span style={{ lineHeight: 1.5 }}>
-        <strong>Demo mode.</strong> Nothing here is charged, emailed, or added to the review list — the
-        review itself is real.
+        <strong>Demo mode{corporate ? ' · Corporate' : ''}.</strong> Nothing here is charged, emailed, or
+        added to the review list — the review itself is real.
+        {corporate && role === 'employee' && (
+          <span style={{ display: 'block' }}>You&apos;re viewing as an employee of the demo company.</span>
+        )}
       </span>
-      <span className="flex gap-2 flex-shrink-0">
-        <button
-          onClick={() => go('reset')}
-          disabled={busy !== null}
-          style={{ background: 'none', border: `1px solid ${T.gold}`, borderRadius: 7, padding: '4px 10px', color: T.gold, fontWeight: 600, cursor: 'pointer', fontSize: 12 }}
-        >
+      <span className="flex gap-2 flex-shrink-0 flex-wrap">
+        {corporate &&
+          (role === 'admin' ? (
+            <button onClick={() => viewAs('employee')} disabled={busy !== null} style={btn}>
+              {busy === 'view' ? '…' : 'View as employee'}
+            </button>
+          ) : (
+            <button onClick={() => viewAs('admin')} disabled={busy !== null} style={btn}>
+              {busy === 'view' ? '…' : 'Back to admin'}
+            </button>
+          ))}
+        <button onClick={() => go('reset')} disabled={busy !== null} style={btn}>
           {busy === 'reset' ? 'Resetting…' : 'Reset demo'}
         </button>
         <button
@@ -725,8 +779,18 @@ function SignedOut({ brand, onContinue }: { brand: Brand; onContinue: () => void
 const RESEND_COOLDOWN_S = 60
 const MAX_RESENDS = 3
 
-function EmailGate({ brand }: { brand: Brand }) {
-  const [email, setEmail] = useState('')
+const DEMO_SIGNIN_CODE = '000000'
+
+function EmailGate({
+  brand,
+  isDemo = false,
+  onDemoVerified,
+}: {
+  brand: Brand
+  isDemo?: boolean
+  onDemoVerified?: () => void
+}) {
+  const [email, setEmail] = useState(isDemo ? 'you@company.com' : '')
   const [code, setCode] = useState('')
   const [sent, setSent] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -751,6 +815,15 @@ function EmailGate({ brand }: { brand: Brand }) {
   async function request(isResend: boolean) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setLocalErr('That doesn’t look like an email address.')
+      return
+    }
+    if (isDemo) {
+      // Simulated — no email is sent. Show the real code screen with a fixed
+      // demo code; any 6 digits will advance.
+      setLocalErr(null)
+      setJustResent(isResend)
+      setCode('')
+      setSent(true)
       return
     }
     setBusy(true)
@@ -789,7 +862,11 @@ function EmailGate({ brand }: { brand: Brand }) {
 
   async function verify() {
     if (!/^\d{6}$/.test(code)) {
-      setLocalErr('Enter the 6-digit code from the email.')
+      setLocalErr(isDemo ? 'Enter any 6 digits (or 000000) to continue.' : 'Enter the 6-digit code from the email.')
+      return
+    }
+    if (isDemo) {
+      onDemoVerified?.()
       return
     }
     setBusy(true)
@@ -819,10 +896,18 @@ function EmailGate({ brand }: { brand: Brand }) {
     const hitCap = resends >= MAX_RESENDS
     return (
       <>
-        <AllyRow>
-          I&apos;ve sent a 6-digit code to <strong>{email}</strong>. Enter it below — it expires in 10 minutes.
-        </AllyRow>
-        {justResent && (
+        {isDemo ? (
+          <AllyRow>
+            This is the real sign-in screen, but in demo mode I don&apos;t actually send an email. Your code
+            is <strong style={{ letterSpacing: 2 }}>{DEMO_SIGNIN_CODE}</strong> — type that (or any 6 digits)
+            and hit Verify.
+          </AllyRow>
+        ) : (
+          <AllyRow>
+            I&apos;ve sent a 6-digit code to <strong>{email}</strong>. Enter it below — it expires in 10 minutes.
+          </AllyRow>
+        )}
+        {justResent && !isDemo && (
           <p style={{ fontSize: 12.5, color: T.emeraldDark, marginTop: 4 }}>New code sent to {email}.</p>
         )}
         {localErr && (
@@ -847,11 +932,13 @@ function EmailGate({ brand }: { brand: Brand }) {
             {busy ? 'Checking…' : 'Verify'}
           </Btn>
         </div>
-        <p style={{ fontSize: 12.5, color: T.muted, marginTop: 8 }}>
-          Didn&apos;t get it? Check your spam or junk folder{cooldown > 0 ? ', then resend it below' : ''}.
-        </p>
+        {!isDemo && (
+          <p style={{ fontSize: 12.5, color: T.muted, marginTop: 8 }}>
+            Didn&apos;t get it? Check your spam or junk folder{cooldown > 0 ? ', then resend it below' : ''}.
+          </p>
+        )}
         <div style={{ marginTop: 10 }}>
-          {hitCap ? (
+          {isDemo ? null : hitCap ? (
             <p style={{ fontSize: 12.5, color: T.muted }}>
               That&apos;s the resend limit for now. If it still hasn&apos;t arrived, email{' '}
               <a href="mailto:pgs@embiggen.co.in" style={{ color: T.emeraldDark, fontWeight: 600 }}>
@@ -879,10 +966,18 @@ function EmailGate({ brand }: { brand: Brand }) {
 
   return (
     <>
-      <AllyRow>
-        Before we start, what&apos;s your email? I&apos;ll send a one-time 6-digit code — no password. It&apos;s how
-        your history and {vocab(brand).reviews} stay with you.
-      </AllyRow>
+      {isDemo ? (
+        <AllyRow>
+          Before we start, what&apos;s your email? I&apos;ll send a one-time 6-digit code — no password. This is
+          a demo, so I won&apos;t actually email anything; hit <strong>Send code</strong> and I&apos;ll show you
+          the next step.
+        </AllyRow>
+      ) : (
+        <AllyRow>
+          Before we start, what&apos;s your email? I&apos;ll send a one-time 6-digit code — no password. It&apos;s how
+          your history and {vocab(brand).reviews} stay with you.
+        </AllyRow>
+      )}
       {localErr && (
         <div className="mb-3 text-sm rounded-lg px-4 py-3" style={{ background: T.errorLight, color: T.error, border: `1px solid ${T.errorBorder}` }}>
           {localErr}

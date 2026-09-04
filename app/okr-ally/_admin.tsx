@@ -265,28 +265,28 @@ export function AdminList({
 
 function DemoModePanel({ brand = DEFAULT_BRAND }: { brand?: Brand }) {
   const v = vocab(brand)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<'individual' | 'corporate' | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
-  async function start() {
-    setBusy(true)
+  async function start(mode: 'individual' | 'corporate') {
+    setBusy(mode)
     setErr(null)
     try {
       const r = await fetch('/api/okr-ally/demo/start', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ brand }),
+        body: JSON.stringify({ brand, mode }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.ok) {
         setErr(j.error || 'Could not start the demo.')
+        setBusy(null)
         return
       }
       window.location.assign(j.redirect || v.path)
     } catch {
       setErr('Network problem — the demo did not start.')
-    } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
 
@@ -294,13 +294,23 @@ function DemoModePanel({ brand = DEFAULT_BRAND }: { brand?: Brand }) {
     <div style={{ border: `1px solid ${T.gold}`, borderRadius: 12, padding: 14, marginBottom: 14, background: T.goldTint }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: T.gold }}>Demo mode</div>
       <p style={{ fontSize: 12.5, color: T.gold, margin: '6px 0 10px', lineHeight: 1.5 }}>
-        Drops into a fresh first-time-visitor run of {v.product} with sign-in and payment skipped.
-        The review, scoring and report are the real product; nothing is charged, emailed, or added
-        to this list. &ldquo;Reset demo&rdquo; gives a clean slate between audiences.
+        Drops into a fresh run of {v.product} — the real sign-in screen (simulated, no email), the real
+        review, scoring and report. Nothing is charged, emailed, or added to this list.
+        History comes pre-seeded from cloned real reviews. &ldquo;Reset demo&rdquo; gives a clean slate.
       </p>
-      <Btn small onClick={start} disabled={busy}>
-        {busy ? 'Starting…' : 'Start demo'}
-      </Btn>
+      <div className="flex gap-2 flex-wrap">
+        <Btn small onClick={() => start('individual')} disabled={busy !== null}>
+          {busy === 'individual' ? 'Starting…' : 'Start — Individual'}
+        </Btn>
+        <Btn small variant="ghost" onClick={() => start('corporate')} disabled={busy !== null}>
+          {busy === 'corporate' ? 'Starting…' : 'Start — Corporate'}
+        </Btn>
+      </div>
+      <p style={{ fontSize: 11.5, color: T.gold, marginTop: 8, lineHeight: 1.5, opacity: 0.9 }}>
+        Corporate builds a demo company with a credit pool, two employees with cloned usage, and the
+        shared context left unpublished so you can show the employee gate, then publish it live. Use
+        &ldquo;View as employee&rdquo; in the demo banner to switch sides.
+      </p>
       {err && <p style={{ fontSize: 12.5, color: T.error, marginTop: 8 }}>{err}</p>}
     </div>
   )

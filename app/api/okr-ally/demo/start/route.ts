@@ -1,43 +1,62 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser, OKR_ALLY_DEMO_COOKIE } from '@/lib/okrAlly'
 import { signDemoSession, DEMO_SESSION_MAX_AGE_SECONDS } from '@/lib/okrAllySession'
-import { createDemoUser, purgeExpiredDemoData } from '@/lib/okrAllyDemo'
-import { toBrand, vocab } from '@/lib/okrAllyBrand'
+import {
+  createDemoUser,
+  seedIndividualHistory,
+  createCorporateDemo,
+  purgeExpiredDemoData,
+} from '@/lib/okrAllyDemo'
+import { toBrand, vocab, type Brand } from '@/lib/okrAllyBrand'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 /**
- * Start a demo session (PGS's `is_admin` account only).
+ * Start a demo session (PGS's `is_admin` account only). Body: { brand, mode }.
  *
- * Mints a fresh ephemeral demo account and hands back the `okr_ally_demo`
- * cookie bound to it — a SEPARATE cookie, so PGS's real admin session on
- * `okr_ally_session` is left untouched and "Exit demo" just deletes this one.
+ *  - mode 'individual' — one demo account; its History is pre-seeded with clones
+ *    from the seed library (real review of PGS's own submission + real reviews of
+ *    synthetic drafts — see lib/okrAllyDemoSeeds.ts).
+ *  - mode 'corporate' — a demo org (context unconfirmed), a demo admin, and two
+ *    demo employees with cloned history + a matching allocation ledger. The
+ *    cookie is bound to the admin; "View as employee" re-signs it.
  *
- * The client then loads `${brand path}?demo=intro`, which shows the first-time
- * intro screen; from there "Say hi to Ally" / "See how it works" drop straight
- * into the app (the demo account is already authenticated).
+ * The `okr_ally_demo` cookie is SEPARATE from `okr_ally_session`, so PGS's real
+ * admin session is untouched and "Exit demo" just deletes this one.
  */
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
-  const brand = toBrand(body.brand)
+  const brand: Brand = toBrand(body.brand)
+  const mode: 'individual' | 'corporate' = body.mode === 'corporate' ? 'corporate' : 'individual'
 
   try {
     const user = await getSessionUser(req)
     if (!user || !user.is_admin) {
-      // A demo already being active makes getSessionUser return the (non-admin)
-      // demo account — reset it instead of starting another.
       return NextResponse.json(
         { error: user?.is_demo ? 'A demo is already running — use “Reset demo”.' : 'Admin only.' },
         { status: 403 }
       )
     }
 
-    // Opportunistic housekeeping — sweep demo accounts older than a day.
     purgeExpiredDemoData(24).catch(() => {})
 
-    const demoUser = await createDemoUser()
-    const res = NextResponse.json({ ok: true, redirect: `${vocab(brand).path}?demo=intro` })
-    res.cookies.set(OKR_ALLY_DEMO_COOKIE, signDemoSession(demoUser.id), {
+    let cookieUserId: string
+    if (mode === 'corporate') {
+      const demo = await createCorporateDemo(brand)
+      cookieUserId = demo.adminUserId
+    } else {
+      const demoUser = await createDemoUser()
+      await seedIndividualHistory(demoUser.id, brand)
+      cookieUserId = demoUser.id
+    }
+
+    const res = NextResponse.json({
+      ok: true,
+      mode,
+      redirect: `${vocab(brand).path}?demo=intro`,
+    })
+    res.cookies.set(OKR_ALLY_DEMO_COOKIE, signDemoSession(cookieUserId), {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',

@@ -171,20 +171,21 @@ export interface DemoSession {
 export async function startDemo(
   context: BrowserContext,
   baseURL: string,
-  brand: 'okr_ally' | 'goal_ally' = 'okr_ally'
+  brand: 'okr_ally' | 'goal_ally' = 'okr_ally',
+  mode: 'individual' | 'corporate' = 'individual'
 ): Promise<DemoSession> {
   const admin = await signIn(context, baseURL, testEmail('demoadmin-'), { admin: true })
-  const res = await context.request.post(`${baseURL}/api/okr-ally/demo/start`, { data: { brand } })
+  const res = await context.request.post(`${baseURL}/api/okr-ally/demo/start`, { data: { brand, mode } })
   if (!res.ok()) throw new Error(`startDemo: ${res.status()} ${await res.text()}`)
 
   const demoCookie = (await context.cookies()).find((c) => c.name === 'okr_ally_demo')
   if (!demoCookie) throw new Error('startDemo: no okr_ally_demo cookie after /demo/start')
 
-  const row = await pool.query<{ id: string }>(
-    `SELECT id FROM users WHERE is_demo ORDER BY created_at DESC LIMIT 1`
-  )
-  const demoUserId = row.rows[0]?.id
-  if (!demoUserId) throw new Error('startDemo: no is_demo user row')
+  // Resolve the demo user the cookie is bound to (the admin, for a corporate demo).
+  const me = await context.request
+    .get(`${baseURL}/api/okr-ally/me`, { headers: { cookie: `okr_ally_demo=${demoCookie.value}` } })
+    .then((r) => r.json())
+  const demoUserId: string = me.user.id
 
   return { admin, demoUserId, cookieHeader: `okr_ally_demo=${demoCookie.value}` }
 }
@@ -194,6 +195,136 @@ export async function startDemo(
  * `context` to the 24h signed admin token — a bare-id cookie is rejected for an
  * admin account, so tests that check non-admin gating first must re-mint here.
  */
+/** The protected seed-library account (lib/okrAllyDemoSeeds.ts). */
+export const DEMO_SEED_EMAIL = 'okr-ally-demo-seed@embiggen.co.in'
+
+/**
+ * Insert one seed-library entry directly (submission + review on the seed
+ * account, keyed `demo-seed:<key>`) so a spec can exercise cloning without a
+ * live Claude call. Pass keys to `cleanupDemoLibrary` in afterAll — these rows
+ * live on a shared account that real demos clone from.
+ */
+export async function seedDemoLibraryEntry(
+  key: string,
+  brand: 'okr_ally' | 'goal_ally' = 'okr_ally',
+  objective = `Seed library objective ${key}`
+): Promise<{ submissionId: string; idempotencyKey: string; overallScore: number }> {
+  const acct = await pool.query<{ id: string }>(
+    `INSERT INTO users (email, name, is_demo) VALUES ($1, 'OKR Ally Demo Seed', TRUE)
+     ON CONFLICT (email) DO UPDATE SET is_demo = TRUE RETURNING id`,
+    [DEMO_SEED_EMAIL]
+  )
+  const acctId = acct.rows[0].id
+  const idempotencyKey = `demo-seed:${key}`
+  const sub = await pool.query<{ id: string }>(
+    `INSERT INTO submissions (user_id, objective, krs, context_snapshot, idempotency_key, status, brand, is_demo)
+     VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, 'complete', $6, TRUE) RETURNING id`,
+    [
+      acctId,
+      objective,
+      JSON.stringify([{ text: 'Move the seed metric from 10 to 20', initiatives: [] }]),
+      JSON.stringify({ company_context: { final_text: `Seed context for ${key}` } }),
+      idempotencyKey,
+      brand,
+    ]
+  )
+  const submissionId = sub.rows[0].id
+  await pool.query(
+    `INSERT INTO reviews (submission_id, criteria_scores, overall_score, objective_feedback, key_result_feedback, suggested_okr_options, rubric_version, model_version)
+     VALUES ($1, $2::jsonb, $3, $4::jsonb, $5::jsonb, $6::jsonb, 'okr-ally-rubric-v1', 'claude-sonnet-5')`,
+    [
+      submissionId,
+      JSON.stringify([
+        { criterion: 'Outcome vs Output', score: 7, weight: 0.25, rationale: 'seed' },
+        { criterion: 'Alignment', score: 7, weight: 0.25, rationale: 'seed' },
+        { criterion: 'Measurability', score: 7, weight: 0.2, rationale: 'seed' },
+        { criterion: 'Specificity', score: 6, weight: 0.15, rationale: 'seed' },
+        { criterion: 'Ambition vs Realism', score: 6, weight: 0.15, rationale: 'seed' },
+      ]),
+      6.7,
+      JSON.stringify({ what_works: `seed ${key} works`, what_to_improve: 'seed improve' }),
+      JSON.stringify([{ kr_reference: 'KR1', what_works: 'a', what_to_improve: 'b' }]),
+      JSON.stringify([
+        { label: 'Refined Original', objective: 'Refined seed', key_results: [{ text: 'k', status: 'modified', initiatives: [] }], rationale: 'r' },
+        { label: 'Fresh Rewrite', objective: 'Fresh seed', key_results: [{ text: 'k', status: 'new', initiatives: [{ action: 'do', owning_team: 'Team' }] }], rationale: 'r' },
+      ]),
+    ]
+  )
+  return { submissionId, idempotencyKey, overallScore: 6.7 }
+}
+
+export interface SeedAccountRow {
+  id: string
+  objective: string
+  idempotency_key: string
+  krs: unknown
+  context_snapshot: unknown
+  overall_score: string
+}
+
+/** Every seed-library submission (+ its review score), for byte-identity checks. */
+export async function getSeedLibraryRows(): Promise<SeedAccountRow[]> {
+  const r = await pool.query<SeedAccountRow>(
+    `SELECT s.id, s.objective, s.idempotency_key, s.krs, s.context_snapshot, r.overall_score
+       FROM submissions s
+       JOIN reviews r ON r.submission_id = s.id
+       JOIN users u ON u.id = s.user_id
+      WHERE u.email = $1 AND s.idempotency_key LIKE 'demo-seed:%'
+      ORDER BY s.created_at`,
+    [DEMO_SEED_EMAIL]
+  )
+  return r.rows
+}
+
+/** Clone rows a demo user received (idempotency_key `demo-clone:%`), with review. */
+export async function getDemoCloneRows(userId: string): Promise<SeedAccountRow[]> {
+  const r = await pool.query<SeedAccountRow>(
+    `SELECT s.id, s.objective, s.idempotency_key, s.krs, s.context_snapshot, r.overall_score
+       FROM submissions s
+       JOIN reviews r ON r.submission_id = s.id
+      WHERE s.user_id = $1
+      ORDER BY s.created_at`,
+    [userId]
+  )
+  return r.rows
+}
+
+/** Remove specific seed-library entries created by a spec. */
+export async function cleanupDemoLibrary(keys: string[]): Promise<void> {
+  const acct = await pool.query<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [DEMO_SEED_EMAIL])
+  if (!acct.rows[0]) return
+  for (const key of keys) {
+    const ik = `demo-seed:${key}`
+    await pool.query(
+      `DELETE FROM reviews WHERE submission_id IN (SELECT id FROM submissions WHERE user_id = $1 AND idempotency_key = $2)`,
+      [acct.rows[0].id, ik]
+    )
+    await pool.query(`DELETE FROM submissions WHERE user_id = $1 AND idempotency_key = $2`, [acct.rows[0].id, ik])
+  }
+}
+
+/** The demo org a demo user belongs to (corporate demo), or null. */
+export async function getDemoOrgFor(demoUserId: string): Promise<{ id: string; gstin: string; is_demo: boolean } | null> {
+  const r = await pool.query<{ id: string; gstin: string; is_demo: boolean }>(
+    `SELECT o.id, o.gstin, o.is_demo
+       FROM organizations o
+       JOIN users u ON u.organization_id = o.id
+      WHERE u.id = $1`,
+    [demoUserId]
+  )
+  return r.rows[0] ?? null
+}
+
+export async function getDemoOrgMembers(
+  orgId: string
+): Promise<{ id: string; name: string; is_org_admin: boolean; is_demo: boolean }[]> {
+  const r = await pool.query<{ id: string; name: string; is_org_admin: boolean; is_demo: boolean }>(
+    `SELECT id, name, is_org_admin, is_demo FROM users WHERE organization_id = $1 ORDER BY is_org_admin DESC, created_at`,
+    [orgId]
+  )
+  return r.rows
+}
+
 export async function promoteToAdmin(
   context: BrowserContext,
   baseURL: string,

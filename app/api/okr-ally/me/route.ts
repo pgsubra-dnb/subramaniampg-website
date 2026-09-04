@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser, getAvailableCredits } from '@/lib/okrAlly'
 import { getOrgContextForMember } from '@/lib/okrAllyOrg'
+import { corporateDemoFor } from '@/lib/okrAllyDemo'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,9 +15,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ authenticated: false })
     }
 
-    const [credits, org] = await Promise.all([
+    const [credits, org, corpDemo] = await Promise.all([
       getAvailableCredits(user.id),
       getOrgContextForMember(user),
+      user.is_demo ? corporateDemoFor(user.id) : Promise.resolve(null),
     ])
 
     return NextResponse.json({
@@ -30,9 +32,12 @@ export async function GET(req: NextRequest) {
         isOrgAdmin: user.is_org_admin,
         organizationId: user.organization_id,
       },
-      // Demo session (migration 014) — the client shows the demo banner and
-      // routes intro/walkthrough "start" straight into the app (sign-in skipped).
+      // Demo session (migrations 014/015) — the client shows the demo banner.
+      // `demoCorporate` drives the "View as employee / admin" toggle;
+      // `demoRole` says which side is currently in view.
       isDemo: user.is_demo,
+      demoCorporate: !!corpDemo,
+      demoRole: corpDemo ? (user.is_org_admin ? 'admin' : 'employee') : null,
       seenWalkthroughs: user.seen_walkthroughs ?? [],
       creditsRemaining: credits.total,
       personalCredits: credits.personal,
