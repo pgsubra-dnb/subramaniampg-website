@@ -324,7 +324,10 @@ export async function fulfilCorporatePurchase(
 
 // ─── Company Admin screen ─────────────────────────────────────────────────
 
+/** Org-admin shared context limits — company gets more room (matches the
+ *  individual review form), business stays at 1000. */
 export const ORG_CONTEXT_MAX = 1000
+export const ORG_COMPANY_CONTEXT_MAX = 2000
 
 export interface OrgAdminContext {
   organization: { id: string; name: string; gstin: string; registeredAddress: string }
@@ -390,8 +393,11 @@ export async function setOrgContext(
   if (!company || !business) {
     return { ok: false, error: 'Both company context and business context are required before publishing.' }
   }
-  if (company.length > ORG_CONTEXT_MAX || business.length > ORG_CONTEXT_MAX) {
-    return { ok: false, error: `Each field must be ${ORG_CONTEXT_MAX} characters or fewer.` }
+  if (company.length > ORG_COMPANY_CONTEXT_MAX) {
+    return { ok: false, error: `Company context must be ${ORG_COMPANY_CONTEXT_MAX} characters or fewer.` }
+  }
+  if (business.length > ORG_CONTEXT_MAX) {
+    return { ok: false, error: `Business context must be ${ORG_CONTEXT_MAX} characters or fewer.` }
   }
   const r = await query<{ context_confirmed_at: string }>(
     `UPDATE organizations

@@ -7,7 +7,7 @@ import { putPdf } from '@/lib/okrAllyBlob'
 import { markReviewDelivered } from '@/lib/okrAllySubmission'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 import { tokens, rgb } from '@/lib/okrAllyTokens'
-import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
+import { type Brand, DEFAULT_BRAND, vocab, scoreBreakdownNote } from '@/lib/okrAllyBrand'
 
 /**
  * OKR Ally review report PDF (build sequence step 7).
@@ -312,6 +312,19 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
       doc.text(`${s.score}/10`, PW - M, yy, { align: 'right' })
       yy += 6
     })
+
+    // Caveat directly under the breakdown — the five criteria interact; one edit
+    // can move several. Same note as the web report's <ScoreInfographic>.
+    yy += 3
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(8)
+    doc.setTextColor(...MUTE)
+    for (const l of doc.splitTextToSize(pdfSafe(scoreBreakdownNote(data.brand ?? DEFAULT_BRAND)), CW) as string[]) {
+      doc.text(l, M, yy)
+      yy += 4
+    }
+    doc.setFont('helvetica', 'normal')
+
     doc.setLineWidth(0.2)
     return yy + 2
   }

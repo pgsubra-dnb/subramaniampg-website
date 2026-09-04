@@ -9,6 +9,7 @@ import {
   STEP_ORDER,
   PROFILE_STEPS,
   LIMITS,
+  contextLimit,
   CTX_KIND,
   CTX_PROMPT,
   BUSINESS_CONTEXT_GUIDES,
@@ -136,7 +137,7 @@ export default function StepForm({ initialForm, orgContext, brand = DEFAULT_BRAN
       setError('Please add a few words, or leave it blank if you truly have nothing to add.')
       return
     }
-    if (text.length > LIMITS.context) return
+    if (text.length > contextLimit(kind)) return
     setBusy(true)
     setError(null)
     try {
@@ -221,6 +222,9 @@ export default function StepForm({ initialForm, orgContext, brand = DEFAULT_BRAN
     action: ParaphraseAction,
     answer: string | null
   ) {
+    // Hard-clamp to the field limit so a paraphrase (or raw + a long clarifying
+    // answer) can never land the stored final_text over what the server accepts.
+    const clamped = finalText.slice(0, contextLimit(kind))
     update((f) => ({
       ...f,
       step: nextStep(f, f.step),
@@ -229,7 +233,7 @@ export default function StepForm({ initialForm, orgContext, brand = DEFAULT_BRAN
         [kind]: {
           ...f.ctx[kind],
           phase: 'done',
-          finalText,
+          finalText: clamped,
           paraphraseAction: action,
           clarifyingAnswer: answer ?? f.ctx[kind].clarifyingAnswer,
         },
@@ -648,13 +652,13 @@ function ProfileSummaryStep({
                     value={f.value}
                     onChange={f.set}
                     multiline={f.multiline}
-                    max={f.multiline ? LIMITS.context : undefined}
+                    max={f.multiline ? contextLimit(f.k as 'company' | 'business' | 'role') : undefined}
                     autoFocus
                     placeholder={f.optional ? 'Optional' : ''}
                   />
                   {f.multiline && (
                     <div className="mt-1">
-                      <CharCount value={f.value} max={LIMITS.context} />
+                      <CharCount value={f.value} max={contextLimit(f.k as 'company' | 'business' | 'role')} />
                     </div>
                   )}
                 </div>
@@ -876,12 +880,12 @@ function CtxStep({
       </AllyRow>
       {!prefilled && kind !== 'business' && <ContextTips kind={kind} brand={brand} />}
       <div className="mb-2">
-        <Field value={state.raw} onChange={onRawChange} multiline max={LIMITS.context} autoFocus />
+        <Field value={state.raw} onChange={onRawChange} multiline max={contextLimit(kind)} autoFocus />
       </div>
       {/* Returning user re-editing a saved context field — the change isn't retroactive. */}
       {state.lastCheckedText.trim() !== '' && <ContextForwardNotice style={{ marginTop: 0, marginBottom: 6 }} />}
       <div className="flex items-center justify-between">
-        <CharCount value={state.raw} max={LIMITS.context} />
+        <CharCount value={state.raw} max={contextLimit(kind)} />
         <Btn onClick={onSubmitRaw} disabled={busy}>
           {busy ? 'Thinking…' : 'Continue'}
         </Btn>

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { AllyRow, Btn, ScoreInfographic, ShareCard, Stars, T } from './_ui'
-import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
+import { type Brand, DEFAULT_BRAND, vocab, scoreBreakdownNote } from '@/lib/okrAllyBrand'
 
 export interface OkrOption {
   label: string
@@ -135,7 +135,10 @@ export default function ReportScreen({
       {/* score infographic — ring + radar + legend (shared with the PDF) */}
       <div style={{ ...card, marginBottom: 18 }}>
         <ScoreInfographic overallScore={r.overall_score} criteria={r.criteria_scores} />
-        <p style={{ fontSize: 12.5, color: T.muted, fontStyle: 'italic', marginTop: 12 }}>
+        <p style={{ fontSize: 12, color: T.muted, marginTop: 10, lineHeight: 1.55 }}>
+          {scoreBreakdownNote(brand)}
+        </p>
+        <p style={{ fontSize: 12.5, color: T.muted, fontStyle: 'italic', marginTop: 8 }}>
           Based only on what you gave me — thin context means a thinner review.
         </p>
       </div>

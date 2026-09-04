@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/okrAlly'
-import { assessField, normalizeForCompare, CONTEXT_FIELD_MAX, type ContextFieldKind } from '@/lib/okrAllyContext'
+import { assessField, normalizeForCompare, contextFieldMax, type ContextFieldKind } from '@/lib/okrAllyContext'
 import { allow, allowDailyContextCall } from '@/lib/okrAllyRateLimit'
 import { toBrand } from '@/lib/okrAllyBrand'
 
@@ -29,8 +29,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unknown field' }, { status: 400 })
   }
   const text = typeof body.text === 'string' ? body.text : ''
-  if (text.length > CONTEXT_FIELD_MAX) {
-    return NextResponse.json({ error: `That field exceeds ${CONTEXT_FIELD_MAX} characters` }, { status: 400 })
+  const max = contextFieldMax(field)
+  if (text.length > max) {
+    return NextResponse.json({ error: `That field exceeds ${max} characters` }, { status: 400 })
   }
 
   // Unchanged-since-last-check short-circuit — before any rate-limit spend,

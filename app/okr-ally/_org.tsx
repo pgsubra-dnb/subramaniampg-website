@@ -23,7 +23,11 @@ interface OrgStatus {
   contextConfirmedAt: string | null
 }
 
-const CONTEXT_MAX = 1000
+// Company context gets more room (matches the individual review form); business
+// context stays at 1000. Kept in sync with ORG_CONTEXT_MAX / ORG_COMPANY_CONTEXT_MAX
+// in lib/okrAllyOrg.ts.
+const COMPANY_CONTEXT_MAX = 2000
+const BUSINESS_CONTEXT_MAX = 1000
 
 interface Report {
   organizationName: string
@@ -196,7 +200,7 @@ function ContextPanel({ status, onDone }: { status: OrgStatus; onDone: () => voi
       </label>
       <textarea
         style={textarea}
-        maxLength={CONTEXT_MAX}
+        maxLength={COMPANY_CONTEXT_MAX}
         value={company}
         onChange={(e) => setCompany(e.target.value)}
         placeholder="A few sentences."
@@ -206,7 +210,7 @@ function ContextPanel({ status, onDone }: { status: OrgStatus; onDone: () => voi
       </label>
       <textarea
         style={textarea}
-        maxLength={CONTEXT_MAX}
+        maxLength={BUSINESS_CONTEXT_MAX}
         value={business}
         onChange={(e) => setBusiness(e.target.value)}
         placeholder="A few sentences."

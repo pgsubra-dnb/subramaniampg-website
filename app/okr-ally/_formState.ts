@@ -31,10 +31,20 @@ export const LIMITS = {
   objective: 500,
   kr: 250,
   initiative: 250,
+  /** business + role context. Company context is larger — see `companyContext`. */
   context: 1000,
+  /** Company context gets more room — it's the field people paste an About page
+   *  into. Kept in sync with LIMITS.companyContext in lib/okrAllySubmission.ts and
+   *  contextFieldMax() in lib/okrAllyContext.ts. */
+  companyContext: 2000,
   krsMin: 1,
   krsMax: 6,
   initiativesPerKr: 3,
+}
+
+/** Character limit for a given context field. Company: 2000, the rest: 1000. */
+export function contextLimit(kind: 'company' | 'business' | 'role'): number {
+  return kind === 'company' ? LIMITS.companyContext : LIMITS.context
 }
 
 export type ParaphraseAction = 'confirmed' | 'modified' | 'ignored' | 'not_offered'
