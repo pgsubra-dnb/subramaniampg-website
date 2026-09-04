@@ -14,7 +14,7 @@ import type { SubmittedKR, ReviewContextSnapshot } from '@/lib/okrAllyReview'
  *    engine (lib/okrAllyReview.ts `runReview`) — captured once into the seed
  *    library account and cloned from there afterwards.
  *
- * Rebuild the library with POST /api/okr-ally/demo/_seedlib (admin only).
+ * Rebuild the library with POST /api/okr-ally/demo/seedlib (admin only).
  */
 
 /** The protected library account. is_demo = TRUE so its submissions are kept

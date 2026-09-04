@@ -312,6 +312,87 @@ function DemoModePanel({ brand = DEFAULT_BRAND }: { brand?: Brand }) {
         &ldquo;View as employee&rdquo; in the demo banner to switch sides.
       </p>
       {err && <p style={{ fontSize: 12.5, color: T.error, marginTop: 8 }}>{err}</p>}
+      <SeedLibraryPanel />
+    </div>
+  )
+}
+
+// ── Demo seed library ────────────────────────────────────────────────────
+// The library the demo History clones from: a content-copy of PGS's own real
+// submission + review ('real'), plus four synthetic drafts (S1–S4) each run
+// through the live review engine. Build once per environment; rebuild after a
+// rubric / prompt change. S1–S4 make a real Claude call (~60s each).
+
+const SEED_KEYS = ['real', 'S1', 'S2', 'S3', 'S4'] as const
+
+function SeedLibraryPanel() {
+  const [entries, setEntries] = useState<{ key: string; brand: string | null; score: number }[] | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch('/api/okr-ally/demo/seedlib')
+      if (!r.ok) return
+      const j = await r.json()
+      setEntries(j.entries ?? [])
+    } catch {
+      /* ignore */
+    }
+  }, [])
+  useEffect(() => {
+    load()
+  }, [load])
+
+  async function build(only: string, force: boolean) {
+    setBusy(only)
+    setNote(null)
+    try {
+      const r = await fetch('/api/okr-ally/demo/seedlib', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ only, force }),
+      })
+      const j = await r.json().catch(() => ({}))
+      setNote(
+        j.ok
+          ? `${only}: ${j.source === 'real-clone' ? 'cloned' : 'live review'} — score ${j.score}`
+          : `${only}: ${j.error || 'failed'}`
+      )
+      await load()
+    } catch {
+      setNote(`${only}: network error`)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const have = new Map((entries ?? []).map((e) => [e.key, e]))
+
+  return (
+    <div style={{ borderTop: `1px solid ${T.gold}`, marginTop: 12, paddingTop: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.gold }}>Seed library</div>
+      <p style={{ fontSize: 11.5, color: T.gold, margin: '4px 0 8px', lineHeight: 1.5, opacity: 0.9 }}>
+        What demo History clones from. <strong>real</strong> copies your own review; <strong>S1–S4</strong>{' '}
+        run a synthetic draft through the live engine (~60s each).
+      </p>
+      <div className="flex flex-col gap-1.5">
+        {SEED_KEYS.map((k) => {
+          const e = have.get(k)
+          return (
+            <div key={k} className="flex items-center gap-2" style={{ fontSize: 12, color: T.gold }}>
+              <span style={{ width: 34, fontWeight: 600 }}>{k}</span>
+              <span style={{ width: 120, opacity: 0.85 }}>
+                {e ? `✓ ${e.brand ?? 'okr_ally'} · ${e.score}` : '— not built'}
+              </span>
+              <Btn small variant="ghost" onClick={() => build(k, !!e)} disabled={busy !== null}>
+                {busy === k ? 'Working…' : e ? 'Rebuild' : 'Build'}
+              </Btn>
+            </div>
+          )
+        })}
+      </div>
+      {note && <p style={{ fontSize: 11.5, color: T.gold, marginTop: 8 }}>{note}</p>}
     </div>
   )
 }
