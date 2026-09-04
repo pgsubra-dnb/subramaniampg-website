@@ -99,7 +99,7 @@ const GOAL_ALLY: BrandVocab = {
   key: 'goal_ally',
   product: 'Goal Ally',
   path: '/goal-ally',
-  logo: '/goal-ally/report-logo.png',
+  logo: '/goal-ally/report-logo.jpg',
   objective: 'Goal',
   objectiveLower: 'goal',
   kr: 'Sub-goal',
