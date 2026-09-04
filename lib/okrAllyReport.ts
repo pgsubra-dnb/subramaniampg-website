@@ -2,7 +2,14 @@ import type { ReviewOutput, ReviewContextSnapshot, SubmittedKR, ScoreTone } from
 import type { OkrAllySiteSettings } from '@/lib/okrAlly'
 import { RUBRIC, scoreTone } from '@/lib/okrAllyReview'
 import { getSiteSettings } from '@/lib/okrAlly'
-import { REPORT_LOGO_JPEG, REPORT_LOGO_W, REPORT_LOGO_H } from '@/lib/okrAllyReportAssets'
+import {
+  REPORT_LOGO_JPEG,
+  REPORT_LOGO_W,
+  REPORT_LOGO_H,
+  REPORT_GOAL_LOGO_JPEG,
+  REPORT_GOAL_LOGO_W,
+  REPORT_GOAL_LOGO_H,
+} from '@/lib/okrAllyReportAssets'
 import { putPdf } from '@/lib/okrAllyBlob'
 import { markReviewDelivered } from '@/lib/okrAllySubmission'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
@@ -330,23 +337,17 @@ export async function renderReportPdf(data: ReportData): Promise<Buffer> {
   }
 
   // ── Logo ───────────────────────────────────────────────────
-  if ((data.brand ?? DEFAULT_BRAND) === 'okr_ally') {
+  // Both brands: the logomark + wordmark image, base64-embedded in
+  // lib/okrAllyReportAssets.ts (Vercel serverless can't fs-read public/).
+  {
+    const [jpeg, iw, ih] =
+      (data.brand ?? DEFAULT_BRAND) === 'goal_ally'
+        ? [REPORT_GOAL_LOGO_JPEG, REPORT_GOAL_LOGO_W, REPORT_GOAL_LOGO_H]
+        : [REPORT_LOGO_JPEG, REPORT_LOGO_W, REPORT_LOGO_H]
     const lw = 64
-    const lh = (lw * REPORT_LOGO_H) / REPORT_LOGO_W
-    doc.addImage(REPORT_LOGO_JPEG, 'JPEG', (PW - lw) / 2, y, lw, lh)
+    const lh = (lw * ih) / iw
+    doc.addImage(jpeg, 'JPEG', (PW - lw) / 2, y, lw, lh)
     y += lh + 12
-  } else {
-    // Goal Ally — a typographic wordmark (no image asset yet). Icon-mark logo
-    // to follow in Tier 2.
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(20)
-    doc.setTextColor(...EMERALD_DARK)
-    doc.text(v.product, PW / 2, y + 6, { align: 'center' })
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8)
-    doc.setTextColor(...MUTE)
-    doc.text('POWERED BY AI', PW / 2, y + 12, { align: 'center' })
-    y += 24
   }
 
   // ── Cover ───────────────────────────────────────────────────
