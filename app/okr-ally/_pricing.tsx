@@ -102,6 +102,10 @@ export default function PricingTab({
 
   async function buy(pack: Pack) {
     setMsg(null)
+    if (isDemo) {
+      setMsg({ kind: 'err', text: 'Purchases are turned off in demo mode.' })
+      return
+    }
     if (!state) {
       setMsg({ kind: 'err', text: 'Choose your state — it sets the place of supply on the invoice.' })
       return
@@ -253,8 +257,7 @@ export default function PricingTab({
               </div>
               <button
                 onClick={() => buy(p)}
-                disabled={isDemo || busy !== null || gstinInvalid}
-                title={isDemo ? 'Disabled in demo mode' : undefined}
+                disabled={busy !== null || gstinInvalid}
                 style={{
                   marginTop: 10,
                   width: '100%',
@@ -265,8 +268,8 @@ export default function PricingTab({
                   color: p.id === 'pack10' ? T.emeraldDark : '#fff',
                   fontWeight: 600,
                   fontSize: 13,
-                  cursor: isDemo || busy ? 'not-allowed' : 'pointer',
-                  opacity: isDemo || (busy && busy !== p.id) ? 0.6 : 1,
+                  cursor: busy ? 'not-allowed' : 'pointer',
+                  opacity: busy && busy !== p.id ? 0.6 : 1,
                 }}
               >
                 {busy === p.id ? 'Opening…' : 'Buy'}
@@ -338,29 +341,47 @@ export default function PricingTab({
         GST is 18%. A numbered GST invoice is emailed for every purchase. Your first review is free, one per account.
       </p>
 
-      <a
-        href={`${v.path}/corporate`}
-        style={{
+      {(() => {
+        const inner = (
+          <>
+            <div style={{ fontFamily: 'var(--font-inter), sans-serif', fontWeight: 600, fontSize: 15, color: T.bubbleText }}>
+              Looking for team or company {v.reviews}?
+            </div>
+            <div style={{ fontSize: 12.5, color: T.bubbleText, opacity: 0.85, marginTop: 4 }}>
+              Buy a pool of 100, 200 or 500 {v.reviews} against your company GSTIN and hand them to your team.
+              One GST invoice, one admin, clean cost reporting.
+            </div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: T.emeraldDark, marginTop: 8 }}>
+              See corporate bundles →
+            </div>
+          </>
+        )
+        const box: React.CSSProperties = {
           display: 'block',
+          width: '100%',
+          textAlign: 'left',
           marginTop: 18,
           textDecoration: 'none',
           background: T.emeraldTint,
           border: `1px solid ${T.emeraldBorder}`,
           borderRadius: 12,
           padding: 16,
-        }}
-      >
-        <div style={{ fontFamily: 'var(--font-inter), sans-serif', fontWeight: 600, fontSize: 15, color: T.bubbleText }}>
-          Looking for team or company {v.reviews}?
-        </div>
-        <div style={{ fontSize: 12.5, color: T.bubbleText, opacity: 0.85, marginTop: 4 }}>
-          Buy a pool of 100, 200 or 500 {v.reviews} against your company GSTIN and hand them to your team.
-          One GST invoice, one admin, clean cost reporting.
-        </div>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: T.emeraldDark, marginTop: 8 }}>
-          See corporate bundles →
-        </div>
-      </a>
+          cursor: 'pointer',
+        }
+        return isDemo ? (
+          <button
+            type="button"
+            style={box}
+            onClick={() => setMsg({ kind: 'err', text: 'Purchases are turned off in demo mode.' })}
+          >
+            {inner}
+          </button>
+        ) : (
+          <a href={`${v.path}/corporate`} style={box}>
+            {inner}
+          </a>
+        )
+      })()}
     </div>
   )
 }

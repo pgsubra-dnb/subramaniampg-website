@@ -34,6 +34,12 @@ import {
   makeOrgAdmin,
   joinOrg,
   getSeenWalkthroughs,
+  seedDemoLibraryEntry,
+  getSeedLibraryRows,
+  getDemoCloneRows,
+  cleanupDemoLibrary,
+  getDemoOrgFor,
+  getDemoOrgMembers,
   pool,
 } from './helpers'
 import { resolveOrCreateUser } from '../lib/okrAlly'
@@ -59,10 +65,12 @@ process.env.ALLOW_NONPROD_FULFILLMENT = '1'
 
 const createdUsers: string[] = []
 const createdGstins: string[] = []
+const createdSeedKeys: string[] = []
 
 test.afterAll(async () => {
   await cleanupUsers(createdUsers)
   await cleanupOrgs(createdGstins)
+  await cleanupDemoLibrary(createdSeedKeys)
   await pool.end()
 })
 
@@ -2140,6 +2148,140 @@ test('demo reset: mints a fresh demo account and clears the previous run', async
   )
   expect(fresh.rows[0].id).not.toBe(demo.demoUserId)
   createdUsers.push(fresh.rows[0].id)
+})
+
+// ── Demo seed library + corporate demo (migration 015) ────────────────────
+
+test('demo individual: History is pre-seeded from cloned library rows, byte-identical, originals untouched', async ({ context }) => {
+  const k1 = `e2e-ind-${Date.now()}-a`
+  const k2 = `e2e-ind-${Date.now()}-b`
+  createdSeedKeys.push(k1, k2)
+  const s1 = await seedDemoLibraryEntry(k1, 'okr_ally', `Seed A ${Date.now()}: raise trial-to-paid conversion`)
+  await seedDemoLibraryEntry(k2, 'okr_ally', `Seed B ${Date.now()}: shorten the enterprise sales cycle`)
+  // a goal_ally row must NOT be cloned into an okr_ally demo
+  const kg = `e2e-ind-${Date.now()}-g`
+  createdSeedKeys.push(kg)
+  await seedDemoLibraryEntry(kg, 'goal_ally', 'Seed G: members reach their first completed plan')
+
+  const libBefore = await getSeedLibraryRows()
+  const mineBefore = libBefore.filter((r) => [k1, k2].includes(r.idempotency_key.slice('demo-seed:'.length)))
+  expect(mineBefore).toHaveLength(2)
+
+  const demo = await startDemo(context, BASE, 'okr_ally', 'individual')
+  createdUsers.push(demo.admin.userId, demo.demoUserId)
+
+  const clones = await getDemoCloneRows(demo.demoUserId)
+  // exactly the two okr_ally library rows, none of the goal_ally one
+  const clonedObjectives = clones.map((c) => c.objective).sort()
+  expect(clonedObjectives).toEqual(mineBefore.map((r) => r.objective).sort())
+  for (const c of clones) {
+    expect(c.idempotency_key.startsWith('demo-clone:')).toBe(true)
+    const src = mineBefore.find((r) => r.objective === c.objective)!
+    expect(JSON.stringify(c.krs)).toBe(JSON.stringify(src.krs))
+    expect(JSON.stringify(c.context_snapshot)).toBe(JSON.stringify(src.context_snapshot))
+    expect(c.overall_score).toBe(src.overall_score)
+    expect(c.id).not.toBe(src.id) // a copy, new row
+  }
+
+  // every seed-library row is byte-identical after the clone (nothing moved/edited)
+  const libAfter = await getSeedLibraryRows()
+  for (const before of libBefore) {
+    const after = libAfter.find((r) => r.id === before.id)
+    expect(after, `seed row ${before.idempotency_key} still present`).toBeTruthy()
+    expect(JSON.stringify(after)).toBe(JSON.stringify(before))
+  }
+  expect(libAfter).toHaveLength(libBefore.length)
+  expect(s1.submissionId).toBe(libAfter.find((r) => r.id === s1.submissionId)!.id)
+})
+
+test('demo corporate: demo org + seeded employees with cloned usage; view-as; teardown removes it all', async ({ request, context }) => {
+  const kc = `e2e-corp-${Date.now()}`
+  createdSeedKeys.push(kc)
+  await seedDemoLibraryEntry(kc, 'okr_ally', `Corp seed ${Date.now()}: cut onboarding time to first value`)
+
+  const demo = await startDemo(context, BASE, 'okr_ally', 'corporate')
+  createdUsers.push(demo.admin.userId)
+
+  // me (as the demo cookie) is the org admin
+  const me = await (await request.get(`${BASE}/api/okr-ally/me`, { headers: { cookie: demo.cookieHeader } })).json()
+  expect(me.isDemo).toBe(true)
+  expect(me.demoCorporate).toBe(true)
+  expect(me.demoRole).toBe('admin')
+  expect(me.user.isOrgAdmin).toBe(true)
+  // context deliberately unpublished so the gate can be demoed
+  expect(me.orgContext).not.toBeNull()
+  expect(me.orgContext.confirmed).toBe(false)
+
+  const org = await getDemoOrgFor(demo.demoUserId)
+  expect(org?.is_demo).toBe(true)
+  createdGstins.push(org!.gstin)
+  const members = await getDemoOrgMembers(org!.id)
+  createdUsers.push(...members.map((m) => m.id))
+  expect(members.every((m) => m.is_demo)).toBe(true)
+  const employees = members.filter((m) => !m.is_org_admin)
+  expect(employees.length).toBeGreaterThanOrEqual(2)
+
+  // each employee has an allocation ledger row + org balance + cloned usage
+  for (const emp of employees) {
+    const alloc = await pool.query<{ n: string }>(
+      `SELECT COALESCE(SUM(credits_allocated),0) n FROM organization_allocations WHERE organization_id = $1 AND user_id = $2`,
+      [org!.id, emp.id]
+    )
+    const bal = await pool.query<{ credits_remaining: number }>(
+      `SELECT credits_remaining FROM org_credit_balance WHERE organization_id = $1 AND user_id = $2`,
+      [org!.id, emp.id]
+    )
+    const used = await pool.query<{ n: string }>(
+      `SELECT COUNT(*) n FROM credit_transactions WHERE organization_id = $1 AND user_id = $2 AND type = 'usage'`,
+      [org!.id, emp.id]
+    )
+    const subs = await pool.query<{ n: string }>(
+      `SELECT COUNT(*) n FROM submissions WHERE user_id = $1 AND is_demo`,
+      [emp.id]
+    )
+    const net = Number(alloc.rows[0].n)
+    const remaining = bal.rows[0].credits_remaining
+    expect(net - remaining).toBe(Number(used.rows[0].n))
+    expect(Number(subs.rows[0].n)).toBe(Number(used.rows[0].n))
+  }
+
+  // the usage report the org admin sees has real content for employee 1
+  const empEmail = (await pool.query<{ email: string }>(`SELECT email FROM users WHERE id = $1`, [employees[0].id])).rows[0].email
+  const repRes = await request.get(
+    `${BASE}/api/okr-ally/org/report?email=${encodeURIComponent(empEmail)}`,
+    { headers: { cookie: demo.cookieHeader } }
+  )
+  expect(repRes.status()).toBe(200)
+  const rep = await repRes.json()
+  expect(rep.used).toBeGreaterThan(0)
+  expect(rep.allocated).toBeGreaterThan(0)
+
+  // "View as employee" re-signs the demo cookie
+  const va = await request.post(`${BASE}/api/okr-ally/demo/view-as`, {
+    headers: { cookie: demo.cookieHeader },
+    data: { role: 'employee', brand: 'okr_ally' },
+  })
+  expect(va.status()).toBe(200)
+  const vaCookie = va.headers()['set-cookie']
+  expect(vaCookie).toMatch(/okr_ally_demo=/)
+  const newCookie = 'okr_ally_demo=' + /okr_ally_demo=([^;]+)/.exec(vaCookie)![1]
+  const meEmp = await (await request.get(`${BASE}/api/okr-ally/me`, { headers: { cookie: newCookie } })).json()
+  expect(meEmp.demoRole).toBe('employee')
+  expect(meEmp.user.isOrgAdmin).toBe(false)
+
+  // Exit tears the whole demo org down
+  const exit = await request.post(`${BASE}/api/okr-ally/demo/exit`, {
+    headers: { cookie: demo.cookieHeader },
+    data: { brand: 'okr_ally' },
+  })
+  expect(exit.status()).toBe(200)
+  expect((await pool.query(`SELECT 1 FROM organizations WHERE id = $1`, [org!.id])).rowCount).toBe(0)
+  for (const m of members) {
+    expect((await pool.query(`SELECT 1 FROM users WHERE id = $1`, [m.id])).rowCount).toBe(0)
+  }
+  // seed library survives teardown
+  const lib = await getSeedLibraryRows()
+  expect(lib.some((r) => r.idempotency_key === `demo-seed:${kc}`)).toBe(true)
 })
 
 // ── Brand vocabulary (Goal Ally) ──────────────────────────────────────────
