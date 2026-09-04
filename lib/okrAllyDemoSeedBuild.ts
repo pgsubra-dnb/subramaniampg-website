@@ -7,7 +7,7 @@ import { SEED_KEY_PREFIX, SEED_REAL_SOURCE_EMAIL, SEED_DRAFTS } from '@/lib/okrA
 /**
  * Seed-library build step. Kept in its own module because it pulls in the live
  * review engine (runReview) — that must stay out of lib/okrAllyDemo.ts, which is
- * imported by app/api/okr-ally/me. Only the admin-only _seedlib route calls this.
+ * imported by app/api/okr-ally/me. Only the admin-only seedlib route calls this.
  *
  * `only` = 'real' clones PGS's single real submission+review verbatim (his row is
  * only read, never written); 'S1'..'S4' run the synthetic draft through the REAL
