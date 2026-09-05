@@ -52,9 +52,13 @@ export async function POST(req: NextRequest) {
   }
 
   const shapeErrors: { row: number; email: string; error: string }[] = []
-  const rows: { email: string; credits: number }[] = []
+  const rows: { row: number; email: string; credits: number }[] = []
   dataRows.forEach((cols, i) => {
     const row = i + 2
+    // A blank line (stray spacing in the file, a trailing newline) — skipped
+    // without erroring and without shifting any later row's line number,
+    // since `parseCsv` no longer drops blank rows before this indexing runs.
+    if (cols.every((f) => f.trim() === '')) return
     if (cols.length !== 2) {
       shapeErrors.push({
         row,
@@ -63,7 +67,7 @@ export async function POST(req: NextRequest) {
       })
       return
     }
-    rows.push({ email: (cols[0] ?? '').trim(), credits: Number((cols[1] ?? '').trim()) })
+    rows.push({ row, email: (cols[0] ?? '').trim(), credits: Number((cols[1] ?? '').trim()) })
   })
   if (shapeErrors.length > 0) {
     return NextResponse.json({ errors: shapeErrors }, { status: 400 })

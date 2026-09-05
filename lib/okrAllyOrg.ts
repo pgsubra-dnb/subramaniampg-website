@@ -489,13 +489,11 @@ async function allocateOrgCreditsTx(
     [orgId]
   )
   const o = org.rows[0]
-  if (!o) throw new Rollback('Organization not found.', undefined, email)
+  if (!o) throw new Rollback('Organization not found.')
   const available = o.credits_purchased - o.credits_allocated
   if (credits > available) {
     throw new Rollback(
-      `Only ${available === 1 ? `1 ${v.review}` : `${available} ${v.reviews}`} left in the pool. Buy more, or reclaim unused ${v.reviews} first.`,
-      undefined,
-      email
+      `Only ${available === 1 ? `1 ${v.review}` : `${available} ${v.reviews}`} left in the pool. Buy more, or reclaim unused ${v.reviews} first.`
     )
   }
 
@@ -611,6 +609,11 @@ export async function allocateOrgCredits(
 }
 
 export interface BulkAllocateRowInput {
+  /** The file line number this row came from (the header is row 1) — passed
+   *  through by the caller so it survives any rows the caller already
+   *  dropped (blank lines, wrong column count) without re-deriving it from
+   *  this array's own index, which would no longer match the file. */
+  row: number
   email: string
   credits: number
 }
@@ -630,8 +633,10 @@ export type BulkAllocateOutcome =
   | { ok: false; errors: BulkAllocateRowError[] }
 
 /**
- * Bulk-allocate from a parsed CSV upload — one `{ email, credits }` row per
- * employee, in file order (the caller strips the header before calling this).
+ * Bulk-allocate from a parsed CSV upload — one `{ row, email, credits }` row
+ * per employee, in file order (the caller strips the header and any blank or
+ * malformed-shape lines before calling this, but must pass through each
+ * surviving row's true file line number in `row` rather than array position).
  *
  * Every row is validated up front — malformed email, non-positive/non-integer
  * amount, a duplicate email within the file, or a total exceeding the org's
@@ -661,8 +666,8 @@ export async function bulkAllocateOrgCredits(
   const seen = new Set<string>()
   const normalized: { row: number; email: string; credits: number }[] = []
 
-  rows.forEach((r, i) => {
-    const row = i + 2 // file line number — row 1 is the header
+  rows.forEach((r) => {
+    const row = r.row
     const rawEmail = (r.email || '').trim()
     const email = rawEmail.toLowerCase()
     if (!EMAIL_RE.test(email)) {
@@ -704,11 +709,12 @@ export async function bulkAllocateOrgCredits(
   }
 
   // Resolve/create every recipient outside the transaction, same as the
-  // single-entry path.
-  const recipients = new Map<string, OkrAllyUser>()
-  for (const r of normalized) {
-    recipients.set(r.email, await resolveOrCreateUser(r.email))
-  }
+  // single-entry path. Independent, already-deduplicated emails, so this is
+  // safe to run concurrently rather than one round-trip at a time.
+  const recipientEntries = await Promise.all(
+    normalized.map(async (r) => [r.email, await resolveOrCreateUser(r.email)] as const)
+  )
+  const recipients = new Map(recipientEntries)
 
   let txResults: { email: string; credits: number }[]
   try {
@@ -719,7 +725,10 @@ export async function bulkAllocateOrgCredits(
         try {
           await allocateOrgCreditsTx(client, orgId, recipient, r.email, r.credits, v)
         } catch (e) {
-          if (e instanceof Rollback) throw new Rollback(e.msg, r.row, r.email)
+          if (e instanceof Rollback) {
+            e.row = r.row
+            e.email = r.email
+          }
           throw e
         }
         out.push({ email: recipient.email, credits: r.credits })
@@ -742,13 +751,25 @@ export async function bulkAllocateOrgCredits(
     throw e
   }
 
-  const ctxAfter = await getOrgAdminContext(user)
-  const results = await Promise.all(
-    txResults.map(async ({ email, credits }) => {
+  // Notifications go out after commit, bounded to a handful in flight at once
+  // so a large upload doesn't burst past Brevo's rate limit. sendBrevoEmail
+  // never throws (it returns false on any failure), so one bad send can't
+  // take down the rest of the batch or make an already-committed upload look
+  // like it failed.
+  const EMAIL_CONCURRENCY = 10
+  const results: BulkAllocateEmployeeResult[] = new Array(txResults.length)
+  let next = 0
+  async function sendNext() {
+    while (next < txResults.length) {
+      const i = next++
+      const { email, credits } = txResults[i]
       const recipient = recipients.get(email)!
-      const emailed = await sendAllocationEmail(recipient, credits, v, ctxAfter.organization.name)
-      return { email, credits, emailed }
-    })
+      const emailed = await sendAllocationEmail(recipient, credits, v, ctxBefore.organization.name)
+      results[i] = { email, credits, emailed }
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(EMAIL_CONCURRENCY, txResults.length) }, sendNext)
   )
 
   return { ok: true, allocated: results.length, totalCredits: totalRequested, results }

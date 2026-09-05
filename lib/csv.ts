@@ -51,8 +51,12 @@ export function parseCsv(text: string): string[][] {
   }
   if (field.length > 0 || row.length > 0) pushRow()
 
-  // Drop wholly-blank rows (a trailing newline, stray blank lines).
-  return rows.filter((r) => r.some((f) => f.trim() !== ''))
+  // Blank rows (a stray blank line, a trailing newline) are kept, not
+  // dropped — dropping them here would shift every later row's index out of
+  // sync with its real file line number. Callers that number rows against
+  // the file (e.g. the bulk-allocation upload) skip blank rows themselves,
+  // after they've already been counted.
+  return rows
 }
 
 export function toCsvField(value: string | number): string {
