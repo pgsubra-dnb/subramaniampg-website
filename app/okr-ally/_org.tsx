@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AllyRow, Btn, T } from './_ui'
 import { type Brand, DEFAULT_BRAND, vocab, reviewCount } from '@/lib/okrAllyBrand'
 
@@ -111,6 +111,7 @@ export default function OrgAdminScreen({
 
       <ContextPanel status={status} onDone={refresh} />
       <AllocatePanel available={status.poolAvailable} brand={brand} onDone={refresh} />
+      <BulkAllocatePanel brand={brand} onDone={refresh} />
       <ReclaimPanel brand={brand} onDone={refresh} />
       <ReportPanel brand={brand} />
 
@@ -312,6 +313,119 @@ function AllocatePanel({
         before any personal {v.reviews}.
       </p>
       <Msg m={msg} />
+    </div>
+  )
+}
+
+interface BulkRowError {
+  row: number
+  email: string
+  error: string
+}
+
+function BulkAllocatePanel({ brand, onDone }: { brand: Brand; onDone: () => void }) {
+  const v = vocab(brand)
+  const [file, setFile] = useState<File | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [rowErrors, setRowErrors] = useState<BulkRowError[] | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  async function upload() {
+    if (!file) return
+    setBusy(true)
+    setMsg(null)
+    setRowErrors(null)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('brand', brand)
+      const res = await fetch('/api/okr-ally/org/allocate/bulk', { method: 'POST', body: form })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        if (Array.isArray(j.errors)) {
+          setRowErrors(j.errors)
+          setMsg({
+            kind: 'err',
+            text: `${j.errors.length} row${j.errors.length === 1 ? '' : 's'} failed — nothing was allocated.`,
+          })
+        } else {
+          setMsg({ kind: 'err', text: j.error || 'Upload failed.' })
+        }
+        return
+      }
+      setMsg({
+        kind: 'ok',
+        text: `Allocated ${reviewCount(brand, j.totalCredits)} across ${j.allocated} employee${j.allocated === 1 ? '' : 's'}. Everyone has been emailed.`,
+      })
+      setFile(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      onDone()
+    } catch {
+      setMsg({ kind: 'err', text: 'Network problem — nothing was allocated.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={card}>
+      <div style={{ fontWeight: 700, fontSize: 13.5, color: T.charcoal, marginBottom: 10 }}>
+        Bulk-allocate {v.reviews} from a CSV
+      </div>
+      <p style={{ fontSize: 12, color: T.muted, margin: '0 0 10px', lineHeight: 1.5 }}>
+        Two columns: email and {v.reviews} to give each person.{' '}
+        <a
+          href={`/api/okr-ally/org/allocate/template?brand=${brand}`}
+          style={{ color: T.emeraldDark, fontWeight: 600 }}
+        >
+          Download template
+        </a>
+        .
+      </p>
+      <div className="flex gap-2" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          style={{ fontSize: 12.5 }}
+        />
+        <Btn small onClick={upload} disabled={busy || !file}>
+          {busy ? 'Uploading…' : 'Upload and allocate'}
+        </Btn>
+      </div>
+      <p style={{ fontSize: 11.5, color: T.muted, marginTop: 8 }}>
+        Every row is checked first — a bad row (an invalid email, a non-positive amount, a duplicate email, or
+        a total over the pool) cancels the whole file. Nothing is allocated unless every row passes.
+      </p>
+      <Msg m={msg} />
+      {rowErrors && rowErrors.length > 0 && (
+        <div
+          style={{
+            marginTop: 10,
+            maxHeight: 220,
+            overflowY: 'auto',
+            border: `1px solid ${T.hairline}`,
+            borderRadius: 8,
+          }}
+        >
+          {rowErrors.map((e, i) => (
+            <div
+              key={i}
+              style={{
+                fontSize: 12,
+                padding: '6px 10px',
+                borderTop: i === 0 ? 'none' : `1px solid ${T.hairline}`,
+                color: T.charcoal,
+              }}
+            >
+              <strong>{e.row > 0 ? `Row ${e.row}` : 'File'}</strong>
+              {e.email ? ` (${e.email})` : ''}: <span style={{ color: T.error }}>{e.error}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

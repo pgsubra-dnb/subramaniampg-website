@@ -55,21 +55,29 @@ export async function sendBrevoEmail({
     `Brevo send: subject="${subject}" to=${to} bcc=${payload.bcc ? 'pgs@embiggen.co.in' : 'none'}`
   )
 
-  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
-    method: 'POST',
-    headers: {
-      'api-key': apiKey,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  })
+  // Never throw — callers (including ones that batch many sends together,
+  // e.g. bulk allocation) rely on this always resolving to true/false so one
+  // network blip can't take down work that already committed elsewhere.
+  try {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'api-key': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
 
-  const responseText = await res.text()
-  console.log('Brevo status:', res.status)
-  console.log('Brevo response:', responseText)
+    const responseText = await res.text()
+    console.log('Brevo status:', res.status)
+    console.log('Brevo response:', responseText)
 
-  if (!res.ok) {
-    console.error('Brevo failed:', res.status, responseText)
+    if (!res.ok) {
+      console.error('Brevo failed:', res.status, responseText)
+    }
+    return res.ok
+  } catch (err) {
+    console.error('Brevo send threw:', err)
+    return false
   }
-  return res.ok
 }
