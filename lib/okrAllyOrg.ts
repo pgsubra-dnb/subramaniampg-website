@@ -6,7 +6,7 @@ import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 import { pdfSafe } from '@/lib/okrAllyReport'
 import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
 import { tokens } from '@/lib/okrAllyTokens'
-import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
+import { type Brand, type BrandVocab, DEFAULT_BRAND, vocab, reviewCount } from '@/lib/okrAllyBrand'
 
 /**
  * OKR Ally — self-serve corporate / organization credits (migration 009).
@@ -456,9 +456,103 @@ export async function getOrgContextForMember(user: OkrAllyUser): Promise<OrgCont
 }
 
 class Rollback extends Error {
-  constructor(public msg: string) {
+  constructor(
+    public msg: string,
+    public row?: number,
+    public email?: string
+  ) {
     super(msg)
   }
+}
+
+/**
+ * The per-employee allocation writes, shared by the single-entry admin UI and
+ * the bulk-CSV upload: lock the org row, check the pool, decrement it, tag the
+ * recipient with this org (never moving them off an existing home org), log to
+ * `organization_allocations`, and upsert `org_credit_balance`. Runs on
+ * whatever transaction `client` belongs to — the single-entry path opens its
+ * own one-row transaction; the bulk path shares one transaction across every
+ * row in the file so the whole upload commits or rolls back together. Throws
+ * `Rollback` (never returns an error) so either caller's `withTransaction`
+ * rolls back cleanly on an insufficient pool.
+ */
+async function allocateOrgCreditsTx(
+  client: PoolClient,
+  orgId: string,
+  recipient: OkrAllyUser,
+  email: string,
+  credits: number,
+  v: BrandVocab
+): Promise<{ employeeOrgBalance: number; poolAvailable: number }> {
+  const org = await client.query<{ credits_purchased: number; credits_allocated: number }>(
+    `SELECT credits_purchased, credits_allocated FROM organizations WHERE id = $1 FOR UPDATE`,
+    [orgId]
+  )
+  const o = org.rows[0]
+  if (!o) throw new Rollback('Organization not found.', undefined, email)
+  const available = o.credits_purchased - o.credits_allocated
+  if (credits > available) {
+    throw new Rollback(
+      `Only ${available === 1 ? `1 ${v.review}` : `${available} ${v.reviews}`} left in the pool. Buy more, or reclaim unused ${v.reviews} first.`,
+      undefined,
+      email
+    )
+  }
+
+  await client.query(`UPDATE organizations SET credits_allocated = credits_allocated + $2 WHERE id = $1`, [
+    orgId,
+    credits,
+  ])
+  await client.query(`UPDATE users SET organization_id = COALESCE(organization_id, $2) WHERE id = $1`, [
+    recipient.id,
+    orgId,
+  ])
+  await client.query(
+    `INSERT INTO organization_allocations (organization_id, user_id, email, credits_allocated)
+     VALUES ($1, $2, $3, $4)`,
+    [orgId, recipient.id, email, credits]
+  )
+  const bal = await client.query<{ credits_remaining: number }>(
+    `INSERT INTO org_credit_balance (user_id, organization_id, credits_remaining)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (user_id, organization_id)
+     DO UPDATE SET credits_remaining = org_credit_balance.credits_remaining + EXCLUDED.credits_remaining,
+                   updated_at = now()
+     RETURNING credits_remaining`,
+    [recipient.id, orgId, credits]
+  )
+  return { employeeOrgBalance: bal.rows[0].credits_remaining, poolAvailable: available - credits }
+}
+
+/** The "you've been given reviews" notification, shared by the single-entry
+ *  and bulk allocation paths. Non-blocking by design — a failed send never
+ *  rolls back an allocation that has already committed. */
+async function sendAllocationEmail(
+  recipient: OkrAllyUser,
+  credits: number,
+  v: BrandVocab,
+  organizationName: string
+): Promise<boolean> {
+  const unit = credits === 1 ? v.review : v.reviews
+  return sendBrevoEmail({
+    to: recipient.email,
+    toName: recipient.name,
+    subject: `${credits} ${unit} from ${organizationName}`,
+    htmlContent: `
+      <div style="font-family:Inter,Arial,sans-serif;color:${tokens.textPrimary};line-height:1.6;">
+        <p><strong>${organizationName}</strong> has given you <strong>${credits} ${unit}</strong> in ${v.product}.</p>
+        <p>Sign in at <a href="https://subramaniampg.guru${v.path}">subramaniampg.guru${v.path}</a> with this email address to use them. These are separate from any ${v.reviews} you bought yourself — your reviews spend the company ones first.</p>
+        <p style="font-size:13px;color:${tokens.textSecondary};">— Subramaniam P G</p>
+      </div>`,
+    textContent:
+      `${organizationName} has given you ${credits} ${unit} in ${v.product}. ` +
+      `Sign in at https://subramaniampg.guru${v.path} with this email address to use them. ` +
+      `They are separate from any ${v.reviews} you bought yourself; your reviews spend the company ones first.`,
+    // An org admin allocating from their own pool is not a payment event —
+    // PGS is not copied. The corporate purchase itself (invoice + the
+    // "you're the admin" email) already copied him.
+    skipBcc: true,
+  })
 }
 
 export interface AllocateResult {
@@ -496,70 +590,14 @@ export async function allocateOrgCredits(
 
   let result: { employeeOrgBalance: number; poolAvailable: number }
   try {
-    result = await withTransaction(async (client) => {
-      const org = await client.query<{ credits_purchased: number; credits_allocated: number }>(
-        `SELECT credits_purchased, credits_allocated FROM organizations WHERE id = $1 FOR UPDATE`,
-        [orgId]
-      )
-      const o = org.rows[0]
-      if (!o) throw new Rollback('Organization not found.')
-      const available = o.credits_purchased - o.credits_allocated
-      if (credits > available) {
-        throw new Rollback(
-          `Only ${available === 1 ? `1 ${v.review}` : `${available} ${v.reviews}`} left in the pool. Buy more, or reclaim unused ${v.reviews} first.`
-        )
-      }
-
-      await client.query(`UPDATE organizations SET credits_allocated = credits_allocated + $2 WHERE id = $1`, [
-        orgId,
-        credits,
-      ])
-      await client.query(`UPDATE users SET organization_id = COALESCE(organization_id, $2) WHERE id = $1`, [
-        recipient.id,
-        orgId,
-      ])
-      await client.query(
-        `INSERT INTO organization_allocations (organization_id, user_id, email, credits_allocated)
-         VALUES ($1, $2, $3, $4)`,
-        [orgId, recipient.id, email, credits]
-      )
-      const bal = await client.query<{ credits_remaining: number }>(
-        `INSERT INTO org_credit_balance (user_id, organization_id, credits_remaining)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (user_id, organization_id)
-         DO UPDATE SET credits_remaining = org_credit_balance.credits_remaining + EXCLUDED.credits_remaining,
-                       updated_at = now()
-         RETURNING credits_remaining`,
-        [recipient.id, orgId, credits]
-      )
-      return { employeeOrgBalance: bal.rows[0].credits_remaining, poolAvailable: available - credits }
-    })
+    result = await withTransaction((client) => allocateOrgCreditsTx(client, orgId, recipient, email, credits, v))
   } catch (e) {
     if (e instanceof Rollback) return { ok: false, error: e.msg }
     throw e
   }
 
   const ctx = await getOrgAdminContext(user)
-  const unit = credits === 1 ? v.review : v.reviews
-  const emailed = await sendBrevoEmail({
-    to: recipient.email,
-    toName: recipient.name,
-    subject: `${credits} ${unit} from ${ctx.organization.name}`,
-    htmlContent: `
-      <div style="font-family:Inter,Arial,sans-serif;color:${tokens.textPrimary};line-height:1.6;">
-        <p><strong>${ctx.organization.name}</strong> has given you <strong>${credits} ${unit}</strong> in ${v.product}.</p>
-        <p>Sign in at <a href="https://subramaniampg.guru${v.path}">subramaniampg.guru${v.path}</a> with this email address to use them. These are separate from any ${v.reviews} you bought yourself — your reviews spend the company ones first.</p>
-        <p style="font-size:13px;color:${tokens.textSecondary};">— Subramaniam P G</p>
-      </div>`,
-    textContent:
-      `${ctx.organization.name} has given you ${credits} ${unit} in ${v.product}. ` +
-      `Sign in at https://subramaniampg.guru${v.path} with this email address to use them. ` +
-      `They are separate from any ${v.reviews} you bought yourself; your reviews spend the company ones first.`,
-    // An org admin allocating from their own pool is not a payment event —
-    // PGS is not copied. The corporate purchase itself (invoice + the
-    // "you're the admin" email) already copied him.
-    skipBcc: true,
-  })
+  const emailed = await sendAllocationEmail(recipient, credits, v, ctx.organization.name)
 
   return {
     ok: true,
@@ -570,6 +608,150 @@ export async function allocateOrgCredits(
     poolAvailable: result.poolAvailable,
     emailed,
   }
+}
+
+export interface BulkAllocateRowInput {
+  email: string
+  credits: number
+}
+export interface BulkAllocateRowError {
+  /** 1-based file line number (the header is row 1), or 0 for a whole-file error. */
+  row: number
+  email: string
+  error: string
+}
+export interface BulkAllocateEmployeeResult {
+  email: string
+  credits: number
+  emailed: boolean
+}
+export type BulkAllocateOutcome =
+  | { ok: true; allocated: number; totalCredits: number; results: BulkAllocateEmployeeResult[] }
+  | { ok: false; errors: BulkAllocateRowError[] }
+
+/**
+ * Bulk-allocate from a parsed CSV upload — one `{ email, credits }` row per
+ * employee, in file order (the caller strips the header before calling this).
+ *
+ * Every row is validated up front — malformed email, non-positive/non-integer
+ * amount, a duplicate email within the file, or a total exceeding the org's
+ * available pool — and the whole file is rejected with a row-by-row error
+ * list if any check fails. Nothing is allocated unless every row passes.
+ *
+ * On success, every row runs through the exact same DB writes as the
+ * single-entry admin UI (`allocateOrgCreditsTx`) — same user resolution,
+ * same `organization_allocations` log, same `org_credit_balance` upsert, same
+ * pool decrement — but all rows share ONE transaction, so the entire file
+ * commits or rolls back atomically. Notification emails (the same one the
+ * single-entry path sends) go out only after that commit.
+ */
+export async function bulkAllocateOrgCredits(
+  user: OkrAllyUser,
+  rows: BulkAllocateRowInput[],
+  brand?: Brand
+): Promise<BulkAllocateOutcome> {
+  const v = vocab(brand ?? DEFAULT_BRAND)
+  const orgId = requireOrgAdmin(user)
+
+  if (rows.length === 0) {
+    return { ok: false, errors: [{ row: 0, email: '', error: 'The file has no rows to allocate.' }] }
+  }
+
+  const errors: BulkAllocateRowError[] = []
+  const seen = new Set<string>()
+  const normalized: { row: number; email: string; credits: number }[] = []
+
+  rows.forEach((r, i) => {
+    const row = i + 2 // file line number — row 1 is the header
+    const rawEmail = (r.email || '').trim()
+    const email = rawEmail.toLowerCase()
+    if (!EMAIL_RE.test(email)) {
+      errors.push({ row, email: rawEmail, error: 'Not a valid email address.' })
+      return
+    }
+    const credits = Number(r.credits)
+    if (!Number.isInteger(credits) || credits < 1) {
+      errors.push({ row, email, error: `${v.reviews} must be a positive whole number.` })
+      return
+    }
+    if (credits > ALLOC_MAX) {
+      errors.push({ row, email, error: `${v.reviews} cannot exceed ${ALLOC_MAX} in a single allocation.` })
+      return
+    }
+    if (seen.has(email)) {
+      errors.push({ row, email, error: 'Duplicate email — already appears earlier in this file.' })
+      return
+    }
+    seen.add(email)
+    normalized.push({ row, email, credits })
+  })
+
+  if (errors.length > 0) return { ok: false, errors }
+
+  const totalRequested = normalized.reduce((sum, r) => sum + r.credits, 0)
+  const ctxBefore = await getOrgAdminContext(user)
+  if (totalRequested > ctxBefore.poolAvailable) {
+    return {
+      ok: false,
+      errors: [
+        {
+          row: 0,
+          email: '',
+          error: `The file requests ${reviewCount(v.key, totalRequested)}, but only ${reviewCount(v.key, ctxBefore.poolAvailable)} are available in the pool.`,
+        },
+      ],
+    }
+  }
+
+  // Resolve/create every recipient outside the transaction, same as the
+  // single-entry path.
+  const recipients = new Map<string, OkrAllyUser>()
+  for (const r of normalized) {
+    recipients.set(r.email, await resolveOrCreateUser(r.email))
+  }
+
+  let txResults: { email: string; credits: number }[]
+  try {
+    txResults = await withTransaction(async (client) => {
+      const out: { email: string; credits: number }[] = []
+      for (const r of normalized) {
+        const recipient = recipients.get(r.email)!
+        try {
+          await allocateOrgCreditsTx(client, orgId, recipient, r.email, r.credits, v)
+        } catch (e) {
+          if (e instanceof Rollback) throw new Rollback(e.msg, r.row, r.email)
+          throw e
+        }
+        out.push({ email: recipient.email, credits: r.credits })
+      }
+      return out
+    })
+  } catch (e) {
+    if (e instanceof Rollback) {
+      return {
+        ok: false,
+        errors: [
+          {
+            row: e.row ?? 0,
+            email: e.email ?? '',
+            error: `${e.msg} (the pool changed after this file was checked — nothing in this upload was allocated)`,
+          },
+        ],
+      }
+    }
+    throw e
+  }
+
+  const ctxAfter = await getOrgAdminContext(user)
+  const results = await Promise.all(
+    txResults.map(async ({ email, credits }) => {
+      const recipient = recipients.get(email)!
+      const emailed = await sendAllocationEmail(recipient, credits, v, ctxAfter.organization.name)
+      return { email, credits, emailed }
+    })
+  )
+
+  return { ok: true, allocated: results.length, totalCredits: totalRequested, results }
 }
 
 export interface ReclaimResult {
