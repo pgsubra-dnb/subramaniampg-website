@@ -89,9 +89,23 @@ export default function CoursePage() {
     return null
   }
 
+  // Once a course is 100% complete there is no incomplete lesson to jump to.
+  // Completion must never block access, so fall back to the first lesson so the
+  // learner can review the content they already finished.
+  function getFirstLessonUrl(): string | null {
+    const modules = [...(course!.modules || [])].sort((a, b) => a.order - b.order)
+    for (const mod of modules) {
+      const lessons = [...(mod.lessons || [])].sort((a, b) => a.order - b.order)
+      if (lessons.length > 0) {
+        return `/academy/${params.courseSlug}/${mod.order}/${lessons[0].order}`
+      }
+    }
+    return null
+  }
+
   function handleContinueClick() {
     if (isEnrolled) {
-      const url = getNextLessonUrl()
+      const url = getNextLessonUrl() || getFirstLessonUrl()
       router.push(url || '/academy/dashboard')
       return
     }
@@ -189,7 +203,9 @@ export default function CoursePage() {
             className="px-8 py-3 rounded font-medium"
             style={{ background: '#633806', color: '#FAEEDA' }}>
             {isEnrolled
-              ? (completedLessons.length > 0 ? 'Continue Learning' : 'Start Learning')
+              ? (progressPct === 100
+                  ? 'Review Course'
+                  : completedLessons.length > 0 ? 'Continue Learning' : 'Start Learning')
               : (course.price === 0 ? 'Start free course' : `Enrol — ₹${course.price}`)}
           </button>
         </div>
