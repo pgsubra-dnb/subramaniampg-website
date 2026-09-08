@@ -1,5 +1,8 @@
 import { createClient } from '@sanity/client'
 import crypto from 'crypto'
+import type { NextRequest } from 'next/server'
+
+export const ACADEMY_SESSION_COOKIE = 'academy_session'
 
 export const sanityClient = createClient({
   projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID || 'vpwi5zan',
@@ -93,6 +96,22 @@ export async function createLearnerRecord(data: {
     certificateRefs: [],
     advancedCourseInterest: false,
   })
+}
+
+/** The signed-in learner's id + email from the `academy_session` cookie, or
+ *  null. The cookie holds the Sanity learnerRecord._id. */
+export async function getSessionLearner(
+  req: NextRequest
+): Promise<{ id: string; email: string; name: string } | null> {
+  const id = req.cookies.get(ACADEMY_SESSION_COOKIE)?.value
+  if (!id) return null
+  const l = await sanityClient.fetch(
+    `*[_type == 'learnerRecord' && _id == $id][0]{ _id, email, name }`,
+    { id },
+    { cache: 'no-store' }
+  )
+  if (!l?.email) return null
+  return { id: l._id, email: String(l.email).toLowerCase(), name: l.name ?? '' }
 }
 
 // ─── Brevo ───────────────────────────────────────────────────────
