@@ -29,6 +29,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [showFeedback, setShowFeedback] = useState<string | null>(null)
   const [viewingCert, setViewingCert] = useState<CertificateViewData | null>(null)
+  const [isCompanyAdmin, setIsCompanyAdmin] = useState(false)
 
   useEffect(() => {
     fetch('/api/academy/me').then(r => r.json()).then(data => {
@@ -36,6 +37,10 @@ export default function DashboardPage() {
       setLearner(data.learner)
       setLoading(false)
     })
+    fetch('/api/academy/corporate/status')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => setIsCompanyAdmin(!!d?.isAdmin))
+      .catch(() => {})
   }, [router])
 
   async function viewCertificate(cert: Certificate, courseName: string) {
@@ -73,6 +78,17 @@ export default function DashboardPage() {
             <p className="text-3xl font-bold" style={{ color: '#633806' }}>{learner.pointsTotal}</p>
           </div>
         </div>
+
+        {isCompanyAdmin && (
+          <Link href="/academy/company"
+            className="block rounded-lg p-4 mb-6 border"
+            style={{ background: '#FAEEDA', borderColor: '#E4C89B', color: '#633806' }}>
+            <span style={{ fontWeight: 600 }}>Manage your company’s seats →</span>
+            <span className="block text-sm mt-0.5" style={{ color: '#8A6A3A' }}>
+              Assign seats to your team, track progress, and reclaim what’s unused.
+            </span>
+          </Link>
+        )}
 
         {/* Courses */}
         {learner.enrolledCourses?.map(course => {

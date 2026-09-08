@@ -1,5 +1,8 @@
 import { createClient } from '@sanity/client'
 import crypto from 'crypto'
+import type { NextRequest } from 'next/server'
+
+export const ACADEMY_SESSION_COOKIE = 'academy_session'
 
 export const sanityClient = createClient({
   projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID || 'vpwi5zan',
@@ -93,6 +96,22 @@ export async function createLearnerRecord(data: {
     certificateRefs: [],
     advancedCourseInterest: false,
   })
+}
+
+/** The signed-in learner's id + email from the `academy_session` cookie, or
+ *  null. The cookie holds the Sanity learnerRecord._id. */
+export async function getSessionLearner(
+  req: NextRequest
+): Promise<{ id: string; email: string; name: string } | null> {
+  const id = req.cookies.get(ACADEMY_SESSION_COOKIE)?.value
+  if (!id) return null
+  const l = await sanityClient.fetch(
+    `*[_type == 'learnerRecord' && _id == $id][0]{ _id, email, name }`,
+    { id },
+    { cache: 'no-store' }
+  )
+  if (!l?.email) return null
+  return { id: l._id, email: String(l.email).toLowerCase(), name: l.name ?? '' }
 }
 
 // ─── Brevo ───────────────────────────────────────────────────────
@@ -194,4 +213,102 @@ export async function upsertBrevoContact(
       updateEnabled: true,
     }),
   })
+}
+
+// ─── Enrol a learner by email ────────────────────────────────────────────
+
+export interface EnrolLearnerResult {
+  learnerId: string
+  /** True when the learnerRecord was created by this call. */
+  learnerCreated: boolean
+  /** True when the learner was already enrolled in this course before the call. */
+  alreadyEnrolled: boolean
+  /** True when a login link email was requested AND accepted by Brevo. */
+  magicLinkSent: boolean
+}
+
+/**
+ * Enrol the learner identified by `email` in `course`, creating the
+ * learnerRecord on first sight and appending the course to `enrolledCourses`
+ * only if it is not already there. Optionally emails a 15-minute login link.
+ *
+ * This is the shared primitive behind free enrolment, paid enrolment, and
+ * corporate seat assignment. Sanity writes only — it deliberately does NOT
+ * touch Neon, so it can be called after a Neon transaction has committed.
+ * Non-blocking on the Brevo contact upsert and the email send.
+ */
+export async function enrolLearnerByEmail(
+  email: string,
+  course: { id: string; slug: string; title: string },
+  opts: {
+    name?: string
+    company?: string
+    /** Send the "you're enrolled / here's your link" email. */
+    sendMagicLink?: boolean
+    /** Overrides the default enrolment email copy (e.g. for a corporate seat). */
+    customEmail?: { subject: string; introHtml: string }
+  } = {}
+): Promise<EnrolLearnerResult> {
+  const normalized = email.trim().toLowerCase()
+  const displayName = opts.name?.trim() || normalized.split('@')[0]
+
+  let learner = await getLearnerByEmail(normalized)
+  let learnerCreated = false
+  let alreadyEnrolled = false
+
+  if (!learner) {
+    learner = await createLearnerRecord({
+      name: displayName,
+      email: normalized,
+      company: opts.company?.trim() || '',
+      courseId: course.id,
+    })
+    learnerCreated = true
+  } else {
+    alreadyEnrolled = !!learner.enrolledCourses?.some(
+      (c: { _ref: string }) => c._ref === course.id
+    )
+    if (!alreadyEnrolled) {
+      await sanityClient
+        .patch(learner._id)
+        .setIfMissing({ enrolledCourses: [] })
+        .append('enrolledCourses', [{ _type: 'reference', _ref: course.id }])
+        .commit()
+    }
+  }
+
+  try {
+    await upsertBrevoContact(normalized, {
+      FIRSTNAME: displayName.split(' ')[0],
+      LASTNAME: displayName.split(' ').slice(1).join(' '),
+      ACADEMY_ENROLLED: 'true',
+    })
+  } catch (e) {
+    console.error('enrolLearnerByEmail: Brevo contact upsert failed', e)
+  }
+
+  let magicLinkSent = false
+  if (opts.sendMagicLink) {
+    const token = generateToken()
+    await storeMagicToken(normalized, token, learner._id)
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://subramaniampg.guru'
+    const magicLink = `${siteUrl}/api/academy/verify?token=${token}`
+    const intro =
+      opts.customEmail?.introHtml ??
+      `<p>Hi ${displayName},</p>
+       <p>You are now enrolled in <strong>${course.title}</strong>.</p>`
+    magicLinkSent = await sendBrevoEmail(
+      normalized,
+      opts.customEmail?.subject ?? `You are enrolled in ${course.title}`,
+      `
+        ${intro}
+        <p>Click this link to start learning. The link expires in 15 minutes.</p>
+        <p><a href="${magicLink}" style="background:#633806;color:#FAEEDA;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">Start learning</a></p>
+        <p>If the link has expired, visit <a href="${siteUrl}/academy/${course.slug}">${siteUrl}/academy/${course.slug}</a> and enter your email for a new one.</p>
+        <p>Subramaniam P G<br>Growth Architect and Executive Coach<br>Embiggen Consulting LLP</p>
+      `
+    )
+  }
+
+  return { learnerId: learner._id, learnerCreated, alreadyEnrolled, magicLinkSent }
 }
