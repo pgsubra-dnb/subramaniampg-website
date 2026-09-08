@@ -74,6 +74,12 @@ export default async function AcademyPage() {
           Practical courses built from 40 years of experience helping leaders
           align purpose with execution.
         </p>
+        <p className="text-sm mt-6" style={{ color: '#5F5E5A' }}>
+          Training a team?{' '}
+          <Link href="/academy/company/buy" style={{ color: '#633806', fontWeight: 600 }}>
+            Buy seats in bulk for your organisation →
+          </Link>
+        </p>
       </section>
 
       {/* Course grid */}
