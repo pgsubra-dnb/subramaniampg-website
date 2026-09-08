@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import {
   getLearnerByEmail,
-  generateToken,
-  storeMagicToken,
+  generateSignInCode,
+  storeSignInCode,
   sendBrevoEmail,
+  renderAcademyEmail,
   sanityClient,
+  SIGN_IN_CODE_TTL_MS,
 } from '@/lib/academy'
 
 export async function POST(req: NextRequest) {
@@ -118,21 +120,23 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const token = generateToken()
-    await storeMagicToken(email, token, learner._id)
-    const magicLink = `${siteUrl}/api/academy/verify?token=${token}`
+    const code = generateSignInCode()
+    await storeSignInCode(email, code)
+    const ttlMin = Math.round(SIGN_IN_CODE_TTL_MS / 60000)
 
     await sendBrevoEmail(
       email,
-      `You are enrolled in ${course.title}`,
-      `
-        <p>Thank you for your payment.</p>
-        <p>You are now enrolled in <strong>${course.title}</strong>.</p>
-        <p>Click this link to start learning. The link expires in 15 minutes.</p>
-        <p><a href="${magicLink}" style="background:#633806;color:#FAEEDA;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">Start learning</a></p>
-        <p>If the link has expired, visit your course page and enter your email to get a new one.</p>
-        <p>Subramaniam P G<br>Growth Architect and Executive Coach<br>Embiggen Consulting LLP</p>
-      `
+      `Your sign-in code for ${course.title}`,
+      renderAcademyEmail(
+        `You are enrolled in ${course.title}`,
+        `
+          <p style="margin:0 0 12px;color:#5F5E5A;">Thank you for your payment. Enter this code back in the tab where you paid to start learning:</p>
+          <p style="font-size:30px;font-weight:700;letter-spacing:6px;margin:16px 0;color:#2C2C2A;">${code}</p>
+          <p style="font-size:13px;color:#888780;margin:0 0 16px;">It expires in ${ttlMin} minutes and can be used once.</p>
+          <p style="font-size:13px;color:#888780;margin:0;">If it expires, open <a href="${siteUrl}/academy/${courseSlug}" style="color:#633806;">your course</a>, choose Log in, and enter this email for a fresh code.</p>
+        `
+      ),
+      true // skipBcc — never copy a sign-in code to anyone else
     )
 
     return NextResponse.json({ success: true })

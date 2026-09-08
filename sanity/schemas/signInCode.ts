@@ -1,11 +1,10 @@
 import { defineField, defineType } from 'sanity'
 
 /**
- * OKR Ally / Goal Ally — one-time 6-digit sign-in code.
- *
- * Lives ONLY in the isolated `okr-ally` dataset (registered in the okrAlly
- * workspace, never the main one). Replaces the old `magicToken` link mechanism
- * for OKR Ally — Academy still uses `magicToken` in `production`, untouched.
+ * One-time 6-digit sign-in code — the sign-in mechanism for both the Academy
+ * (`production` dataset, lib/academy.ts) and OKR Ally / Goal Ally (`okr-ally`
+ * dataset, lib/okrAllySanity.ts). Stored per-dataset; replaces the old
+ * `magicToken` link so sign-in never leaves the tab where it was requested.
  *
  * The code itself is never stored: `codeHash` is HMAC-SHA256(code, keyed by the
  * email + a server secret). `attempts` counts wrong guesses; the verify path
@@ -26,7 +25,7 @@ export default defineType({
       name: 'codeHash',
       title: 'Code Hash',
       type: 'string',
-      description: 'HMAC of the 6-digit code, keyed by email + OKR_ALLY_SESSION_SECRET. Never the code itself.',
+      description: 'HMAC of the 6-digit code, keyed by email + a server secret. Never the code itself.',
       validation: (Rule) => Rule.required(),
     }),
     defineField({

@@ -22,51 +22,99 @@ export function generateCertificateId(courseCode: string): string {
   return `${courseCode}-${year}-${random}`
 }
 
-// ─── Magic link tokens (stored in Sanity) ────────────────────────
+// ─── 6-digit sign-in codes (stored in Sanity) ────────────────────
+//
+// Replaces the magic link. The learner types the code back into the tab where
+// they asked for it, so sign-in never leaves the original tab / window. Same
+// shape as OKR Ally's code path (lib/okrAllySanity.ts): the code is never
+// stored — `codeHash` is an HMAC keyed by the email + a server secret — and a
+// short TTL plus a hard wrong-attempt cap defend the online path.
 
-export function generateToken(): string {
-  return crypto.randomBytes(32).toString('hex')
+export const SIGN_IN_CODE_TTL_MS = 15 * 60 * 1000
+export const MAX_SIGN_IN_CODE_ATTEMPTS = 5
+
+/** A uniformly-random 6-digit code, "000000"–"999999" (no modulo bias). */
+export function generateSignInCode(): string {
+  return String(crypto.randomInt(0, 1_000_000)).padStart(6, '0')
 }
 
-function hashToken(token: string): string {
-  return crypto.createHash('sha256').update(token).digest('hex')
+function signInCodeHash(email: string, code: string): string {
+  // SANITY_API_TOKEN is a high-entropy server-only secret present in every
+  // environment that runs this code; keying the HMAC with it means a leak of the
+  // Sanity dataset alone can't be brute-forced back to a 6-digit code.
+  const secret = process.env.SANITY_API_TOKEN
+  if (!secret) {
+    throw new Error('SANITY_API_TOKEN is not set — required to hash sign-in codes')
+  }
+  return crypto.createHmac('sha256', secret).update(`${email}:${code}`).digest('hex')
 }
 
-export async function storeMagicToken(email: string, token: string, learnerId?: string): Promise<void> {
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString()
+/**
+ * Issue a fresh code for `email`, replacing any code already on file (a resend
+ * always supersedes — the old one stops working immediately).
+ */
+export async function storeSignInCode(email: string, code: string): Promise<void> {
+  const existing: { _id: string }[] = await sanityClient.fetch(
+    `*[_type == 'signInCode' && email == $email]{ _id }`,
+    { email },
+    { cache: 'no-store' }
+  )
+  await Promise.all(existing.map((d) => sanityClient.delete(d._id)))
+
   await sanityClient.create({
-    _type: 'magicToken',
+    _type: 'signInCode',
     email,
-    learnerId,
-    tokenHash: hashToken(token),
-    expiresAt,
+    codeHash: signInCodeHash(email, code),
+    attempts: 0,
+    expiresAt: new Date(Date.now() + SIGN_IN_CODE_TTL_MS).toISOString(),
   })
 }
 
-export async function verifyMagicToken(token: string): Promise<{ email: string; learnerId?: string } | null> {
-  const tokenHash = hashToken(token)
-  const now = new Date().toISOString()
+export type VerifySignInCodeResult =
+  | { ok: true; email: string }
+  /** 'invalid' = wrong code, tries left; 'expired' = no code on file or past TTL;
+   *  'locked' = attempt cap hit, the code is now dead and a new one is needed. */
+  | { ok: false; reason: 'invalid' | 'expired' | 'locked' }
 
+/**
+ * Check a submitted (email, code) pair. On success the code is consumed
+ * (deleted). On the Nth wrong try (N = MAX_SIGN_IN_CODE_ATTEMPTS) the code is
+ * destroyed and 'locked' is returned; earlier wrong tries just bump the counter.
+ */
+export async function verifySignInCode(
+  email: string,
+  code: string
+): Promise<VerifySignInCodeResult> {
   const doc = await sanityClient.fetch(
-    `*[_type == 'magicToken' && tokenHash == $tokenHash && expiresAt > $now][0]`,
-    { tokenHash, now },
+    `*[_type == 'signInCode' && email == $email] | order(_createdAt desc)[0]`,
+    { email },
     { cache: 'no-store' }
   )
 
-  if (!doc) return null
+  if (!doc?._id) return { ok: false, reason: 'expired' }
 
-  await sanityClient.delete(doc._id)
+  if (!doc.expiresAt || Date.parse(doc.expiresAt) <= Date.now()) {
+    await sanityClient.delete(doc._id)
+    return { ok: false, reason: 'expired' }
+  }
 
-  return { email: doc.email, learnerId: doc.learnerId }
-}
+  const expected = Buffer.from(signInCodeHash(email, code))
+  const stored = Buffer.from(String(doc.codeHash || ''))
+  const match =
+    expected.length === stored.length && crypto.timingSafeEqual(expected, stored)
 
-export async function cleanExpiredTokens(): Promise<void> {
-  const now = new Date().toISOString()
-  const expired = await sanityClient.fetch(
-    `*[_type == 'magicToken' && expiresAt < $now]{ _id }`,
-    { now }
-  )
-  await Promise.all(expired.map((doc: { _id: string }) => sanityClient.delete(doc._id)))
+  if (match) {
+    await sanityClient.delete(doc._id)
+    return { ok: true, email: doc.email }
+  }
+
+  const attempts = (typeof doc.attempts === 'number' ? doc.attempts : 0) + 1
+  if (attempts >= MAX_SIGN_IN_CODE_ATTEMPTS) {
+    await sanityClient.delete(doc._id)
+    return { ok: false, reason: 'locked' }
+  }
+  await sanityClient.patch(doc._id).set({ attempts }).commit()
+  return { ok: false, reason: 'invalid' }
 }
 
 // ─── Learner ─────────────────────────────────────────────────────
@@ -223,8 +271,8 @@ export interface EnrolLearnerResult {
   learnerCreated: boolean
   /** True when the learner was already enrolled in this course before the call. */
   alreadyEnrolled: boolean
-  /** True when a login link email was requested AND accepted by Brevo. */
-  magicLinkSent: boolean
+  /** True when the welcome email was requested AND accepted by Brevo. */
+  welcomeEmailSent: boolean
 }
 
 /**
@@ -243,8 +291,8 @@ export async function enrolLearnerByEmail(
   opts: {
     name?: string
     company?: string
-    /** Send the "you're enrolled / here's your link" email. */
-    sendMagicLink?: boolean
+    /** Send the "you're enrolled — open your course" welcome email. */
+    sendWelcomeEmail?: boolean
     /** Overrides the default enrolment email copy (e.g. for a corporate seat). */
     customEmail?: { subject: string; introHtml: string }
   } = {}
@@ -287,28 +335,27 @@ export async function enrolLearnerByEmail(
     console.error('enrolLearnerByEmail: Brevo contact upsert failed', e)
   }
 
-  let magicLinkSent = false
-  if (opts.sendMagicLink) {
-    const token = generateToken()
-    await storeMagicToken(normalized, token, learner._id)
+  let welcomeEmailSent = false
+  if (opts.sendWelcomeEmail) {
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://subramaniampg.guru'
-    const magicLink = `${siteUrl}/api/academy/verify?token=${token}`
+    const courseUrl = `${siteUrl}/academy/${course.slug}`
     const intro =
       opts.customEmail?.introHtml ??
       `<p>Hi ${displayName},</p>
        <p>You are now enrolled in <strong>${course.title}</strong>.</p>`
-    magicLinkSent = await sendBrevoEmail(
+    welcomeEmailSent = await sendBrevoEmail(
       normalized,
       opts.customEmail?.subject ?? `You are enrolled in ${course.title}`,
       `
         ${intro}
-        <p>Click this link to start learning. The link expires in 15 minutes.</p>
-        <p><a href="${magicLink}" style="background:#633806;color:#FAEEDA;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">Start learning</a></p>
-        <p>If the link has expired, visit <a href="${siteUrl}/academy/${course.slug}">${siteUrl}/academy/${course.slug}</a> and enter your email for a new one.</p>
+        <p>Open your course here:</p>
+        <p><a href="${courseUrl}" style="background:#633806;color:#FAEEDA;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">Go to the course</a></p>
+        <p>The first time you visit, choose <strong>Log in</strong> and enter this email address —
+           we'll send you a 6-digit sign-in code to type in. No password needed.</p>
         <p>Subramaniam P G<br>Growth Architect and Executive Coach<br>Embiggen Consulting LLP</p>
       `
     )
   }
 
-  return { learnerId: learner._id, learnerCreated, alreadyEnrolled, magicLinkSent }
+  return { learnerId: learner._id, learnerCreated, alreadyEnrolled, welcomeEmailSent }
 }
