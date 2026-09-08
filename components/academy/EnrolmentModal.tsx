@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 
 interface Props {
@@ -28,7 +28,14 @@ export default function EnrolmentModal({ courseId, courseSlug, courseTitle, pric
   const [company, setCompany] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [sent, setSent] = useState(false)
+
+  // 'form' → collecting details; 'code' → 6-digit code entry (same tab);
+  // 'done' → enrolled but we couldn't send a code, fall back to the login page.
+  const [phase, setPhase] = useState<'form' | 'code' | 'done'>('form')
+  const [code, setCode] = useState('')
+  const [cooldown, setCooldown] = useState(0)
+  const [doneMessage, setDoneMessage] = useState('')
+  const codeInputRef = useRef<HTMLInputElement>(null)
 
   // Paid flow state
   const [showCouponField, setShowCouponField] = useState(false)
@@ -45,6 +52,16 @@ export default function EnrolmentModal({ courseId, courseSlug, courseTitle, pric
   const gst = Math.round(discountedPrice * 0.18)
   const total = discountedPrice + gst
   const isFreeAfterCoupon = couponApplied && discountPercent === 100
+
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [cooldown])
+
+  useEffect(() => {
+    if (phase === 'code') codeInputRef.current?.focus()
+  }, [phase])
 
   // Load Razorpay script when paid flow is active
   useEffect(() => {
@@ -76,7 +93,63 @@ export default function EnrolmentModal({ courseId, courseSlug, courseTitle, pric
     }
   }
 
-  // Free course flow (unchanged)
+  /** Request a 6-digit sign-in code for `email` and move to the code step.
+   *  Falls back to the 'done' panel if the code email can't be sent. */
+  async function sendCodeAndAdvance(fallbackMessage: string) {
+    setCooldown(60)
+    try {
+      const res = await fetch('/api/academy/sign-in-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.success) {
+        setPhase('code')
+        return
+      }
+    } catch {
+      /* fall through */
+    }
+    setDoneMessage(fallbackMessage)
+    setPhase('done')
+  }
+
+  async function resendCode() {
+    if (cooldown > 0) return
+    setError('')
+    setCooldown(60)
+    await fetch('/api/academy/sign-in-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    }).catch(() => {})
+  }
+
+  async function submitCode() {
+    if (!/^\d{6}$/.test(code)) { setError('Enter the 6-digit code from the email.'); return }
+    setSubmitting(true)
+    setError('')
+    try {
+      const res = await fetch('/api/academy/sign-in-code/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code, redirect: `/academy/${courseSlug}` }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.ok) {
+        window.location.assign(data.redirect || `/academy/${courseSlug}`)
+      } else {
+        setError(data.error || 'That code isn’t right. Check it and try again.')
+      }
+    } catch {
+      setError('Something went wrong signing you in. Try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // Free course flow
   async function handleFreeSubmit() {
     if (!name || !email) { setError('Name and email are required'); return }
     setSubmitting(true)
@@ -89,12 +162,7 @@ export default function EnrolmentModal({ courseId, courseSlug, courseTitle, pric
       })
       const data = await res.json()
       if (data.success) {
-        await fetch('/api/academy/magic-link', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
-        })
-        setSent(true)
+        await sendCodeAndAdvance('You are enrolled. Open the course and choose “Log in” to get your sign-in code.')
       } else {
         setError(data.error || 'Something went wrong')
       }
@@ -105,7 +173,7 @@ export default function EnrolmentModal({ courseId, courseSlug, courseTitle, pric
     }
   }
 
-  // 100% coupon — enrol directly via free flow but skip name collection
+  // 100% coupon — enrol directly, skip name collection
   async function handleFreeEnrol() {
     if (!email) { setError('Email is required'); return }
     setSubmitting(true)
@@ -118,12 +186,7 @@ export default function EnrolmentModal({ courseId, courseSlug, courseTitle, pric
       })
       const data = await res.json()
       if (data.success) {
-        await fetch('/api/academy/magic-link', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
-        })
-        setSent(true)
+        await sendCodeAndAdvance('You are enrolled. Open the course and choose “Log in” to get your sign-in code.')
       } else {
         setError(data.error || 'Something went wrong')
       }
@@ -185,8 +248,10 @@ export default function EnrolmentModal({ courseId, courseSlug, courseTitle, pric
           })
           const verifyData = await verifyRes.json()
           if (verifyData.success) {
-            setSent(true)
-            setPaymentMessage('Payment successful. Check your email for your course access link.')
+            // verify-payment has already emailed a 6-digit code.
+            setCooldown(60)
+            setPhase('code')
+            setPaymentMessage('Payment successful. We’ve emailed you a 6-digit sign-in code.')
           } else {
             setError('Payment verification failed. Please contact pgs@embiggen.co.in.')
           }
@@ -208,22 +273,23 @@ export default function EnrolmentModal({ courseId, courseSlug, courseTitle, pric
     }
   }
 
-  // Returning learner flow — email only, send magic link
+  // Returning learner flow — email only, send a sign-in code
   async function handleReturningSubmit() {
     if (!email) { setError('Email is required'); return }
     setSubmitting(true)
     setError('')
     try {
-      const res = await fetch('/api/academy/magic-link', {
+      const res = await fetch('/api/academy/sign-in-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       })
-      const data = await res.json()
-      if (data.success) {
-        setSent(true)
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.success) {
+        setCooldown(60)
+        setPhase('code')
       } else {
-        setError(data.error || 'Could not send access link. Please try again.')
+        setError(data.error || 'Could not send a sign-in code. Please try again.')
       }
     } catch {
       setError('Something went wrong. Please try again.')
@@ -232,7 +298,46 @@ export default function EnrolmentModal({ courseId, courseSlug, courseTitle, pric
     }
   }
 
-  if (sent) {
+  // ── Code entry (same tab) ───────────────────────────────────────
+  if (phase === 'code') {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        style={{ background: 'rgba(44,44,42,0.6)' }}>
+        <div className="w-full max-w-md rounded-lg p-8" style={{ background: '#FAF8F5' }}>
+          <h2 className="text-xl mb-2" style={{ fontFamily: 'Lora, serif', color: '#2C2C2A' }}>
+            Enter your sign-in code
+          </h2>
+          <p className="text-sm mb-5" style={{ color: '#5F5E5A' }}>
+            {paymentMessage ? `${paymentMessage} ` : ''}We sent a 6-digit code to <strong>{email}</strong>.
+            It expires in 15 minutes.
+          </p>
+          <input ref={codeInputRef} type="text" inputMode="numeric" autoComplete="one-time-code"
+            value={code} maxLength={6}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            onKeyDown={(e) => { if (e.key === 'Enter') submitCode() }}
+            placeholder="123456"
+            className="w-full px-4 py-3 rounded border outline-none mb-4 text-lg tracking-[0.4em]"
+            style={{ borderColor: '#D3D1C7', background: '#FFFFFF', color: '#2C2C2A' }} />
+          {error && <p className="text-sm mb-4" style={{ color: '#E24B4A' }}>{error}</p>}
+          <button onClick={submitCode} disabled={code.length !== 6 || submitting}
+            className="w-full py-3 rounded text-sm font-medium"
+            style={{ background: '#633806', color: '#FAEEDA', opacity: code.length !== 6 || submitting ? 0.6 : 1 }}>
+            {submitting ? 'Signing you in…' : 'Sign in'}
+          </button>
+          <div className="flex items-center justify-between mt-4 text-xs" style={{ color: '#888780' }}>
+            <span>Didn’t get it? Check spam or junk.</span>
+            <button onClick={resendCode} disabled={cooldown > 0}
+              style={{ color: cooldown > 0 ? '#B4B2A9' : '#633806' }}>
+              {cooldown > 0 ? `Resend (${cooldown}s)` : 'Resend code'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Enrolled, but the code email couldn't be sent ───────────────
+  if (phase === 'done') {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
         style={{ background: 'rgba(44,44,42,0.6)' }}>
@@ -242,16 +347,14 @@ export default function EnrolmentModal({ courseId, courseSlug, courseTitle, pric
             <span style={{ color: '#1D9E75', fontSize: 28 }}>✓</span>
           </div>
           <h2 className="text-xl mb-3" style={{ fontFamily: 'Lora, serif', color: '#2C2C2A' }}>
-            {isPaid && !isFreeAfterCoupon ? 'Payment successful' : 'You are enrolled'}
+            You are enrolled
           </h2>
-          <p className="text-sm mb-4" style={{ color: '#5F5E5A' }}>
-            {paymentMessage || 'Check your email for your course access link.'}
-          </p>
-          <button onClick={onClose}
-            className="px-6 py-2 rounded text-sm border"
-            style={{ borderColor: '#D3D1C7', color: '#5F5E5A' }}>
-            Close
-          </button>
+          <p className="text-sm mb-5" style={{ color: '#5F5E5A' }}>{doneMessage}</p>
+          <a href={`/academy/${courseSlug}`}
+            className="inline-block px-6 py-2 rounded text-sm font-medium"
+            style={{ background: '#633806', color: '#FAEEDA' }}>
+            Go to the course
+          </a>
         </div>
       </div>
     )
@@ -269,7 +372,7 @@ export default function EnrolmentModal({ courseId, courseSlug, courseTitle, pric
           // ── Returning learner — email confirmation only ────────────
           <>
             <p className="text-sm mb-6" style={{ color: '#5F5E5A' }}>
-              Enter your registered email address and we will send you a secure access link.
+              Enter your registered email address and we’ll send you a 6-digit sign-in code.
             </p>
             <div className="mb-4">
               <label className="block text-xs font-medium mb-1" style={{ color: '#2C2C2A' }}>Email address</label>
@@ -282,7 +385,7 @@ export default function EnrolmentModal({ courseId, courseSlug, courseTitle, pric
               <button onClick={handleReturningSubmit} disabled={submitting || !email}
                 className="flex-1 py-3 rounded text-sm font-medium"
                 style={{ background: '#633806', color: '#FAEEDA', opacity: (submitting || !email) ? 0.6 : 1 }}>
-                {submitting ? 'Sending...' : 'Send access link'}
+                {submitting ? 'Sending...' : 'Send sign-in code'}
               </button>
               <button onClick={onClose}
                 className="px-4 py-3 rounded text-sm border"
@@ -292,7 +395,7 @@ export default function EnrolmentModal({ courseId, courseSlug, courseTitle, pric
             </div>
           </>
         ) : !isPaid ? (
-          // ── Free course flow (unchanged) ──────────────────────────
+          // ── Free course flow ──────────────────────────────────────
           <>
             <p className="text-sm mb-6" style={{ color: '#5F5E5A' }}>
               Free. No password needed. We send your progress and certificate by email.
@@ -335,7 +438,7 @@ export default function EnrolmentModal({ courseId, courseSlug, courseTitle, pric
           // ── Paid course flow ──────────────────────────────────────
           <>
             <p className="text-sm mb-6" style={{ color: '#5F5E5A' }}>
-              No password needed. Your access link arrives by email after payment.
+              No password needed. After payment we email a 6-digit sign-in code you enter right here.
             </p>
 
             {/* Email */}

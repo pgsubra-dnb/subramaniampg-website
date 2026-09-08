@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
         <p>Hi ${name},</p>
         <p>You are now enrolled in <strong>${courseTitle}</strong>.</p>
         <p>Start learning here: <a href="${siteUrl}/academy/${courseSlug}">${siteUrl}/academy/${courseSlug}</a></p>
-        <p>If you ever need to return to the course, just visit that link and enter your email to get a login link.</p>
+        <p>Whenever you return, visit that link, choose <strong>Log in</strong>, and enter this email — we’ll send you a 6-digit sign-in code to type in. No password needed.</p>
         <p>Subramaniam P G<br>Growth Architect and Executive Coach<br>Embiggen Consulting LLP</p>
       `
     )

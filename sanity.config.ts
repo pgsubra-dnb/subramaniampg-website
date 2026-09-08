@@ -41,10 +41,10 @@ import signInCode from './sanity/schemas/signInCode'
  *                 free-review flow, signInCode for auth, okrAllySettings for
  *                 footer/GST config).
  *
- * Auth for OKR Ally / Goal Ally is a 6-digit `signInCode` (this dataset only).
- * The shared `magicToken` schema is still registered here for legacy Academy
- * parity / any un-expired old docs, but nothing writes it any more. The
- * OKR Ally workspace has its own `okrAllyCourse` / `okrAllyCoupon` /
+ * Auth for both the Academy (`production`) and OKR Ally / Goal Ally (`okr-ally`)
+ * is a 6-digit `signInCode`, stored per-dataset. The old `magicToken` schema is
+ * still registered for any un-expired legacy docs, but nothing writes it any
+ * more. The OKR Ally workspace has its own `okrAllyCourse` / `okrAllyCoupon` /
  * `okrAllySettings` — the Academy `course`/`coupon` schemas pull in
  * academyModule / bookingLink references that don't belong in this dataset.
  * Editing one workspace never touches the other's data.
@@ -77,6 +77,7 @@ export default defineConfig([
         certificateRecord,
         feedbackRecord,
         magicToken,
+        signInCode,
         faq,
         coupon,
         assignment,

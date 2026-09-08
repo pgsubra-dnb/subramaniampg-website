@@ -445,7 +445,7 @@ async function enrolAssignedSeat(
 ): Promise<{ enrolled: boolean; emailed: boolean; alreadyEnrolled: boolean }> {
   try {
     const res = await enrolLearnerByEmail(email, course, {
-      sendMagicLink: true,
+      sendWelcomeEmail: true,
       customEmail: {
         subject: `${companyName} has enrolled you in ${course.title}`,
         introHtml: `<p><strong>${companyName}</strong> has given you a seat in <strong>${course.title}</strong> on the Embiggen Academy.</p>`,
@@ -455,7 +455,7 @@ async function enrolAssignedSeat(
       assignmentId,
       res.learnerId,
     ])
-    return { enrolled: true, emailed: res.magicLinkSent, alreadyEnrolled: res.alreadyEnrolled }
+    return { enrolled: true, emailed: res.welcomeEmailSent, alreadyEnrolled: res.alreadyEnrolled }
   } catch (e) {
     console.error('Academy corporate: seat enrolment failed', assignmentId, email, e)
     return { enrolled: false, emailed: false, alreadyEnrolled: false }
