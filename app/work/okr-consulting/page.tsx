@@ -1,6 +1,15 @@
 import Link from 'next/link'
 import NavBar from '@/components/NavBar'
 import Footer from '@/components/Footer'
+import ToolCallout from '@/components/ToolCallout'
+
+const OKR_ALLY_CALLOUT = {
+  heading: 'OKR Ally',
+  body:
+    'Not sure if your OKRs are strong enough to run on for a quarter. OKR Ally gives you an instant, structured review — scored on outcome versus output, specificity, measurability, ambition, and alignment. Beyond the score, it gives you a rewritten version of your OKR. Use it to learn what a stronger OKR looks like, or take it as a working draft for your quarter.',
+  ctaLabel: 'Try OKR Ally →',
+  ctaHref: 'https://app.subramaniampg.guru/okr-ally',
+}
 
 const BASE = 'https://www.subramaniampg.guru'
 
@@ -78,6 +87,11 @@ export default function OkrConsultingPage() {
           </div>
 
         </div>
+      </section>
+
+      {/* OKR Ally — top callout */}
+      <section className="max-w-5xl mx-auto px-6 pb-16">
+        <ToolCallout {...OKR_ALLY_CALLOUT} />
       </section>
 
       {/* Sound Familiar */}
@@ -463,6 +477,11 @@ export default function OkrConsultingPage() {
             </Link>
           </div>
         </div>
+      </section>
+
+      {/* OKR Ally — bottom callout */}
+      <section className="max-w-5xl mx-auto px-6 pb-16">
+        <ToolCallout {...OKR_ALLY_CALLOUT} />
       </section>
 
       {/* Final CTA Banner */}

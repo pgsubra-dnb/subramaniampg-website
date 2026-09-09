@@ -1,6 +1,17 @@
 import Link from 'next/link'
+import NavBar from '@/components/NavBar'
+import Footer from '@/components/Footer'
+import ToolCallout from '@/components/ToolCallout'
 
 const BASE = 'https://www.subramaniampg.guru'
+
+const GOAL_ALLY_CALLOUT = {
+  heading: 'When Your Goals Need a Gut Check',
+  body:
+    'Before you formalise goals into OKRs, Goal Ally gives you a fast, honest read on whether they are clear, measurable, and ambitious enough to matter. It also rewrites your goal for you — a model to learn from, or a starting point you can use directly.',
+  ctaLabel: 'Try Goal Ally →',
+  ctaHref: 'https://app.subramaniampg.guru/goal-ally',
+}
 
 export const metadata = {
   title: 'Strategy Consulting India | PACE Growth Architecture | Subramaniam P G',
@@ -139,11 +150,20 @@ const crossRefs = [
     link: '/work/strategy-consulting/assessment',
     linkLabel: 'Take the Assessment',
   },
+  {
+    title: 'When Your Goals Need a Gut Check',
+    body: 'Goal Ally gives your goals a fast, honest read before you turn them into OKRs — and rewrites them for you.',
+    link: 'https://app.subramaniampg.guru/goal-ally',
+    linkLabel: 'Try Goal Ally',
+    external: true,
+  },
 ]
 
 export default function StrategyConsultingPage() {
   return (
-    <main style={{ background: '#FAF8F5', color: '#2C2C2A', fontFamily: 'Inter, sans-serif' }}>
+    <>
+      <NavBar />
+      <main style={{ background: '#FAF8F5', color: '#2C2C2A', fontFamily: 'Inter, sans-serif' }}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceJsonLd) }} />
 
       {/* Breadcrumb */}
@@ -178,6 +198,11 @@ export default function StrategyConsultingPage() {
             Take the PACE Assessment
           </Link>
         </div>
+      </section>
+
+      {/* Goal Ally — top callout */}
+      <section style={{ padding: '0 2rem 3rem', maxWidth: '900px', margin: '0 auto' }}>
+        <ToolCallout {...GOAL_ALLY_CALLOUT} />
       </section>
 
       {/* Sound Familiar */}
@@ -325,18 +350,31 @@ export default function StrategyConsultingPage() {
           <p style={{ fontSize: '0.8rem', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#633806', marginBottom: '2rem' }}>
             Strategy, OKRs, and Coaching Work Together
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
-            {crossRefs.map((c, i) => (
-              <div key={i} style={{ background: '#fff', borderRadius: '8px', padding: '1.75rem' }}>
-                <h3 style={{ fontFamily: 'Lora, serif', fontSize: '1.05rem', fontWeight: 700, color: '#2C2C2A', margin: '0 0 0.75rem' }}>{c.title}</h3>
-                <p style={{ fontSize: '0.9rem', lineHeight: 1.7, color: '#5F5E5A', marginBottom: '1.25rem' }}>{c.body}</p>
-                <Link href={c.link} style={{ color: '#633806', fontWeight: 600, fontSize: '0.9rem', textDecoration: 'none' }}>
-                  {c.linkLabel} →
-                </Link>
-              </div>
-            ))}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            {crossRefs.map((c, i) => {
+              const external = 'external' in c && c.external
+              return (
+                <div key={i} style={{ background: '#fff', borderRadius: '8px', padding: '1.75rem' }}>
+                  <h3 style={{ fontFamily: 'Lora, serif', fontSize: '1.05rem', fontWeight: 700, color: '#2C2C2A', margin: '0 0 0.75rem' }}>{c.title}</h3>
+                  <p style={{ fontSize: '0.9rem', lineHeight: 1.7, color: '#5F5E5A', marginBottom: '1.25rem' }}>{c.body}</p>
+                  <Link
+                    href={c.link}
+                    target={external ? '_blank' : undefined}
+                    rel={external ? 'noopener noreferrer' : undefined}
+                    style={{ color: '#633806', fontWeight: 600, fontSize: '0.9rem', textDecoration: 'none' }}
+                  >
+                    {c.linkLabel} →
+                  </Link>
+                </div>
+              )
+            })}
           </div>
         </div>
+      </section>
+
+      {/* Goal Ally — bottom callout */}
+      <section style={{ padding: '3rem 2rem', maxWidth: '900px', margin: '0 auto' }}>
+        <ToolCallout {...GOAL_ALLY_CALLOUT} />
       </section>
 
       {/* Dark CTA */}
@@ -363,6 +401,8 @@ export default function StrategyConsultingPage() {
         </div>
       </section>
 
-    </main>
+      </main>
+      <Footer />
+    </>
   )
 }

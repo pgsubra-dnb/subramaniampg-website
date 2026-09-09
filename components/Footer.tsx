@@ -8,7 +8,7 @@ export default function Footer() {
       <div className="max-w-7xl mx-auto px-6 lg:px-10 pt-16 pb-10">
 
         {/* Top grid */}
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-10 pb-12 border-b border-white/10">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-10 pb-12 border-b border-white/10">
 
           {/* Brand */}
           <div className="lg:col-span-2">
@@ -62,6 +62,31 @@ export default function Footer() {
               <li>
                 <a href="https://cal.id/pgs/short-discussion" target="_blank" rel="noopener noreferrer" className="text-sm text-white/55 hover:text-white transition-colors">
                   Book a call
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          {/* Try Our AI Tools */}
+          <div>
+            <p className="text-xs font-semibold tracking-[0.15em] uppercase text-white/30 mb-5">
+              Try Our AI Tools
+            </p>
+            <ul className="space-y-3">
+              <li>
+                <a
+                  href="https://app.subramaniampg.guru/okr-ally"
+                  className="text-sm text-white/55 hover:text-white transition-colors"
+                >
+                  OKR Ally
+                </a>
+              </li>
+              <li>
+                <a
+                  href="https://app.subramaniampg.guru/goal-ally"
+                  className="text-sm text-white/55 hover:text-white transition-colors"
+                >
+                  Goal Ally
                 </a>
               </li>
             </ul>
