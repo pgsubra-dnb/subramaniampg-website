@@ -162,6 +162,27 @@ export function AdminList({
 
   return (
     <div>
+      <a
+        href="/admin/customers"
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          display: 'block',
+          textAlign: 'center',
+          fontFamily: 'var(--font-inter), sans-serif',
+          fontWeight: 600,
+          fontSize: 13,
+          padding: '10px 15px',
+          borderRadius: 8,
+          color: T.emeraldDark,
+          background: T.emeraldTint,
+          border: `1px solid ${T.hairline}`,
+          textDecoration: 'none',
+          marginBottom: 14,
+        }}
+      >
+        View all customers →
+      </a>
       <DemoModePanel brand={brand} />
       <GrantCreditsPanel brand={brand} />
 

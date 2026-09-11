@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser, OKR_ALLY_DEMO_COOKIE } from '@/lib/okrAlly'
-import { signDemoSession, DEMO_SESSION_MAX_AGE_SECONDS } from '@/lib/okrAllySession'
+import { signDemoSession, DEMO_SESSION_MAX_AGE_SECONDS, sessionCookieDomain } from '@/lib/okrAllySession'
 import { viewAsTarget } from '@/lib/okrAllyDemo'
 import { toBrand, vocab } from '@/lib/okrAllyBrand'
 
@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
     sameSite: 'lax',
     maxAge: DEMO_SESSION_MAX_AGE_SECONDS,
     path: '/',
+    domain: sessionCookieDomain(req.headers.get('host')),
   })
   return res
 }

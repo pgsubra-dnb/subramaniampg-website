@@ -38,6 +38,24 @@ export const ADMIN_SESSION_MAX_AGE_SECONDS = ADMIN_SESSION_MAX_AGE_MS / 1000
 export const DEMO_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000
 export const DEMO_SESSION_MAX_AGE_SECONDS = DEMO_SESSION_MAX_AGE_MS / 1000
 
+/**
+ * `Domain` attribute for `okr_ally_session` / `okr_ally_demo`. The production
+ * deployment is aliased to BOTH `subramaniampg.guru` and
+ * `app.subramaniampg.guru` — two different origins as far as cookies are
+ * concerned, since neither cookie previously set a `Domain`. That left a
+ * signed-in admin's session pinned to whichever host they signed in on: a
+ * page reachable only by typed URL (like /admin/customers) on the *other*
+ * host looked logged-out even though the same admin session cookie was
+ * sitting right there for the first host. A leading-dot domain shares the
+ * cookie across both. Preview deployments (`*.vercel.app`) and localhost
+ * fall through to `undefined` (host-only) — setting an unrelated `Domain`
+ * makes the browser silently drop the whole `Set-Cookie` header.
+ */
+export function sessionCookieDomain(host: string | null | undefined): string | undefined {
+  const h = (host || '').split(':')[0].toLowerCase()
+  return h.endsWith('subramaniampg.guru') ? '.subramaniampg.guru' : undefined
+}
+
 function sessionKey(): string {
   const secret = process.env.OKR_ALLY_SESSION_SECRET
   if (!secret) {

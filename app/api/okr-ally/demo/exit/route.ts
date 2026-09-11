@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser, OKR_ALLY_DEMO_COOKIE } from '@/lib/okrAlly'
+import { sessionCookieDomain } from '@/lib/okrAllySession'
 import { tearDownDemo } from '@/lib/okrAllyDemo'
 import { toBrand, vocab } from '@/lib/okrAllyBrand'
 
@@ -22,6 +23,10 @@ export async function POST(req: NextRequest) {
   }
 
   const res = NextResponse.json({ ok: true, redirect: vocab(brand).path })
-  res.cookies.delete(OKR_ALLY_DEMO_COOKIE)
+  res.cookies.delete({
+    name: OKR_ALLY_DEMO_COOKIE,
+    path: '/',
+    domain: sessionCookieDomain(req.headers.get('host')),
+  })
   return res
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifySignInCode } from '@/lib/okrAllySanity'
 import { resolveOrCreateUser, OKR_ALLY_SESSION_COOKIE } from '@/lib/okrAlly'
-import { signAdminSession, ADMIN_SESSION_MAX_AGE_SECONDS } from '@/lib/okrAllySession'
+import { signAdminSession, ADMIN_SESSION_MAX_AGE_SECONDS, sessionCookieDomain } from '@/lib/okrAllySession'
 import { allow } from '@/lib/okrAllyRateLimit'
 import { toBrand, vocab } from '@/lib/okrAllyBrand'
 
@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
         // Admins: 24h, then a fresh code is required. Everyone else: 7d.
         maxAge: user.is_admin ? ADMIN_SESSION_MAX_AGE_SECONDS : REGULAR_SESSION_MAX_AGE_SECONDS,
         path: '/',
+        domain: sessionCookieDomain(req.headers.get('host')),
       }
     )
     return response
