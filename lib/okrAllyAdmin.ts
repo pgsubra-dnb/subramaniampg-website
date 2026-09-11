@@ -168,6 +168,220 @@ export async function listAdminReviews(
   }
 }
 
+// ─── Customers (aggregate admin dashboard, /admin/customers) ───────────
+//
+// A read-only reporting layer over existing tables — no new payment
+// integration. One row per individual customer (a user with a personal
+// 'purchase' credit_transaction) or corporate customer (an `organizations`
+// row, which only ever exists because of an 'org_purchase'). Revenue is
+// tied back to `invoices` via the payment id on the purchase transaction,
+// since `invoices` itself carries no organization_id.
+
+export type AdminCustomerStatus = 'active' | 'low_use' | 'purchased_not_used'
+
+export interface AdminCustomerRow {
+  customerId: string
+  type: 'individual' | 'corporate'
+  customerName: string
+  amountPaid: number
+  creditsPurchased: number
+  creditsUsed: number
+  usersInAccount: number
+  lastActivity: string | null
+  status: AdminCustomerStatus
+  firstPurchaseDate: string | null
+}
+
+export interface AdminCustomerSummary {
+  totalCustomers: number
+  totalUsers: number
+  totalRevenue: number
+  purchasedNotUsedCount: number
+}
+
+export interface AdminCustomerListResult {
+  customers: AdminCustomerRow[]
+  summary: AdminCustomerSummary
+}
+
+interface RawCustomerRow {
+  customer_id: string
+  customer_name: string
+  amount_paid: string | null
+  credits_purchased: string | number | null
+  credits_used: string | null
+  credits_remaining: string | null
+  users_in_account?: string | number | null
+  last_activity: string | null
+  first_purchase_date: string | null
+}
+
+/** 'Purchased not used' beats 'Low use' beats 'Active' — see the build doc's
+ *  status rule. `now` is injectable for tests. */
+function computeStatus(
+  row: { creditsPurchased: number; creditsRemaining: number; lastActivity: string | null; firstPurchaseDate: string | null },
+  now: number = Date.now()
+): AdminCustomerStatus {
+  const DAY_MS = 24 * 60 * 60 * 1000
+  const daysSincePurchase = row.firstPurchaseDate ? (now - Date.parse(row.firstPurchaseDate)) / DAY_MS : Infinity
+  const daysSinceActivity = row.lastActivity ? (now - Date.parse(row.lastActivity)) / DAY_MS : Infinity
+
+  // Never used (or gone quiet) — but give a fresh purchase its first week
+  // before calling it "not used".
+  if (daysSincePurchase >= 7 && daysSinceActivity >= 14) return 'purchased_not_used'
+
+  // Has used it, but is sitting on most of what they bought two weeks in.
+  const pctRemaining = row.creditsPurchased > 0 ? row.creditsRemaining / row.creditsPurchased : 0
+  if (row.lastActivity !== null && daysSincePurchase >= 14 && pctRemaining > 0.7) return 'low_use'
+
+  return 'active'
+}
+
+const INDIVIDUALS_SQL = `
+  SELECT
+    u.id::text                              AS customer_id,
+    u.email                                 AS customer_name,
+    COALESCE(inv.amount_paid, 0)::numeric   AS amount_paid,
+    pt.credits_purchased                    AS credits_purchased,
+    COALESCE(ut.credits_used, 0)            AS credits_used,
+    COALESCE(ucb.credits_remaining, 0)      AS credits_remaining,
+    sub.last_activity,
+    pt.first_purchase_date
+  FROM users u
+  JOIN (
+    SELECT user_id, SUM(amount) AS credits_purchased, MIN(created_at) AS first_purchase_date
+      FROM credit_transactions
+     WHERE type = 'purchase' AND organization_id IS NULL
+     GROUP BY user_id
+  ) pt ON pt.user_id = u.id
+  LEFT JOIN (
+    SELECT user_id, -SUM(amount) AS credits_used
+      FROM credit_transactions
+     WHERE type = 'usage' AND organization_id IS NULL
+     GROUP BY user_id
+  ) ut ON ut.user_id = u.id
+  LEFT JOIN user_credit_balance ucb ON ucb.user_id = u.id
+  LEFT JOIN (
+    SELECT ct.user_id, SUM(i.total_amount) AS amount_paid
+      FROM credit_transactions ct
+      JOIN invoices i ON i.razorpay_payment_id = ct.razorpay_payment_id
+     WHERE ct.type = 'purchase' AND ct.organization_id IS NULL
+     GROUP BY ct.user_id
+  ) inv ON inv.user_id = u.id
+  LEFT JOIN (
+    SELECT user_id, MAX(created_at) AS last_activity
+      FROM submissions
+     WHERE is_demo = FALSE
+     GROUP BY user_id
+  ) sub ON sub.user_id = u.id
+  WHERE u.is_demo = FALSE
+`
+
+const ORGANIZATIONS_SQL = `
+  SELECT
+    o.id::text                              AS customer_id,
+    o.name                                  AS customer_name,
+    COALESCE(inv.amount_paid, 0)::numeric   AS amount_paid,
+    o.credits_purchased                     AS credits_purchased,
+    COALESCE(ut.credits_used, 0)            AS credits_used,
+    COALESCE(bal.credits_remaining, 0)      AS credits_remaining,
+    COALESCE(uc.users_count, 0)             AS users_in_account,
+    sub.last_activity,
+    pt.first_purchase_date
+  FROM organizations o
+  LEFT JOIN (
+    SELECT organization_id, MIN(created_at) AS first_purchase_date
+      FROM credit_transactions
+     WHERE type = 'org_purchase'
+     GROUP BY organization_id
+  ) pt ON pt.organization_id = o.id
+  LEFT JOIN (
+    SELECT organization_id, -SUM(amount) AS credits_used
+      FROM credit_transactions
+     WHERE type = 'usage' AND organization_id IS NOT NULL
+     GROUP BY organization_id
+  ) ut ON ut.organization_id = o.id
+  LEFT JOIN (
+    SELECT organization_id, SUM(credits_remaining) AS credits_remaining
+      FROM org_credit_balance
+     GROUP BY organization_id
+  ) bal ON bal.organization_id = o.id
+  LEFT JOIN (
+    SELECT organization_id, COUNT(*) AS users_count
+      FROM users
+     WHERE organization_id IS NOT NULL
+     GROUP BY organization_id
+  ) uc ON uc.organization_id = o.id
+  LEFT JOIN (
+    SELECT ct.organization_id, SUM(i.total_amount) AS amount_paid
+      FROM credit_transactions ct
+      JOIN invoices i ON i.razorpay_payment_id = ct.razorpay_payment_id
+     WHERE ct.type = 'org_purchase'
+     GROUP BY ct.organization_id
+  ) inv ON inv.organization_id = o.id
+  LEFT JOIN (
+    SELECT u.organization_id, MAX(s.created_at) AS last_activity
+      FROM submissions s
+      JOIN users u ON u.id = s.user_id
+     WHERE s.is_demo = FALSE AND u.organization_id IS NOT NULL
+     GROUP BY u.organization_id
+  ) sub ON sub.organization_id = o.id
+  WHERE o.is_demo = FALSE
+`
+
+/** Every individual and corporate customer, most recent first purchase first,
+ *  with the follow-up Status flag from the build doc. Read-only — no writes,
+ *  no new payment integration. */
+export async function listAdminCustomers(user: OkrAllyUser): Promise<AdminCustomerListResult> {
+  requireAdmin(user)
+
+  const [individuals, organizations] = await Promise.all([
+    query<RawCustomerRow>(INDIVIDUALS_SQL),
+    query<RawCustomerRow>(ORGANIZATIONS_SQL),
+  ])
+
+  const toRow = (r: RawCustomerRow, type: AdminCustomerRow['type']): AdminCustomerRow => {
+    const creditsPurchased = Number(r.credits_purchased ?? 0)
+    const creditsRemaining = Number(r.credits_remaining ?? 0)
+    const base = {
+      creditsPurchased,
+      creditsRemaining,
+      lastActivity: r.last_activity,
+      firstPurchaseDate: r.first_purchase_date,
+    }
+    return {
+      customerId: r.customer_id,
+      type,
+      customerName: r.customer_name,
+      amountPaid: Number(r.amount_paid ?? 0),
+      creditsPurchased,
+      creditsUsed: Number(r.credits_used ?? 0),
+      usersInAccount: type === 'individual' ? 1 : Number(r.users_in_account ?? 0),
+      lastActivity: r.last_activity,
+      status: computeStatus(base),
+      firstPurchaseDate: r.first_purchase_date,
+    }
+  }
+
+  const customers = [
+    ...individuals.rows.map((r) => toRow(r, 'individual')),
+    ...organizations.rows.map((r) => toRow(r, 'corporate')),
+  ].sort((a, b) => {
+    const at = a.firstPurchaseDate ? Date.parse(a.firstPurchaseDate) : 0
+    const bt = b.firstPurchaseDate ? Date.parse(b.firstPurchaseDate) : 0
+    return bt - at
+  })
+
+  const summary: AdminCustomerSummary = {
+    totalCustomers: customers.length,
+    totalUsers: customers.reduce((sum, c) => sum + c.usersInAccount, 0),
+    totalRevenue: customers.reduce((sum, c) => sum + c.amountPaid, 0),
+    purchasedNotUsedCount: customers.filter((c) => c.status === 'purchased_not_used').length,
+  }
+
+  return { customers, summary }
+}
+
 // ─── Full review (Admin review screen) ──────────────────────────────────
 
 export interface ExpertReviewRow {
