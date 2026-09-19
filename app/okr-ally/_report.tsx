@@ -160,8 +160,8 @@ export default function ReportScreen({
 
       {/* suggested options */}
       <div className="mb-5">
-        {refined && <OptionCard option={refined} />}
-        {fresh && <OptionCard option={fresh} featured />}
+        {refined && <OptionCard option={refined} submissionId={report.submissionId} />}
+        {fresh && <OptionCard option={fresh} submissionId={report.submissionId} featured />}
       </div>
 
       {/* download + email */}
@@ -234,7 +234,15 @@ export default function ReportScreen({
   )
 }
 
-export function OptionCard({ option, featured }: { option: OkrOption; featured?: boolean }) {
+export function OptionCard({
+  option,
+  submissionId,
+  featured,
+}: {
+  option: OkrOption
+  submissionId?: string
+  featured?: boolean
+}) {
   const bg = featured ? T.emerald : T.cream
   const fg = featured ? '#fff' : T.charcoal
   const sub = featured ? 'rgba(255,255,255,.85)' : T.muted
@@ -271,6 +279,16 @@ export function OptionCard({ option, featured }: { option: OkrOption; featured?:
       <p style={{ fontSize: 12.5, color: sub, marginTop: 10, lineHeight: 1.55 }}>
         <strong>Why.</strong> {option.rationale}
       </p>
+      {submissionId && (
+        <a
+          href={`/api/okr-ally/report/${submissionId}/csv?option=${option.label === 'Refined Original' ? 'refined' : 'fresh'}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ fontSize: 12, fontWeight: 600, color: fg, opacity: 0.85, textDecoration: 'underline', display: 'inline-block', marginTop: 10 }}
+        >
+          Download metrics CSV
+        </a>
+      )}
     </div>
   )
 }
