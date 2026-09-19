@@ -15,6 +15,7 @@ import { markReviewDelivered } from '@/lib/okrAllySubmission'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 import { tokens, rgb } from '@/lib/okrAllyTokens'
 import { type Brand, DEFAULT_BRAND, vocab, scoreBreakdownNote } from '@/lib/okrAllyBrand'
+import { buildKrCsv, csvFilename } from '@/lib/okrAllyCsv'
 
 /**
  * OKR Ally review report PDF (build sequence step 7).
@@ -516,6 +517,15 @@ export async function generateStoreAndEmailReport(args: {
 
     pdfUrl = await putPdf(`reports/${args.submissionId}.pdf`, pdf)
 
+    // The metrics CSVs (one per suggested option) ride along as attachments,
+    // same as the on-demand download route (app/api/okr-ally/report/
+    // [submissionId]/csv/route.ts) — built fresh here from the same review
+    // data rather than re-fetched, since it's already in hand.
+    const csvAttachments = args.review.suggested_okr_options.map((option) => ({
+      name: csvFilename(args.submissionId, brand, option.label),
+      content: Buffer.from(buildKrCsv(option, brand), 'utf-8').toString('base64'),
+    }))
+
     try {
       emailed = await sendBrevoEmail({
         to: args.userEmail,
@@ -523,14 +533,17 @@ export async function generateStoreAndEmailReport(args: {
         subject: `Your ${v.product} review`,
         htmlContent: `
           <div style="font-family:Inter,Arial,sans-serif;color:${tokens.textPrimary};line-height:1.6;">
-            <p>Your ${v.planLower} review is ready — the full report is attached as a PDF.</p>
+            <p>Your ${v.planLower} review is ready — the full report is attached as a PDF, with the metric/from/to/period behind each rewrite attached as two CSVs.</p>
             <p>Overall score: <strong>${args.review.overall_score.toFixed(1)} / 10</strong>. It includes the score breakdown, feedback on your ${v.objective} and each ${v.kr}, and two suggested rewrites.</p>
             <p style="font-size:13px;color:${tokens.textSecondary};">This review reflects the quality of the context you provided.</p>
           </div>`,
         textContent:
-          `Your ${v.planLower} review is ready (attached, PDF). Overall score ${args.review.overall_score.toFixed(1)}/10. ` +
+          `Your ${v.planLower} review is ready (attached, PDF + 2 CSVs). Overall score ${args.review.overall_score.toFixed(1)}/10. ` +
           `Includes the score breakdown, ${v.objective} + ${v.kr} feedback, and two suggested rewrites.`,
-        attachments: [{ name: `${v.plan.replace(/\s+/g, '-')}-Review-${args.submissionId.slice(0, 8)}.pdf`, content: pdf.toString('base64') }],
+        attachments: [
+          { name: `${v.plan.replace(/\s+/g, '-')}-Review-${args.submissionId.slice(0, 8)}.pdf`, content: pdf.toString('base64') },
+          ...csvAttachments,
+        ],
         // Delivering the review is not a payment event — PGS is not copied.
         // (The ₹0 free-review invoice, sent separately, still BCCs him.)
         skipBcc: true,

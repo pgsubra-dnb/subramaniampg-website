@@ -2802,3 +2802,52 @@ test('metrics CSV: fields with commas or quotes are RFC4180-escaped', () => {
   // initiative action contains a comma and embedded quotes
   expect(rows[2]).toBe('Initiative,1,"Run 2 pilot workshops, ""onboarding"" track",pilot workshops run,,2,,Product')
 })
+
+test('metrics CSV: the review-ready email attaches both option CSVs alongside the PDF', async () => {
+  const realFetch = global.fetch
+  process.env.BREVO_API_KEY = 'stub-key-for-capture'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let captured: any = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  global.fetch = (async (url: any, opts: any) => {
+    if (String(url).includes('api.brevo.com')) {
+      captured = JSON.parse(opts.body)
+      return new Response(JSON.stringify({ messageId: 'stub' }), { status: 201 })
+    }
+    return realFetch(url, opts)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) as any
+
+  const user = await resolveOrCreateUser(`okr-e2e-csvmail-${Date.now()}@example.com`)
+  createdUsers.push(user.id)
+  try {
+    const seeded = await seedCompletedReview(user.id, 'CSV-in-email objective')
+    const stored = await getReviewForSubmission(seeded.submissionId)
+    const result = await generateStoreAndEmailReport({
+      reviewId: seeded.reviewId,
+      submissionId: seeded.submissionId,
+      userName: user.name,
+      userEmail: user.email,
+      objective: 'CSV-in-email objective',
+      krs: [{ text: 'Seed KR from 10 to 20', initiatives: [] }],
+      contextSnapshot: {},
+      review: stored!.review,
+    })
+    expect(result.emailed).toBe(true)
+
+    expect(captured.attachment).toHaveLength(3)
+    const names: string[] = captured.attachment.map((a: { name: string }) => a.name)
+    expect(names[0]).toMatch(/\.pdf$/)
+    expect(names).toContain(`okr-ally-${seeded.submissionId}-refined-original.csv`)
+    expect(names).toContain(`okr-ally-${seeded.submissionId}-fresh-rewrite.csv`)
+
+    const refinedCsv = Buffer.from(
+      captured.attachment.find((a: { name: string }) => a.name.includes('refined-original')).content,
+      'base64'
+    ).toString('utf-8')
+    expect(refinedCsv.split('\r\n')[0]).toBe('Type,#,Text,Metric,From,To,Period,Owning team')
+  } finally {
+    global.fetch = realFetch
+    delete process.env.BREVO_API_KEY
+  }
+})
