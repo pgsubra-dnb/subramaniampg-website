@@ -30,7 +30,7 @@ type Shot = {
 }
 type Note = { kind: 'note'; heading: string; body: string }
 type Cta = { kind: 'cta'; heading: string; body: string }
-type Slide = Shot | Note | Cta
+export type Slide = Shot | Note | Cta
 
 // ─── shared shell ─────────────────────────────────────────────────────────
 
@@ -119,8 +119,9 @@ function Carousel({
 
 /** "How <Product> works" — the pre-sign-in product tour. `slug` selects the
  *  captured screenshot set (`okr-ally` | `goal-ally`); every caption reads in
- *  the brand's vocabulary. */
-function howItWorks(v: BrandVocab): Slide[] {
+ *  the brand's vocabulary. Exported (with orgAdmin/employee below) so the help
+ *  chatbot's knowledge base can flatten the same slide text — one source. */
+export function howItWorks(v: BrandVocab): Slide[] {
   const slug = v.path.slice(1) // 'okr-ally' | 'goal-ally'
   const pair = v.key === 'okr_ally' ? 'an Objective and its Key Results' : 'a Goal and its Sub-goals'
   return [
@@ -188,7 +189,7 @@ function howItWorks(v: BrandVocab): Slide[] {
   ]
 }
 
-function orgAdmin(v: BrandVocab): Slide[] {
+export function orgAdmin(v: BrandVocab): Slide[] {
   return [
     {
       kind: 'note',
@@ -213,7 +214,7 @@ function orgAdmin(v: BrandVocab): Slide[] {
   ]
 }
 
-function employee(v: BrandVocab): Slide[] {
+export function employee(v: BrandVocab): Slide[] {
   return [
     {
       kind: 'note',

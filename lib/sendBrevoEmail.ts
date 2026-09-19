@@ -8,6 +8,7 @@ export async function sendBrevoEmail({
   textContent,
   attachments,
   skipBcc,
+  cc,
 }: {
   to: string
   toName: string
@@ -18,6 +19,10 @@ export async function sendBrevoEmail({
   attachments?: { name: string; content: string }[]
   /** Skip the pgs@embiggen.co.in BCC (e.g. for a document already sent to PGS separately). */
   skipBcc?: boolean
+  /** Optional CC recipients — e.g. the help-chatbot escalation, where PGS is
+   *  `to` and the asker is `cc` so a reply-all reaches both. Demo-mode /
+   *  `.invalid` skip applies to `to` only. */
+  cc?: { email: string; name?: string }[]
 }): Promise<boolean> {
   // Demo mode (OKR Ally / Goal Ally): no email EVER fires for a demo session,
   // regardless of what was typed during it. Two independent guards —
@@ -43,6 +48,9 @@ export async function sendBrevoEmail({
   }
   if (!skipBcc) {
     payload.bcc = [{ email: 'pgs@embiggen.co.in', name: 'Subramaniam P G' }]
+  }
+  if (cc?.length) {
+    payload.cc = cc.map((c) => ({ email: c.email, name: c.name || c.email }))
   }
   if (attachments?.length) {
     payload.attachment = attachments

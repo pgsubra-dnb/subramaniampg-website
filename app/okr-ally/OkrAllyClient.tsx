@@ -13,6 +13,7 @@ import Walkthrough, { OrgAdminWalkthrough, EmployeeWalkthrough } from './_walkth
 import OrgAdminScreen from './_org'
 import { FormState, emptyForm, CtxFieldState, OrgContext } from './_formState'
 import { type Brand, DEFAULT_BRAND, vocab, reviewCount } from '@/lib/okrAllyBrand'
+import HelpChatbot from '@/components/HelpChatbot/HelpChatbot'
 
 type RoleWalkthrough = 'org_admin' | 'employee'
 
@@ -301,6 +302,10 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
   return (
     <Page>
       <style>{keyframes}</style>
+
+      {!roleWalkthrough && (
+        <HelpChatbot surface={brand} initialEmail={me?.user?.email ?? null} />
+      )}
 
       {roleWalkthrough && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: T.cream, overflowY: 'auto' }}>

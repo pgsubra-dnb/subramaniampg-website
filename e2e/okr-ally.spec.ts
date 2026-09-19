@@ -66,6 +66,11 @@ import {
   isAdminSessionToken,
   ADMIN_SESSION_MAX_AGE_MS,
 } from '../lib/okrAllySession'
+import { answerFromKnowledgeBase } from '../lib/helpChatbot/chat'
+import { SURFACES } from '../lib/helpChatbot/surfaces'
+import { POST as helpChatPost } from '../app/api/help-chat/route'
+import { POST as helpChatEscalatePost } from '../app/api/help-chat/escalate/route'
+import { NextRequest } from 'next/server'
 
 // Spec 16 (corporate) calls the fulfilment/allocation libs directly, so opt
 // this test process past the non-prod fulfilment guard (the webServer has it).
@@ -2549,6 +2554,196 @@ test('review prompt: goal_ally uses only Goal-Plan vocabulary (bar one explicit 
   expect(usr).toContain('\nSUB-GOALS\n')
   expect(usr).toContain('Sub-goal 1: From 0 to 100')
   expect(usr).toContain('Review this Goal Plan now')
+})
+
+// ══════════════════════════════════════════════════════════
+// 18. Help chatbot — knowledge base sourcing, forced tool-use parsing, the
+//     no-answer escalation email. The live AI call (answerFromKnowledgeBase
+//     against the real Anthropic API) needs ANTHROPIC_API_KEY, which this
+//     sandbox doesn't have — its request/response HANDLING is instead
+//     verified with a stubbed fetch, same technique as the "email BCC scope"
+//     spec above. Route handlers are called directly (not over HTTP) so the
+//     stub, which lives in this process, can intercept the outbound call.
+// ══════════════════════════════════════════════════════════
+
+function jsonPostRequest(url: string, body: unknown): NextRequest {
+  return new NextRequest(url, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+test('help chatbot: okr_ally / goal_ally knowledge bases are the real Help + walkthrough content, brand-swapped', async () => {
+  const okr = await SURFACES.okr_ally.knowledgeBase()
+  const goal = await SURFACES.goal_ally.knowledgeBase()
+  // shared, brand-neutral Q text — proves both surfaces flatten topicsFor()
+  expect(okr).toContain('What do the packs cost?')
+  expect(goal).toContain('What do the packs cost?')
+  // brand vocabulary is swapped, not duplicated content authored twice
+  expect(okr).toMatch(/\bKey Results?\b/)
+  expect(okr).not.toMatch(/\bSub-goals?\b/)
+  expect(goal).toMatch(/\bSub-goals?\b/)
+  expect(goal).not.toMatch(/\bKey Results?\b/)
+  // walkthrough slide text made it in too, not just the Help Q&A
+  expect(okr).toContain("That's the whole conversation.")
+})
+
+test('help chatbot: website knowledge base pulls real FAQ content from Sanity (no hand-authored copy)', async () => {
+  const kb = await SURFACES.website.knowledgeBase()
+  expect(kb).toContain('Frequently asked questions')
+  expect(kb).toContain('OKR coach')
+})
+
+test('help chatbot: answerFromKnowledgeBase parses a found-answer tool response and reaches the real KB content', async () => {
+  const realFetch = global.fetch
+  process.env.ANTHROPIC_API_KEY = 'stub-key-for-capture'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let captured: any = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  global.fetch = (async (url: any, opts: any) => {
+    if (String(url).includes('api.anthropic.com')) {
+      captured = JSON.parse(opts.body)
+      return new Response(
+        JSON.stringify({
+          content: [
+            {
+              type: 'tool_use',
+              name: 'answer_from_knowledge_base',
+              input: { found_answer: true, answer: 'A single review is ₹100.' },
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    }
+    return realFetch(url, opts)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) as any
+
+  try {
+    const result = await answerFromKnowledgeBase(
+      [{ role: 'user', content: 'How much does a single review cost?' }],
+      'okr_ally'
+    )
+    expect(result).toEqual({ ok: true, foundAnswer: true, answer: 'A single review is ₹100.' })
+    expect(captured.tool_choice).toEqual({ type: 'tool', name: 'answer_from_knowledge_base' })
+    expect(captured.messages).toEqual([{ role: 'user', content: 'How much does a single review cost?' }])
+    // the real Help-tab content reached the system prompt, not a stub/placeholder
+    expect(captured.system[0].text).toContain('What do the packs cost?')
+  } finally {
+    global.fetch = realFetch
+    delete process.env.ANTHROPIC_API_KEY
+  }
+})
+
+test('help chatbot: a found_answer=false tool response never leaks an answer string', async () => {
+  const realFetch = global.fetch
+  process.env.ANTHROPIC_API_KEY = 'stub-key-for-capture'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  global.fetch = (async (url: any) => {
+    if (String(url).includes('api.anthropic.com')) {
+      return new Response(
+        JSON.stringify({
+          content: [
+            {
+              type: 'tool_use',
+              name: 'answer_from_knowledge_base',
+              // a model that (wrongly) filled `answer` alongside found_answer:false —
+              // the app must not trust it, per the tool-input handling in chat.ts
+              input: { found_answer: false, answer: 'a guess it should not have made' },
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    }
+    return realFetch(url)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) as any
+
+  try {
+    const result = await answerFromKnowledgeBase([{ role: 'user', content: 'Do you offer astrology readings?' }], 'okr_ally')
+    expect(result).toEqual({ ok: true, foundAnswer: false, answer: null })
+  } finally {
+    global.fetch = realFetch
+    delete process.env.ANTHROPIC_API_KEY
+  }
+})
+
+test('help chatbot route: rejects an unknown surface and malformed message shapes', async () => {
+  const badSurface = await helpChatPost(
+    jsonPostRequest('http://localhost/api/help-chat', { surface: 'nope', messages: [{ role: 'user', content: 'hi' }] })
+  )
+  expect(badSurface.status).toBe(400)
+
+  const emptyMessages = await helpChatPost(
+    jsonPostRequest('http://localhost/api/help-chat', { surface: 'okr_ally', messages: [] })
+  )
+  expect(emptyMessages.status).toBe(400)
+
+  const notEndingOnUser = await helpChatPost(
+    jsonPostRequest('http://localhost/api/help-chat', {
+      surface: 'okr_ally',
+      messages: [{ role: 'assistant', content: 'hi' }],
+    })
+  )
+  expect(notEndingOnUser.status).toBe(400)
+})
+
+test("help chatbot escalate: emails PGS with the asker cc'd, skipping the default BCC", async () => {
+  const realFetch = global.fetch
+  process.env.BREVO_API_KEY = 'stub-key-for-capture'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let captured: any = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  global.fetch = (async (url: any, opts: any) => {
+    if (String(url).includes('api.brevo.com')) {
+      captured = JSON.parse(opts.body)
+      return new Response(JSON.stringify({ messageId: 'stub' }), { status: 201 })
+    }
+    return realFetch(url, opts)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) as any
+
+  try {
+    const res = await helpChatEscalatePost(
+      jsonPostRequest('http://localhost/api/help-chat/escalate', {
+        surface: 'okr_ally',
+        question: 'Does a review cover Goal Ally too?',
+        userEmail: 'asker@example.com',
+      })
+    )
+    expect(res.status).toBe(200)
+    expect(captured.to).toEqual([{ email: 'pgs@embiggen.co.in', name: 'Subramaniam P G' }])
+    expect(captured.cc).toEqual([{ email: 'asker@example.com', name: 'asker@example.com' }])
+    expect(captured.bcc).toBeUndefined() // skipBcc — PGS is already the primary recipient
+    expect(captured.subject).toContain('OKR Ally')
+    expect(captured.textContent).toContain('Does a review cover Goal Ally too?')
+  } finally {
+    global.fetch = realFetch
+    delete process.env.BREVO_API_KEY
+  }
+})
+
+test('help chatbot escalate: rejects an invalid email and an empty question', async () => {
+  const badEmail = await helpChatEscalatePost(
+    jsonPostRequest('http://localhost/api/help-chat/escalate', {
+      surface: 'okr_ally',
+      question: 'hi',
+      userEmail: 'not-an-email',
+    })
+  )
+  expect(badEmail.status).toBe(400)
+
+  const noQuestion = await helpChatEscalatePost(
+    jsonPostRequest('http://localhost/api/help-chat/escalate', {
+      surface: 'okr_ally',
+      question: '',
+      userEmail: 'a@b.com',
+    })
+  )
+  expect(noQuestion.status).toBe(400)
 })
 
 // ── Metrics CSV export ────────────────────────────────────────────────────
