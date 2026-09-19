@@ -160,8 +160,8 @@ export default function ReportScreen({
 
       {/* suggested options */}
       <div className="mb-5">
-        {refined && <OptionCard option={refined} submissionId={report.submissionId} />}
-        {fresh && <OptionCard option={fresh} submissionId={report.submissionId} featured />}
+        {refined && <OptionCard option={refined} />}
+        {fresh && <OptionCard option={fresh} featured />}
       </div>
 
       {/* download + email */}
@@ -176,10 +176,28 @@ export default function ReportScreen({
             </span>
           )}
         </p>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <a href={`/api/okr-ally/report/${report.submissionId}`} target="_blank" rel="noopener noreferrer">
             <Btn>Download PDF</Btn>
           </a>
+          {refined && (
+            <a
+              href={`/api/okr-ally/report/${report.submissionId}/csv?option=refined`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Btn variant="ghost">CSV — Refined</Btn>
+            </a>
+          )}
+          {fresh && (
+            <a
+              href={`/api/okr-ally/report/${report.submissionId}/csv?option=fresh`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Btn variant="ghost">CSV — Fresh</Btn>
+            </a>
+          )}
           <Btn variant="ghost" onClick={onStartAnother}>
             Review another {v.plan}
           </Btn>
@@ -236,11 +254,9 @@ export default function ReportScreen({
 
 export function OptionCard({
   option,
-  submissionId,
   featured,
 }: {
   option: OkrOption
-  submissionId?: string
   featured?: boolean
 }) {
   const bg = featured ? T.emerald : T.cream
@@ -279,16 +295,6 @@ export function OptionCard({
       <p style={{ fontSize: 12.5, color: sub, marginTop: 10, lineHeight: 1.55 }}>
         <strong>Why.</strong> {option.rationale}
       </p>
-      {submissionId && (
-        <a
-          href={`/api/okr-ally/report/${submissionId}/csv?option=${option.label === 'Refined Original' ? 'refined' : 'fresh'}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ fontSize: 12, fontWeight: 600, color: fg, opacity: 0.85, textDecoration: 'underline', display: 'inline-block', marginTop: 10 }}
-        >
-          Download metrics CSV
-        </a>
-      )}
     </div>
   )
 }
