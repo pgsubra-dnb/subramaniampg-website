@@ -1435,7 +1435,11 @@ test('admin handover: transfer to an existing org member is immediate', async ()
   const freshAdmin = await resolveOrCreateUser(admin.email) // re-read — makeOrgAdmin wrote the DB, not this JS object
 
   const result = await transferAdminToExistingMember(freshAdmin, member.id)
-  expect(result).toEqual({ ok: true, newAdminEmail: member.email })
+  expect(result.ok).toBe(true)
+  expect(result).toMatchObject({ newAdminEmail: member.email })
+  // BREVO_API_KEY isn't set for this test run, so emailed is expected false
+  // here — the field just needs to exist and reflect both sends succeeding.
+  expect(typeof (result as { emailed: boolean }).emailed).toBe('boolean')
 
   expect(await getUserOrgFields(admin.id)).toEqual({ organization_id: orgId, is_org_admin: false })
   expect(await getUserOrgFields(member.id)).toEqual({ organization_id: orgId, is_org_admin: true })

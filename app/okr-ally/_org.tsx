@@ -651,7 +651,12 @@ function TransferAdminPanel({ status, brand, onDone }: { status: OrgStatus; bran
         setBusy(false)
         return
       }
-      setMsg({ kind: 'ok', text: `${j.newAdminEmail} is now the admin. Reloading…` })
+      setMsg({
+        kind: 'ok',
+        text:
+          `${j.newAdminEmail} is now the admin. Reloading…` +
+          (j.emailed ? '' : ' (the notification email did not send — let them know directly.)'),
+      })
       setTimeout(() => window.location.reload(), 1200)
     } catch {
       setMsg({ kind: 'err', text: 'Network problem — nothing was transferred.' })

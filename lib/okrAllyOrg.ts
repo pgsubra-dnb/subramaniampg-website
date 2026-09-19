@@ -1078,7 +1078,9 @@ async function clearPendingAdminInvite(client: PoolClient, orgId: string): Promi
   )
 }
 
-export type TransferAdminOutcome = { ok: true; newAdminEmail: string } | { ok: false; error: string }
+export type TransferAdminOutcome =
+  | { ok: true; newAdminEmail: string; emailed: boolean }
+  | { ok: false; error: string }
 
 /** Immediate handover to an EXISTING member of this org. Clears any
  *  outstanding invite-by-email (a completed transfer supersedes it). */
@@ -1104,7 +1106,11 @@ export async function transferAdminToExistingMember(
     await clearPendingAdminInvite(client, orgId)
   })
 
-  await Promise.all([
+  // Both notifications must land for `emailed` to read true — if either
+  // silently fails (e.g. Brevo down), the UI should say so rather than
+  // implying the handover fully completed, mirroring sendAllocationEmail's
+  // `emailed` field on allocateOrgCredits below.
+  const [oldAdminEmailed, newAdminEmailed] = await Promise.all([
     sendBrevoEmail({
       to: user.email,
       toName: user.name,
@@ -1123,7 +1129,7 @@ export async function transferAdminToExistingMember(
     }),
   ])
 
-  return { ok: true, newAdminEmail: target.email }
+  return { ok: true, newAdminEmail: target.email, emailed: oldAdminEmailed && newAdminEmailed }
 }
 
 export type InviteAdminOutcome = { ok: true; invitedEmail: string } | { ok: false; error: string }
@@ -1193,6 +1199,14 @@ export type AcceptAdminInviteOutcome = { ok: true; organizationName: string } | 
  * this their org, so the move is intended, not an accidental clobber. If
  * they already belong to a DIFFERENT org, block it instead of guessing —
  * that edge case routes to PGS like any other admin-identity conflict.
+ *
+ * The org lookup + every write happen inside ONE transaction, locking the
+ * organizations row with `FOR UPDATE` and re-reading `pending_admin_email`
+ * under that lock — same race-prevention pattern as allocateOrgCreditsTx.
+ * Without it, an admin's concurrent cancelAdminInvite/inviteAdminByEmail
+ * (both plain UPDATEs on the same row) couldn't reliably stop an
+ * in-flight accept: a stale read taken just before the cancel would still
+ * promote the original invitee once its transaction committed.
  */
 export async function acceptAdminInvite(
   sessionUser: OkrAllyUser,
@@ -1200,34 +1214,44 @@ export async function acceptAdminInvite(
 ): Promise<AcceptAdminInviteOutcome> {
   const v = vocab(brand ?? DEFAULT_BRAND)
   const email = sessionUser.email.toLowerCase()
-  const org = await query<{ id: string; name: string }>(
-    `SELECT id, name FROM organizations WHERE lower(pending_admin_email) = $1`,
-    [email]
-  )
-  const o = org.rows[0]
-  if (!o) return { ok: false, error: 'No pending admin invite for your account.' }
-  if (sessionUser.organization_id && sessionUser.organization_id !== o.id) {
-    return {
-      ok: false,
-      error: `You already belong to a different organization, so you can't accept this invite. Email pgs@embiggen.co.in to sort it out.`,
-    }
+
+  let org: { id: string; name: string }
+  let prevAdmin: { id: string; email: string; name: string } | undefined
+  try {
+    ;({ org, prevAdmin } = await withTransaction(async (client) => {
+      const orgRes = await client.query<{ id: string; name: string; pending_admin_email: string | null }>(
+        `SELECT id, name, pending_admin_email FROM organizations WHERE lower(pending_admin_email) = $1 FOR UPDATE`,
+        [email]
+      )
+      const o = orgRes.rows[0]
+      if (!o) throw new Rollback('No pending admin invite for your account.')
+      if (sessionUser.organization_id && sessionUser.organization_id !== o.id) {
+        throw new Rollback(
+          `You already belong to a different organization, so you can't accept this invite. Email pgs@embiggen.co.in to sort it out.`
+        )
+      }
+
+      const prevAdminRes = await client.query<{ id: string; email: string; name: string }>(
+        `SELECT id, email, name FROM users WHERE organization_id = $1 AND is_org_admin = true ORDER BY created_at LIMIT 1`,
+        [o.id]
+      )
+      const pa = prevAdminRes.rows[0]
+      if (pa) {
+        await client.query(`UPDATE users SET is_org_admin = false WHERE id = $1`, [pa.id])
+      }
+      await client.query(`UPDATE users SET is_org_admin = true, organization_id = $2 WHERE id = $1`, [
+        sessionUser.id,
+        o.id,
+      ])
+      await clearPendingAdminInvite(client, o.id)
+
+      return { org: { id: o.id, name: o.name }, prevAdmin: pa }
+    }))
+  } catch (e) {
+    if (e instanceof Rollback) return { ok: false, error: e.msg }
+    throw e
   }
-
-  const prevAdmin = await query<{ id: string; email: string; name: string }>(
-    `SELECT id, email, name FROM users WHERE organization_id = $1 AND is_org_admin = true ORDER BY created_at LIMIT 1`,
-    [o.id]
-  )
-
-  await withTransaction(async (client) => {
-    if (prevAdmin.rows[0]) {
-      await client.query(`UPDATE users SET is_org_admin = false WHERE id = $1`, [prevAdmin.rows[0].id])
-    }
-    await client.query(`UPDATE users SET is_org_admin = true, organization_id = $2 WHERE id = $1`, [
-      sessionUser.id,
-      o.id,
-    ])
-    await clearPendingAdminInvite(client, o.id)
-  })
+  const o = org
 
   const notifs: Promise<boolean>[] = [
     sendBrevoEmail({
@@ -1239,11 +1263,11 @@ export async function acceptAdminInvite(
       skipBcc: true,
     }),
   ]
-  if (prevAdmin.rows[0]) {
+  if (prevAdmin) {
     notifs.push(
       sendBrevoEmail({
-        to: prevAdmin.rows[0].email,
-        toName: prevAdmin.rows[0].name,
+        to: prevAdmin.email,
+        toName: prevAdmin.name,
         subject: `${sessionUser.name} accepted the ${v.product} admin handover for ${o.name}`,
         htmlContent: `<p>${sessionUser.name} (${sessionUser.email}) has accepted your invite and is now the ${v.product} admin for ${o.name}.</p>`,
         textContent: `${sessionUser.name} (${sessionUser.email}) has accepted your invite and is now the ${v.product} admin for ${o.name}.`,
