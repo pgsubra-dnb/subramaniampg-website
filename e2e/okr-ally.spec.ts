@@ -1,7 +1,8 @@
 import crypto from 'node:crypto'
 import { test, expect, Page } from '@playwright/test'
 import { FAIL_BASE_URL } from '../playwright.config'
-import { validateReviewOutput, buildSystemPrompt, buildUserContent } from '../lib/okrAllyReview'
+import { validateReviewOutput, buildSystemPrompt, buildUserContent, type SuggestedOkrOption } from '../lib/okrAllyReview'
+import { buildKrCsv } from '../lib/okrAllyCsv'
 import { validateInput, LIMITS } from '../lib/okrAllySubmission'
 import { contextFieldMax } from '../lib/okrAllyContext'
 import { PACKS } from '../lib/okrAllyBilling'
@@ -324,14 +325,32 @@ test('ownership: report and invoice downloads are scoped to the owner', async ({
   expect((await ctxA.request.get(`/api/okr-ally/submission/${submissionId}`, { headers: { cookie: a.cookieHeader } })).status()).toBe(200)
   expect((await ctxA.request.get(`/api/okr-ally/invoice/${invoiceId}`, { headers: { cookie: a.cookieHeader } })).status()).toBe(200)
 
+  // CSV route: owner OK for both options, bad ?option 400, missing option 404
+  const csvUrl = (opt: string) => `/api/okr-ally/report/${submissionId}/csv?option=${opt}`
+  const csvRefined = await ctxA.request.get(csvUrl('refined'), { headers: { cookie: a.cookieHeader } })
+  expect(csvRefined.status()).toBe(200)
+  expect(csvRefined.headers()['content-type']).toContain('text/csv')
+  // seedCompletedReview's fixture predates the metric fields entirely (no
+  // metric_name/from_value/to_value/period on its KRs or initiatives) — the
+  // route must degrade to blank cells, never throw, for any review stored
+  // before this feature shipped.
+  const csvBody = await csvRefined.text()
+  const csvRows = csvBody.trim().split('\r\n')
+  expect(csvRows[0]).toBe('Type,#,Text,Metric,From,To,Period,Owning team')
+  expect(csvRows[1]).toBe('KR,1,k,,,,,')
+  expect((await ctxA.request.get(csvUrl('fresh'), { headers: { cookie: a.cookieHeader } })).status()).toBe(200)
+  expect((await ctxA.request.get(csvUrl('bogus'), { headers: { cookie: a.cookieHeader } })).status()).toBe(400)
+
   // other user: 404
   expect((await ctxB.request.get(`/api/okr-ally/report/${submissionId}`, { headers: { cookie: b.cookieHeader } })).status()).toBe(404)
   expect((await ctxB.request.get(`/api/okr-ally/submission/${submissionId}`, { headers: { cookie: b.cookieHeader } })).status()).toBe(404)
   expect((await ctxB.request.get(`/api/okr-ally/invoice/${invoiceId}`, { headers: { cookie: b.cookieHeader } })).status()).toBe(404)
+  expect((await ctxB.request.get(csvUrl('refined'), { headers: { cookie: b.cookieHeader } })).status()).toBe(404)
 
   // unauthenticated: 401
   expect((await ctxB.request.get(`/api/okr-ally/report/${submissionId}`, { headers: { cookie: '' } })).status()).toBe(401)
   expect((await ctxB.request.get(`/api/okr-ally/invoice/${invoiceId}`, { headers: { cookie: '' } })).status()).toBe(401)
+  expect((await ctxB.request.get(csvUrl('refined'), { headers: { cookie: '' } })).status()).toBe(401)
 
   await ctxA.close()
   await ctxB.close()
@@ -2318,6 +2337,13 @@ LANGUAGE OF OKRs (apply to every rewritten line and to KR feedback text):
 - Before finalizing any line, check: the verb demands movement, an outsider would understand what success looks like, a single owner is identifiable.
 - KR lines stay in strict baseline-and-target format. Any "impact" framing goes into the rationale field, never the KR text.
 
+METRIC FIELDS (apply to every KR AND every initiative under it, in both options). Populate metric_name, from_value, to_value, period as separate structured fields, in addition to writing the KR line itself in prose:
+- metric_name: the noun form of what's being measured (e.g. "number of presentations", "churn"), never the action ("increase presentations" is wrong).
+- from_value: the stated baseline, verbatim as given (e.g. "8%"). Leave it "" (empty string) when no baseline was stated — do not invent one.
+- to_value: the stated or rewritten target, verbatim (e.g. "5%", "20 presentations"). Always populate this for a KR.
+- period: the cadence or timeframe if one was stated or implied (e.g. "monthly", "per quarter", "by end of Q3"). Leave it "" when none was stated.
+- Most initiatives are action items with no measurable target of their own — leave all four fields "" on an initiative unless it plainly states one (e.g. "Run 2 pilot workshops" → metric_name "pilot workshops run", to_value "2").
+
 OUTPUT. Call submit_okr_review exactly once with every field populated. Do not write any prose outside the tool call.`
 
 const SAMPLE_INPUT = {
@@ -2373,4 +2399,61 @@ test('review prompt: goal_ally uses only Goal-Plan vocabulary (bar one explicit 
   expect(usr).toContain('\nSUB-GOALS\n')
   expect(usr).toContain('Sub-goal 1: From 0 to 100')
   expect(usr).toContain('Review this Goal Plan now')
+})
+
+// ── Metrics CSV export ────────────────────────────────────────────────────
+
+const SAMPLE_OPTION: SuggestedOkrOption = {
+  label: 'Refined Original',
+  objective: 'Grow revenue',
+  rationale: 'because',
+  key_results: [
+    {
+      text: 'Reduce churn from 8% to 5%',
+      status: 'modified',
+      metric_name: 'churn',
+      from_value: '8%',
+      to_value: '5%',
+      period: 'quarterly',
+      initiatives: [
+        { action: 'Run 2 pilot workshops, "onboarding" track', owning_team: 'Product', metric_name: 'pilot workshops run', from_value: '', to_value: '2', period: '' },
+        { action: 'Ship a win-back email flow', owning_team: 'Marketing', metric_name: '', from_value: '', to_value: '', period: '' },
+      ],
+    },
+    {
+      text: '10 presentations/month',
+      status: 'unchanged',
+      metric_name: 'number of presentations',
+      from_value: '',
+      to_value: '10',
+      period: 'monthly',
+      initiatives: [
+        { action: 'Book venues', owning_team: 'Sales', metric_name: '', from_value: '', to_value: '', period: '' },
+        { action: 'Draft the deck', owning_team: 'Sales', metric_name: '', from_value: '', to_value: '', period: '' },
+      ],
+    },
+  ],
+}
+
+test('metrics CSV: one row per KR plus one row per initiative, header shape', () => {
+  const csv = buildKrCsv(SAMPLE_OPTION, 'okr_ally')
+  const rows = csv.trim().split('\r\n')
+  expect(rows[0]).toBe('Type,#,Text,Metric,From,To,Period,Owning team')
+  // 2 KRs + 2 initiatives each = 6 data rows + 1 header
+  expect(rows.length).toBe(7)
+  expect(rows[1]).toBe('KR,1,Reduce churn from 8% to 5%,churn,8%,5%,quarterly,')
+  expect(rows[4]).toBe('KR,2,10 presentations/month,number of presentations,,10,monthly,')
+  expect(rows[5]).toBe('Initiative,2,Book venues,,,,,Sales')
+})
+
+test('metrics CSV: goal_ally uses "Sub-goal" as the KR row type', () => {
+  const csv = buildKrCsv(SAMPLE_OPTION, 'goal_ally')
+  expect(csv.split('\r\n')[1]).toContain('Sub-goal,1,')
+})
+
+test('metrics CSV: fields with commas or quotes are RFC4180-escaped', () => {
+  const csv = buildKrCsv(SAMPLE_OPTION, 'okr_ally')
+  const rows = csv.trim().split('\r\n')
+  // initiative action contains a comma and embedded quotes
+  expect(rows[2]).toBe('Initiative,1,"Run 2 pilot workshops, ""onboarding"" track",pilot workshops run,,2,,Product')
 })
