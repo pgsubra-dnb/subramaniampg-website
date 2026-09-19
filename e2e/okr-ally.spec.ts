@@ -325,14 +325,32 @@ test('ownership: report and invoice downloads are scoped to the owner', async ({
   expect((await ctxA.request.get(`/api/okr-ally/submission/${submissionId}`, { headers: { cookie: a.cookieHeader } })).status()).toBe(200)
   expect((await ctxA.request.get(`/api/okr-ally/invoice/${invoiceId}`, { headers: { cookie: a.cookieHeader } })).status()).toBe(200)
 
+  // CSV route: owner OK for both options, bad ?option 400, missing option 404
+  const csvUrl = (opt: string) => `/api/okr-ally/report/${submissionId}/csv?option=${opt}`
+  const csvRefined = await ctxA.request.get(csvUrl('refined'), { headers: { cookie: a.cookieHeader } })
+  expect(csvRefined.status()).toBe(200)
+  expect(csvRefined.headers()['content-type']).toContain('text/csv')
+  // seedCompletedReview's fixture predates the metric fields entirely (no
+  // metric_name/from_value/to_value/period on its KRs or initiatives) — the
+  // route must degrade to blank cells, never throw, for any review stored
+  // before this feature shipped.
+  const csvBody = await csvRefined.text()
+  const csvRows = csvBody.trim().split('\r\n')
+  expect(csvRows[0]).toBe('Type,#,Text,Metric,From,To,Period,Owning team')
+  expect(csvRows[1]).toBe('KR,1,k,,,,,')
+  expect((await ctxA.request.get(csvUrl('fresh'), { headers: { cookie: a.cookieHeader } })).status()).toBe(200)
+  expect((await ctxA.request.get(csvUrl('bogus'), { headers: { cookie: a.cookieHeader } })).status()).toBe(400)
+
   // other user: 404
   expect((await ctxB.request.get(`/api/okr-ally/report/${submissionId}`, { headers: { cookie: b.cookieHeader } })).status()).toBe(404)
   expect((await ctxB.request.get(`/api/okr-ally/submission/${submissionId}`, { headers: { cookie: b.cookieHeader } })).status()).toBe(404)
   expect((await ctxB.request.get(`/api/okr-ally/invoice/${invoiceId}`, { headers: { cookie: b.cookieHeader } })).status()).toBe(404)
+  expect((await ctxB.request.get(csvUrl('refined'), { headers: { cookie: b.cookieHeader } })).status()).toBe(404)
 
   // unauthenticated: 401
   expect((await ctxB.request.get(`/api/okr-ally/report/${submissionId}`, { headers: { cookie: '' } })).status()).toBe(401)
   expect((await ctxB.request.get(`/api/okr-ally/invoice/${invoiceId}`, { headers: { cookie: '' } })).status()).toBe(401)
+  expect((await ctxB.request.get(csvUrl('refined'), { headers: { cookie: '' } })).status()).toBe(401)
 
   await ctxA.close()
   await ctxB.close()

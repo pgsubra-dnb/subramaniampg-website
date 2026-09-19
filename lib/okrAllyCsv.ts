@@ -11,11 +11,16 @@ import type { SuggestedOkrOption } from '@/lib/okrAllyReview'
 
 const HEADERS = ['Type', '#', 'Text', 'Metric', 'From', 'To', 'Period', 'Owning team']
 
-function csvField(value: string): string {
-  if (/[",\n\r]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`
+function csvField(value: string | undefined | null): string {
+  // Reviews stored before the metric fields existed have no metric_name/
+  // from_value/to_value/period on their KRs or initiatives at all — treat
+  // that as an intentional blank cell rather than letting it ride on
+  // Array.prototype.join's implicit undefined-to-'' coercion.
+  const v = value ?? ''
+  if (/[",\n\r]/.test(v)) {
+    return `"${v.replace(/"/g, '""')}"`
   }
-  return value
+  return v
 }
 
 function csvRow(fields: string[]): string {
