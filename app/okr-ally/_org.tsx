@@ -21,6 +21,8 @@ interface OrgStatus {
   companyContext: string | null
   businessContext: string | null
   contextConfirmedAt: string | null
+  pendingAdminEmail: string | null
+  pendingAdminInvitedAt: string | null
 }
 
 // Company context gets more room (matches the individual review form); business
@@ -114,10 +116,18 @@ export default function OrgAdminScreen({
       <BulkAllocatePanel brand={brand} onDone={refresh} />
       <ReclaimPanel brand={brand} onDone={refresh} />
       <ReportPanel brand={brand} />
+      <TransferAdminPanel status={status} brand={brand} onDone={refresh} />
 
       <p style={{ fontSize: 11.5, color: T.muted, marginTop: 4 }}>
         GSTIN {status.organization.gstin}. Company-allocated {v.reviews} are tracked separately from each
         employee&apos;s personal {v.reviews} and never touch them.
+      </p>
+      <p style={{ fontSize: 11.5, color: T.muted, marginTop: 10 }}>
+        Can&apos;t reach the current admin to hand this over yourself?{' '}
+        <a href="mailto:pgs@embiggen.co.in?subject=OKR%20Ally%20admin%20override%20request" style={{ color: T.emeraldDark, fontWeight: 600 }}>
+          Email pgs@embiggen.co.in
+        </a>{' '}
+        for a manual override.
       </p>
     </div>
   )
@@ -195,6 +205,26 @@ function ContextPanel({ status, onDone }: { status: OrgStatus; onDone: () => voi
         Every employee runs their review on the company and business context you set here — they can&apos;t
         change it, and each only adds their own role. Nothing takes effect until you publish.
       </p>
+
+      {!published && (
+        <div
+          style={{
+            border: `1px solid ${T.gold}`,
+            borderRadius: 10,
+            padding: '10px 12px',
+            marginBottom: 14,
+            background: T.goldTint,
+            fontSize: 12.5,
+            color: T.charcoal,
+            lineHeight: 1.55,
+          }}
+        >
+          <strong>Get this right before you publish.</strong> This is set once for your whole
+          organization, not per employee. The moment your team starts running reviews, each one keeps the
+          context it was run with — changing this later only affects reviews from that point forward, not
+          anything already run.
+        </div>
+      )}
 
       <label style={{ display: 'block', fontSize: 12.5, color: T.muted, margin: '0 0 4px' }}>
         Company context — what the company does, who it serves, roughly how big it is
@@ -564,6 +594,193 @@ function ReportPanel({ brand }: { brand: Brand }) {
           </p>
         </div>
       )}
+    </div>
+  )
+}
+
+interface OrgMember {
+  id: string
+  email: string
+  name: string
+  isOrgAdmin: boolean
+  createdAt: string
+}
+
+const fmtDateTime = (s: string) =>
+  new Date(s).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+
+/**
+ * Admin handover. Two paths:
+ *  - an EXISTING member of this org → transfer is immediate.
+ *  - a new email → a pending invite, inactive until that person signs in and
+ *    explicitly accepts (see acceptAdminInvite in lib/okrAllyOrg.ts).
+ * A successful transfer means THIS signed-in user is no longer the admin, so
+ * the page reloads afterwards rather than trying to keep this screen alive
+ * with stale access.
+ */
+function TransferAdminPanel({ status, brand, onDone }: { status: OrgStatus; brand: Brand; onDone: () => void }) {
+  const v = vocab(brand)
+  const [members, setMembers] = useState<OrgMember[] | null>(null)
+  const [selected, setSelected] = useState('')
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+
+  useEffect(() => {
+    fetch('/api/okr-ally/org/members')
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((j: { members: OrgMember[] }) => setMembers(j.members))
+      .catch(() => setMembers([]))
+  }, [])
+
+  const otherMembers = (members ?? []).filter((m) => !m.isOrgAdmin)
+
+  async function transferToExisting() {
+    if (!selected) return
+    setBusy(true)
+    setMsg(null)
+    try {
+      const res = await fetch('/api/okr-ally/org/transfer-admin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ targetUserId: selected, brand }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMsg({ kind: 'err', text: j.error || 'Transfer failed.' })
+        setBusy(false)
+        return
+      }
+      setMsg({ kind: 'ok', text: `${j.newAdminEmail} is now the admin. Reloading…` })
+      setTimeout(() => window.location.reload(), 1200)
+    } catch {
+      setMsg({ kind: 'err', text: 'Network problem — nothing was transferred.' })
+      setBusy(false)
+    }
+  }
+
+  async function invite() {
+    setBusy(true)
+    setMsg(null)
+    try {
+      const res = await fetch('/api/okr-ally/org/invite-admin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: inviteEmail.trim(), brand }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMsg({ kind: 'err', text: j.error || 'Could not send the invite.' })
+        return
+      }
+      setMsg({ kind: 'ok', text: `Invited ${j.invitedEmail}. You stay admin until they accept.` })
+      setInviteEmail('')
+      onDone()
+    } catch {
+      setMsg({ kind: 'err', text: 'Network problem — nothing was invited.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function cancelInvite() {
+    setBusy(true)
+    setMsg(null)
+    try {
+      const res = await fetch('/api/okr-ally/org/cancel-admin-invite', { method: 'POST' })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        setMsg({ kind: 'err', text: j.error || 'Could not cancel the invite.' })
+        return
+      }
+      setMsg({ kind: 'ok', text: 'Invite cancelled.' })
+      onDone()
+    } catch {
+      setMsg({ kind: 'err', text: 'Network problem — the invite is still pending.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={card}>
+      <div style={{ fontWeight: 700, fontSize: 13.5, color: T.charcoal, marginBottom: 4 }}>
+        Transfer admin
+      </div>
+      <p style={{ fontSize: 12, color: T.muted, margin: '0 0 12px', lineHeight: 1.5 }}>
+        Hand the Company Admin role for {status.organization.name} to someone else. Picking an existing
+        member takes effect immediately; inviting a new email keeps you as admin until they sign in and
+        accept.
+      </p>
+
+      {status.pendingAdminEmail ? (
+        <div
+          style={{
+            border: `1px solid ${T.gold}`,
+            borderRadius: 10,
+            padding: '10px 12px',
+            marginBottom: 14,
+            background: T.goldTint,
+            fontSize: 12.5,
+            color: T.charcoal,
+          }}
+        >
+          Invited <strong>{status.pendingAdminEmail}</strong>
+          {status.pendingAdminInvitedAt ? ` on ${fmtDateTime(status.pendingAdminInvitedAt)}` : ''} — pending
+          their sign-in and acceptance.{' '}
+          <button
+            type="button"
+            onClick={cancelInvite}
+            disabled={busy}
+            style={{ background: 'none', border: 'none', padding: 0, color: T.emeraldDark, fontWeight: 600, cursor: 'pointer', font: 'inherit' }}
+          >
+            Cancel invite
+          </button>
+        </div>
+      ) : (
+        <>
+          <label style={{ display: 'block', fontSize: 12.5, color: T.muted, margin: '0 0 4px' }}>
+            Transfer to an existing member
+          </label>
+          {members === null ? (
+            <p style={{ fontSize: 12.5, color: T.muted }}>Loading members…</p>
+          ) : otherMembers.length === 0 ? (
+            <p style={{ fontSize: 12.5, color: T.muted }}>
+              No other members yet — allocate {v.reviews} to someone first, or invite a new email below.
+            </p>
+          ) : (
+            <div className="flex gap-2">
+              <select style={input} value={selected} onChange={(e) => setSelected(e.target.value)}>
+                <option value="">Choose a member…</option>
+                {otherMembers.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.email})
+                  </option>
+                ))}
+              </select>
+              <Btn small variant="danger" onClick={transferToExisting} disabled={busy || !selected}>
+                {busy ? 'Transferring…' : 'Transfer now'}
+              </Btn>
+            </div>
+          )}
+
+          <label style={{ display: 'block', fontSize: 12.5, color: T.muted, margin: '14px 0 4px' }}>
+            Or invite someone not yet in the system
+          </label>
+          <div className="flex gap-2">
+            <input
+              style={input}
+              placeholder="new admin's email"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+            />
+            <Btn small variant="ghost" onClick={invite} disabled={busy || !inviteEmail.trim()}>
+              {busy ? 'Inviting…' : 'Invite'}
+            </Btn>
+          </div>
+        </>
+      )}
+      <Msg m={msg} />
     </div>
   )
 }

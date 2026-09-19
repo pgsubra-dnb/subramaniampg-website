@@ -48,6 +48,13 @@ import {
   allocateOrgCredits,
   reclaimOrgCredits,
   getEmployeeOrgReport,
+  getOrgAdminContext,
+  getOrgMembers,
+  transferAdminToExistingMember,
+  inviteAdminByEmail,
+  cancelAdminInvite,
+  acceptAdminInvite,
+  OrgError,
 } from '../lib/okrAllyOrg'
 import { grantCreditsAsAdmin, sendImprovementEmail } from '../lib/okrAllyAdmin'
 import { generateStoreAndEmailReport } from '../lib/okrAllyReport'
@@ -1408,6 +1415,145 @@ test('corporate: report is org-scoped; a pre-existing personal account is left f
   )
   expect(dl.status()).toBe(200)
   expect(dl.headers()['content-type']).toContain('application/pdf')
+})
+
+// ══════════════════════════════════════════════════════════
+// 16b. Admin handover — transfer to an existing member (immediate), invite a
+//      new email (pending until explicit accept), cancel, cross-org guard.
+//      Pure lib-level: no browser session needed, just real OkrAllyUser rows.
+// ══════════════════════════════════════════════════════════
+
+test('admin handover: transfer to an existing org member is immediate', async () => {
+  const { id: orgId, gstin } = await seedOrg('Handover Co')
+  createdGstins.push(gstin)
+  const admin = await resolveOrCreateUser(`okr-e2e-ho-admin-${Date.now()}@example.com`)
+  createdUsers.push(admin.id)
+  const member = await resolveOrCreateUser(`okr-e2e-ho-member-${Date.now()}@example.com`)
+  createdUsers.push(member.id)
+  await makeOrgAdmin(admin.id, orgId)
+  await joinOrg(member.id, orgId)
+  const freshAdmin = await resolveOrCreateUser(admin.email) // re-read — makeOrgAdmin wrote the DB, not this JS object
+
+  const result = await transferAdminToExistingMember(freshAdmin, member.id)
+  expect(result).toEqual({ ok: true, newAdminEmail: member.email })
+
+  expect(await getUserOrgFields(admin.id)).toEqual({ organization_id: orgId, is_org_admin: false })
+  expect(await getUserOrgFields(member.id)).toEqual({ organization_id: orgId, is_org_admin: true })
+
+  // the old admin has genuinely lost the gate, not just the DB flag
+  const staleAdmin = await resolveOrCreateUser(admin.email)
+  await expect(getOrgAdminContext(staleAdmin)).rejects.toBeInstanceOf(OrgError)
+})
+
+test('admin handover: transfer rejects someone outside the organization', async () => {
+  const { id: orgId, gstin } = await seedOrg('Handover Co 2')
+  createdGstins.push(gstin)
+  const admin = await resolveOrCreateUser(`okr-e2e-ho-admin2-${Date.now()}@example.com`)
+  createdUsers.push(admin.id)
+  await makeOrgAdmin(admin.id, orgId)
+  const freshAdmin = await resolveOrCreateUser(admin.email)
+  const outsider = await resolveOrCreateUser(`okr-e2e-ho-outsider-${Date.now()}@example.com`)
+  createdUsers.push(outsider.id)
+
+  const result = await transferAdminToExistingMember(freshAdmin, outsider.id)
+  expect(result.ok).toBe(false)
+  expect(await getUserOrgFields(admin.id)).toEqual({ organization_id: orgId, is_org_admin: true })
+  expect(await getUserOrgFields(outsider.id)).toEqual({ organization_id: null, is_org_admin: false })
+})
+
+test('admin handover: invite-by-email is pending until the invited email signs in and explicitly accepts', async () => {
+  const { id: orgId, gstin } = await seedOrg('Handover Co 3')
+  createdGstins.push(gstin)
+  const admin = await resolveOrCreateUser(`okr-e2e-ho-admin3-${Date.now()}@example.com`)
+  createdUsers.push(admin.id)
+  await makeOrgAdmin(admin.id, orgId)
+  const freshAdmin = await resolveOrCreateUser(admin.email)
+  const inviteeEmail = `okr-e2e-ho-invitee-${Date.now()}@example.com`
+
+  const invited = await inviteAdminByEmail(freshAdmin, inviteeEmail)
+  expect(invited).toEqual({ ok: true, invitedEmail: inviteeEmail })
+
+  // current admin unaffected; the invite shows up on org status
+  expect(await getUserOrgFields(admin.id)).toEqual({ organization_id: orgId, is_org_admin: true })
+  const ctxBefore = await getOrgAdminContext(freshAdmin)
+  expect(ctxBefore.pendingAdminEmail).toBe(inviteeEmail)
+
+  // signing in alone (i.e. the row simply existing) must NOT grant admin
+  const invitee = await resolveOrCreateUser(inviteeEmail)
+  createdUsers.push(invitee.id)
+  expect(await getUserOrgFields(invitee.id)).toEqual({ organization_id: null, is_org_admin: false })
+
+  // the explicit accept is what flips it
+  const accepted = await acceptAdminInvite(invitee)
+  expect(accepted).toEqual({ ok: true, organizationName: 'Handover Co 3' })
+  expect(await getUserOrgFields(invitee.id)).toEqual({ organization_id: orgId, is_org_admin: true })
+  expect(await getUserOrgFields(admin.id)).toEqual({ organization_id: orgId, is_org_admin: false })
+
+  const ctxAfter = await getOrgAdminContext(await resolveOrCreateUser(inviteeEmail))
+  expect(ctxAfter.pendingAdminEmail).toBeNull()
+})
+
+test('admin handover: cancelling a pending invite clears it; accepting afterwards is rejected', async () => {
+  const { id: orgId, gstin } = await seedOrg('Handover Co 4')
+  createdGstins.push(gstin)
+  const admin = await resolveOrCreateUser(`okr-e2e-ho-admin4-${Date.now()}@example.com`)
+  createdUsers.push(admin.id)
+  await makeOrgAdmin(admin.id, orgId)
+  const freshAdmin = await resolveOrCreateUser(admin.email)
+  const inviteeEmail = `okr-e2e-ho-invitee4-${Date.now()}@example.com`
+  await inviteAdminByEmail(freshAdmin, inviteeEmail)
+
+  expect(await cancelAdminInvite(freshAdmin)).toEqual({ ok: true })
+  expect((await getOrgAdminContext(freshAdmin)).pendingAdminEmail).toBeNull()
+
+  const invitee = await resolveOrCreateUser(inviteeEmail)
+  createdUsers.push(invitee.id)
+  const result = await acceptAdminInvite(invitee)
+  expect(result.ok).toBe(false)
+  expect(await getUserOrgFields(invitee.id)).toEqual({ organization_id: null, is_org_admin: false })
+})
+
+test('admin handover: accept is blocked when the invited email already belongs to a DIFFERENT org', async () => {
+  const orgA = await seedOrg('Handover Org A')
+  createdGstins.push(orgA.gstin)
+  const orgB = await seedOrg('Handover Org B')
+  createdGstins.push(orgB.gstin)
+  const adminB = await resolveOrCreateUser(`okr-e2e-ho-adminB-${Date.now()}@example.com`)
+  createdUsers.push(adminB.id)
+  await makeOrgAdmin(adminB.id, orgB.id)
+  const freshAdminB = await resolveOrCreateUser(adminB.email)
+
+  const member = await resolveOrCreateUser(`okr-e2e-ho-crossmember-${Date.now()}@example.com`)
+  createdUsers.push(member.id)
+  await joinOrg(member.id, orgA.id) // already a member of Org A
+
+  await inviteAdminByEmail(freshAdminB, member.email) // Org B invites them to be ITS admin
+
+  const staleMember = await resolveOrCreateUser(member.email) // organization_id still = orgA
+  const result = await acceptAdminInvite(staleMember)
+  expect(result.ok).toBe(false)
+  // unchanged — still a plain member of Org A, Org B never touched them
+  expect(await getUserOrgFields(member.id)).toEqual({ organization_id: orgA.id, is_org_admin: false })
+  expect((await getOrgAdminContext(freshAdminB)).pendingAdminEmail).toBe(member.email) // invite still pending, not silently consumed
+})
+
+test('admin handover: getOrgMembers lists the admin first, then every other member', async () => {
+  const { id: orgId, gstin } = await seedOrg('Handover Co 5')
+  createdGstins.push(gstin)
+  const admin = await resolveOrCreateUser(`okr-e2e-ho-admin5-${Date.now()}@example.com`)
+  createdUsers.push(admin.id)
+  const m1 = await resolveOrCreateUser(`okr-e2e-ho-m1-${Date.now()}@example.com`)
+  createdUsers.push(m1.id)
+  const m2 = await resolveOrCreateUser(`okr-e2e-ho-m2-${Date.now()}@example.com`)
+  createdUsers.push(m2.id)
+  await makeOrgAdmin(admin.id, orgId)
+  const freshAdmin = await resolveOrCreateUser(admin.email)
+  await joinOrg(m1.id, orgId)
+  await joinOrg(m2.id, orgId)
+
+  const members = await getOrgMembers(freshAdmin)
+  expect(members[0]).toMatchObject({ id: admin.id, isOrgAdmin: true })
+  expect(members.map((m) => m.id).sort()).toEqual([admin.id, m1.id, m2.id].sort())
 })
 
 // ══════════════════════════════════════════════════════════

@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg'
-import { query, withTransaction, resolveOrCreateUser, type OkrAllyUser } from '@/lib/okrAlly'
+import { query, withTransaction, resolveOrCreateUser, getUserById, type OkrAllyUser } from '@/lib/okrAlly'
 import { gstBreakdown } from '@/lib/okrAllyBilling'
 import { createAndSendInvoice } from '@/lib/okrAllyInvoice'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
@@ -339,6 +339,10 @@ export interface OrgAdminContext {
   companyContext: string | null
   businessContext: string | null
   contextConfirmedAt: string | null
+  /** Admin handover (migration 016) — set while an invite to a new email is
+   *  outstanding; null once accepted or cancelled. */
+  pendingAdminEmail: string | null
+  pendingAdminInvitedAt: string | null
 }
 
 export async function getOrgAdminContext(user: OkrAllyUser): Promise<OrgAdminContext> {
@@ -353,9 +357,12 @@ export async function getOrgAdminContext(user: OkrAllyUser): Promise<OrgAdminCon
     company_context: string | null
     business_context: string | null
     context_confirmed_at: string | null
+    pending_admin_email: string | null
+    pending_admin_invited_at: string | null
   }>(
     `SELECT id, name, gstin, registered_address, credits_purchased, credits_allocated,
-            company_context, business_context, context_confirmed_at
+            company_context, business_context, context_confirmed_at,
+            pending_admin_email, pending_admin_invited_at
        FROM organizations WHERE id = $1`,
     [orgId]
   )
@@ -369,6 +376,8 @@ export async function getOrgAdminContext(user: OkrAllyUser): Promise<OrgAdminCon
     companyContext: o.company_context,
     businessContext: o.business_context,
     contextConfirmedAt: o.context_confirmed_at,
+    pendingAdminEmail: o.pending_admin_email,
+    pendingAdminInvitedAt: o.pending_admin_invited_at,
   }
 }
 
@@ -1019,4 +1028,244 @@ export async function renderOrgReportPdf(
   )
 
   return Buffer.from(doc.output('arraybuffer'))
+}
+
+// ─── Admin handover (migration 016) ───────────────────────────────────────
+//
+// Two paths, both admin-initiated:
+//   - transferAdminToExistingMember: target is already a member of this org
+//     (organization_id already set, e.g. by a prior allocation) — immediate,
+//     no invite step.
+//   - inviteAdminByEmail / acceptAdminInvite: target is a new email — admin
+//     rights stay with the CURRENT admin until that person signs in and
+//     explicitly accepts (organizations.pending_admin_email). Sign-in alone
+//     never grants admin — acceptAdminInvite is a separate, explicit action.
+
+export interface OrgMember {
+  id: string
+  email: string
+  name: string
+  isOrgAdmin: boolean
+  createdAt: string
+}
+
+/** Every user whose home org is this admin's org, admin first. No such query
+ *  existed before migration 016 — every other org function is keyed by a
+ *  single email, not a membership list. */
+export async function getOrgMembers(user: OkrAllyUser): Promise<OrgMember[]> {
+  const orgId = requireOrgAdmin(user)
+  const r = await query<{ id: string; email: string; name: string; is_org_admin: boolean; created_at: string }>(
+    `SELECT id, email, name, is_org_admin, created_at
+       FROM users WHERE organization_id = $1
+      ORDER BY is_org_admin DESC, created_at`,
+    [orgId]
+  )
+  return r.rows.map((row) => ({
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    isOrgAdmin: row.is_org_admin,
+    createdAt: row.created_at,
+  }))
+}
+
+async function clearPendingAdminInvite(client: PoolClient, orgId: string): Promise<void> {
+  await client.query(
+    `UPDATE organizations
+        SET pending_admin_email = NULL, pending_admin_invited_by = NULL, pending_admin_invited_at = NULL
+      WHERE id = $1`,
+    [orgId]
+  )
+}
+
+export type TransferAdminOutcome = { ok: true; newAdminEmail: string } | { ok: false; error: string }
+
+/** Immediate handover to an EXISTING member of this org. Clears any
+ *  outstanding invite-by-email (a completed transfer supersedes it). */
+export async function transferAdminToExistingMember(
+  user: OkrAllyUser,
+  targetUserId: string,
+  brand?: Brand
+): Promise<TransferAdminOutcome> {
+  const v = vocab(brand ?? DEFAULT_BRAND)
+  const orgId = requireOrgAdmin(user)
+  if (targetUserId === user.id) return { ok: false, error: 'You are already the admin.' }
+
+  const target = await getUserById(targetUserId)
+  if (!target || target.organization_id !== orgId) {
+    return { ok: false, error: 'That person is not a member of your organization.' }
+  }
+
+  const orgName = (await getOrgAdminContext(user)).organization.name
+
+  await withTransaction(async (client) => {
+    await client.query(`UPDATE users SET is_org_admin = false WHERE id = $1`, [user.id])
+    await client.query(`UPDATE users SET is_org_admin = true WHERE id = $1`, [target.id])
+    await clearPendingAdminInvite(client, orgId)
+  })
+
+  await Promise.all([
+    sendBrevoEmail({
+      to: user.email,
+      toName: user.name,
+      subject: `You're no longer the ${v.product} admin for ${orgName}`,
+      htmlContent: `<p>${target.name} (${target.email}) is now the ${v.product} admin for ${orgName}. You can still run your own ${v.reviews} as a regular member.</p>`,
+      textContent: `${target.name} (${target.email}) is now the ${v.product} admin for ${orgName}. You can still run your own ${v.reviews} as a regular member.`,
+      skipBcc: true,
+    }),
+    sendBrevoEmail({
+      to: target.email,
+      toName: target.name,
+      subject: `You're the ${v.product} admin for ${orgName}`,
+      htmlContent: `<p>${user.name} (${user.email}) has made you the ${v.product} admin for ${orgName}. Sign in and open the Company tab to manage the pool.</p>`,
+      textContent: `${user.name} (${user.email}) has made you the ${v.product} admin for ${orgName}. Sign in and open the Company tab to manage the pool.`,
+      skipBcc: true,
+    }),
+  ])
+
+  return { ok: true, newAdminEmail: target.email }
+}
+
+export type InviteAdminOutcome = { ok: true; invitedEmail: string } | { ok: false; error: string }
+
+/** Invite a NEW email to become admin. Does not touch is_org_admin — the
+ *  current admin stays in charge until acceptAdminInvite runs. Overwrites
+ *  any earlier pending invite for this org. */
+export async function inviteAdminByEmail(
+  user: OkrAllyUser,
+  emailInput: string,
+  brand?: Brand
+): Promise<InviteAdminOutcome> {
+  const v = vocab(brand ?? DEFAULT_BRAND)
+  const orgId = requireOrgAdmin(user)
+  const email = (emailInput || '').trim().toLowerCase()
+  if (!EMAIL_RE.test(email)) return { ok: false, error: 'Enter a valid email address.' }
+  if (email === user.email.toLowerCase()) return { ok: false, error: 'You are already the admin.' }
+
+  const orgName = (await getOrgAdminContext(user)).organization.name
+
+  await query(
+    `UPDATE organizations
+        SET pending_admin_email = $2, pending_admin_invited_by = $3, pending_admin_invited_at = now()
+      WHERE id = $1`,
+    [orgId, email, user.id]
+  )
+
+  await sendBrevoEmail({
+    to: email,
+    toName: email,
+    subject: `You've been invited to become the ${v.product} admin for ${orgName}`,
+    htmlContent: `<p>${user.name} (${user.email}) has invited you to become the ${v.product} admin for ${orgName}. Sign in at <a href="https://subramaniampg.guru${v.path}">subramaniampg.guru${v.path}</a> with this email address — you'll be asked to accept before anything changes.</p>`,
+    textContent: `${user.name} (${user.email}) has invited you to become the ${v.product} admin for ${orgName}. Sign in at https://subramaniampg.guru${v.path} with this email address — you'll be asked to accept before anything changes.`,
+    skipBcc: true,
+  })
+
+  return { ok: true, invitedEmail: email }
+}
+
+/** Withdraw an outstanding invite-by-email. No-op if there isn't one. */
+export async function cancelAdminInvite(user: OkrAllyUser): Promise<{ ok: true }> {
+  const orgId = requireOrgAdmin(user)
+  await query(
+    `UPDATE organizations
+        SET pending_admin_email = NULL, pending_admin_invited_by = NULL, pending_admin_invited_at = NULL
+      WHERE id = $1`,
+    [orgId]
+  )
+  return { ok: true }
+}
+
+export type AcceptAdminInviteOutcome = { ok: true; organizationName: string } | { ok: false; error: string }
+
+/**
+ * The INVITED user's own explicit accept — no admin gate, since the caller
+ * isn't an admin yet. Looks up an org whose pending_admin_email matches the
+ * signed-in user's email; if found, demotes the current admin and promotes
+ * this user. No-op error if there's nothing pending for this email —
+ * signing in alone never grants admin.
+ *
+ * organization_id is set unconditionally here (NOT the COALESCE-guarded
+ * non-clobber pattern allocateOrgCreditsTx uses for a passive credit
+ * allocation) — is_org_admin only means anything relative to the SAME
+ * user.organization_id (requireOrgAdmin reads it as "the org this user
+ * admins"), so setting one without the other would silently mis-tag whoever
+ * accepts. Accepting is itself the user's explicit, one-time choice to make
+ * this their org, so the move is intended, not an accidental clobber. If
+ * they already belong to a DIFFERENT org, block it instead of guessing —
+ * that edge case routes to PGS like any other admin-identity conflict.
+ */
+export async function acceptAdminInvite(
+  sessionUser: OkrAllyUser,
+  brand?: Brand
+): Promise<AcceptAdminInviteOutcome> {
+  const v = vocab(brand ?? DEFAULT_BRAND)
+  const email = sessionUser.email.toLowerCase()
+  const org = await query<{ id: string; name: string }>(
+    `SELECT id, name FROM organizations WHERE lower(pending_admin_email) = $1`,
+    [email]
+  )
+  const o = org.rows[0]
+  if (!o) return { ok: false, error: 'No pending admin invite for your account.' }
+  if (sessionUser.organization_id && sessionUser.organization_id !== o.id) {
+    return {
+      ok: false,
+      error: `You already belong to a different organization, so you can't accept this invite. Email pgs@embiggen.co.in to sort it out.`,
+    }
+  }
+
+  const prevAdmin = await query<{ id: string; email: string; name: string }>(
+    `SELECT id, email, name FROM users WHERE organization_id = $1 AND is_org_admin = true ORDER BY created_at LIMIT 1`,
+    [o.id]
+  )
+
+  await withTransaction(async (client) => {
+    if (prevAdmin.rows[0]) {
+      await client.query(`UPDATE users SET is_org_admin = false WHERE id = $1`, [prevAdmin.rows[0].id])
+    }
+    await client.query(`UPDATE users SET is_org_admin = true, organization_id = $2 WHERE id = $1`, [
+      sessionUser.id,
+      o.id,
+    ])
+    await clearPendingAdminInvite(client, o.id)
+  })
+
+  const notifs: Promise<boolean>[] = [
+    sendBrevoEmail({
+      to: sessionUser.email,
+      toName: sessionUser.name,
+      subject: `You're the ${v.product} admin for ${o.name}`,
+      htmlContent: `<p>You're now the ${v.product} admin for ${o.name}. Open the Company tab to manage the pool.</p>`,
+      textContent: `You're now the ${v.product} admin for ${o.name}. Open the Company tab to manage the pool.`,
+      skipBcc: true,
+    }),
+  ]
+  if (prevAdmin.rows[0]) {
+    notifs.push(
+      sendBrevoEmail({
+        to: prevAdmin.rows[0].email,
+        toName: prevAdmin.rows[0].name,
+        subject: `${sessionUser.name} accepted the ${v.product} admin handover for ${o.name}`,
+        htmlContent: `<p>${sessionUser.name} (${sessionUser.email}) has accepted your invite and is now the ${v.product} admin for ${o.name}.</p>`,
+        textContent: `${sessionUser.name} (${sessionUser.email}) has accepted your invite and is now the ${v.product} admin for ${o.name}.`,
+        skipBcc: true,
+      })
+    )
+  }
+  await Promise.all(notifs)
+
+  return { ok: true, organizationName: o.name }
+}
+
+/** For /api/okr-ally/me — is there a pending admin invite for THIS email,
+ *  regardless of whether they have a home org yet. */
+export async function getPendingAdminInviteFor(
+  email: string
+): Promise<{ organizationName: string; invitedAt: string } | null> {
+  const r = await query<{ name: string; pending_admin_invited_at: string }>(
+    `SELECT name, pending_admin_invited_at FROM organizations WHERE lower(pending_admin_email) = lower($1)`,
+    [email]
+  )
+  const o = r.rows[0]
+  if (!o) return null
+  return { organizationName: o.name, invitedAt: o.pending_admin_invited_at }
 }
