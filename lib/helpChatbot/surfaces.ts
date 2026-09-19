@@ -60,16 +60,29 @@ function portableTextToPlain(blocks: unknown[]): string {
     .join(' ')
 }
 
+// The client resends the full turn history every message, so a multi-turn
+// conversation would otherwise re-fetch Sanity on every single reply —
+// wasted latency stacked in front of the already-slow Anthropic call. A
+// short in-process cache (independent of whatever Next.js's fetch cache
+// does with getFaqs()'s own revalidate option inside a force-dynamic route
+// handler) keeps that to roughly once every 5 minutes per server instance.
+const WEBSITE_KB_CACHE_MS = 5 * 60 * 1000
+let websiteKbCache: { text: string; builtAt: number } | null = null
+
 async function websiteKnowledgeBase(): Promise<string> {
+  if (websiteKbCache && Date.now() - websiteKbCache.builtAt < WEBSITE_KB_CACHE_MS) {
+    return websiteKbCache.text
+  }
   const faqs = await getFaqs()
   const faqText = faqs
     .map((f) => `Q: ${f.question}\nA: ${portableTextToPlain(f.answer as unknown[])}`)
     .join('\n\n')
-  return (
+  const text =
     `# subramaniampg.guru — help knowledge base\n\n` +
     `## About\nSubramaniam P G is an OKR coach, executive coach, and strategy consultant helping founders and CXOs in India align purpose with performance.\n\n` +
     `## Frequently asked questions\n${faqText || '(no FAQs published yet)'}`
-  )
+  websiteKbCache = { text, builtAt: Date.now() }
+  return text
 }
 
 export const SURFACES: Record<ChatbotSurface, ChatbotSurfaceConfig> = {
