@@ -14,8 +14,7 @@
  */
 
 import { type Brand, vocab } from '@/lib/okrAllyBrand'
-import { topicsFor } from '@/app/okr-ally/_help'
-import { howItWorks, orgAdmin, employee, type Slide } from '@/app/okr-ally/_walkthrough'
+import { topicsFor, howItWorks, orgAdmin, employee, type Slide } from '@/lib/okrAllyHelpContent'
 import { getFaqs } from '@/lib/sanity'
 import type { ChatbotSurface } from './types'
 

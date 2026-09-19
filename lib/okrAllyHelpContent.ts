@@ -1,0 +1,304 @@
+/**
+ * The Help-tab Q&A and walkthrough slide content — pure data, no React, no
+ * 'use client'. Deliberately split out of app/okr-ally/_help.tsx and
+ * _walkthrough.tsx (both 'use client') so it can be imported safely from
+ * server-only code too (lib/helpChatbot/surfaces.ts, the help chatbot's
+ * knowledge base). Importing exported functions FROM a 'use client' file
+ * into a server module builds fine locally (`next build` succeeds) but
+ * threw `TypeError: ... is not a function` at runtime in Vercel's traced
+ * production serverless bundle — caught live on subramaniampg.guru right
+ * after the help-chatbot feature shipped. This module is the fix: one
+ * plain-TS source of truth that both the client components (_help.tsx,
+ * _walkthrough.tsx) and the server-only knowledge base import identically,
+ * so there's still exactly one copy of this content, just not gated behind
+ * a client-component boundary.
+ */
+
+import { type BrandVocab } from '@/lib/okrAllyBrand'
+
+// ─── Help tab Q&A ───────────────────────────────────────────────────────
+
+export type QA = { q: string; a: string }
+export type Topic = { id: string; title: string; blurb: string; items: QA[] }
+
+export function topicsFor(v: BrandVocab): Topic[] {
+  const plan = v.plan // "OKR" | "Goal Plan"
+  const planPlural = v.planPlural // "OKRs" | "Goal Plans"
+  const objLower = v.objectiveLower // "objective" | "goal"
+  const krPluralLower = v.krPlural.toLowerCase() // "key results" | "sub-goals"
+  const review = v.review // "OKR Review" | "Goal Review"
+  const reviews = v.reviews // "OKR Reviews" | "Goal Reviews"
+
+  return [
+    {
+      id: 'scoring',
+      title: 'How scoring works',
+      blurb: 'What the number means, and how I get to it.',
+      items: [
+        {
+          q: `Why not just use Claude or ChatGPT for this?`,
+          a: `You can absolutely paste your ${plan} into a general AI chatbot and ask it to critique it. What you'd get back would be generic, though, since a general assistant has no fixed standard to score you against. I score every ${plan} against the same five-criteria rubric every time, the same one from Subramaniam's own consulting practice and his book, so your result is comparable across different ${objLower}s and different quarters. I also ask follow-up questions when your context is thin, generate a formal PDF report you can keep, and for reviews that come in below a certain quality, Subramaniam himself sometimes adds his own note directly. A general chatbot can't do any of that consistently, because it isn't built around one person's specific coaching standard.`,
+        },
+        {
+          q: `How do you score my ${plan}?`,
+          a: `I read your ${objLower}, ${krPluralLower} and initiatives together with the context you gave me, then score five things: Outcome vs Output, Alignment, Measurability, Specificity, and Ambition vs Realism. Each gets a 0–10 with a short reason. Your overall score is a weighted blend of the five — Outcome vs Output and Alignment count for the most, because a ${plan} that measures activity or points nowhere is the most common way these go wrong.`,
+        },
+        {
+          q: `What does the score actually mean?`,
+          a: `It's a read on how well the ${plan} is written — not a verdict on your strategy or your team. A lower score means I found room to tighten the wording, sharpen the measures, or reconnect the ${objLower} to the bigger picture. The report tells you exactly where.`,
+        },
+        {
+          q: `Why did my score change after I edited one line?`,
+          a: `The five criteria interact. Rewriting a ${v.krLower} into clear baseline-and-target form can lift Measurability and Specificity at the same time, and that moves the weighted total.`,
+        },
+        {
+          q: `Do you compare me to other companies?`,
+          a: `No. I judge only what you wrote, plus the context you gave me. I don't pull in outside knowledge about your industry or your competitors, and I don't invent detail.`,
+        },
+        {
+          q: `What are the two options in my report?`,
+          a: `I give you two rewrites. The refined version stays close to your original and fixes it in place. The fresh version rebuilds the ${plan} from the outcome up. Take whichever fits, or borrow from both.`,
+        },
+        {
+          q: `Why don't the two suggested rewrites get their own score?`,
+          a: `I only score what you actually wrote and submitted, that's the real assessment. The two rewrites are there to show you what a stronger version could look like, but scoring them would just be me grading my own suggestions, not a genuine independent check. If you want a real score for a rewritten version, the honest way to get one is to actually use it as your ${plan} and submit it fresh.`,
+        },
+        {
+          q: `Can I see the review again later?`,
+          a: `Yes. Every completed review — with its score, both rewrites and the PDF — stays in your History tab.`,
+        },
+      ],
+    },
+    {
+      id: 'credits',
+      title: `${review} packs`,
+      blurb: `Buying reviews and invoices.`,
+      items: [
+        {
+          q: `How do ${reviews} work?`,
+          a: `One ${review} is one full pass over your ${plan}. You buy ${reviews} in packs from the Pricing & Plans tab, and each ${plan} you submit spends one.`,
+        },
+        {
+          q: `What do the packs cost?`,
+          a: `A single review is ₹100, a 5-pack is ₹375 (₹75 a review), and a 10-pack is ₹500 (₹50 a review) — all plus 18% GST. The larger packs bring the price per review down.`,
+        },
+        {
+          q: `Do ${reviews} expire?`,
+          a: `No. They stay in your account until you use them.`,
+        },
+        {
+          q: `Do I get an invoice?`,
+          a: `Yes. Every purchase generates a GST invoice. It is emailed to you and also listed in your History tab, where you can download it again any time.`,
+        },
+        {
+          q: `My payment went through but I have no ${reviews}.`,
+          a: `Give it a moment and refresh — the confirmation can lag by a few seconds. If they still are not there, email pgs@embiggen.co.in with your payment reference and it will be sorted out.`,
+        },
+      ],
+    },
+    {
+      id: 'corporate',
+      title: `Corporate & team ${reviews}`,
+      blurb: `A shared pool of ${reviews} for your company, handed out by one admin.`,
+      items: [
+        {
+          q: `How does a company buy ${reviews}?`,
+          a: `If several people at your company want to run their ${planPlural} through me, buy a shared pool instead of individual packs. Sign in, open the Pricing & Plans tab, and follow “Looking for team or company ${reviews}?” — or go straight to subramaniampg.guru${v.path}/corporate. Pick a bundle, enter your company name, GSTIN and registered address, choose the state for the invoice, and name the person who will manage the pool (the “designated admin” — that can be you or a colleague). Pay by card or UPI. The GST invoice is made out to the company, not to you personally.`,
+        },
+        {
+          q: `What are the bundles?`,
+          a: `Three fixed sizes: 100 ${reviews} for ₹6,000, 200 for ₹11,000, or 500 for ₹25,000 — all plus 18% GST, so ₹7,080, ₹12,980 and ₹29,500 to pay. That is ₹60, ₹55 and ₹50 a review as the pool gets bigger. Need more than 500? Email pgs@embiggen.co.in to discuss — there is no self-serve option above 500.`,
+        },
+        {
+          q: `How does the admin hand ${reviews} out?`,
+          a: `The designated admin gets a Company tab in ${v.product}. It shows the pool — purchased, allocated, and still available — and lets them allocate any number to an employee's email. If that person has no ${v.product} account yet, allocating creates one; either way they are emailed to say the ${reviews} are waiting. The pool goes down by whatever is allocated.`,
+        },
+        {
+          q: `When an employee runs a review, which ${reviews} does it use?`,
+          a: `Their company-allocated ${reviews} are spent first, automatically. A review only falls back to any personal ${reviews} they bought themselves once the company pool is used up. The two balances are always kept separate and shown separately.`,
+        },
+        {
+          q: `Can the admin take unused ${reviews} back?`,
+          a: `Yes. “Reclaim unused ${reviews}” on the Company tab takes back whatever an employee has not spent yet and returns it to the pool. ${reviews} already used on reviews stay used — reclaim never claws those back and never takes a balance below zero. The admin can also pull a per-employee usage report (with a PDF) showing exactly what the company allocated, what was used, and what is left.`,
+        },
+        {
+          q: `I already use ${v.product} personally. What happens if my company makes me an admin or gives me ${reviews}?`,
+          a: `Nothing happens to your personal account. Your own ${reviews}, your past reviews, your saved company and role context, your history — all of it stays exactly as it was. Being made an org admin only adds the Company tab. Being allocated company ${reviews} only adds a separate company balance alongside your personal one, and your reviews simply spend the company ${reviews} first. It is purely additive.`,
+        },
+        {
+          q: `Who can see the company's usage?`,
+          a: `The designated admin sees the pool and each employee's company-${review.toLowerCase()} figures — allocated, used, remaining — and nothing about anyone's personal ${v.product} account. Employees don't see the pool or other people's allocations.`,
+        },
+        {
+          q: `Can the admin role be handed to someone else?`,
+          a: `Yes. On the Company tab, the current admin can transfer the role to an existing member of the company's account immediately, or invite a new email — that person only becomes admin once they sign in and explicitly accept, so nothing changes until then. If the current admin can't be reached to do this themselves, email pgs@embiggen.co.in for a manual override — there's no automated way around an unreachable admin.`,
+        },
+      ],
+    },
+    {
+      id: 'free-review',
+      title: 'The free first review',
+      blurb: 'Your first review is on the house.',
+      items: [
+        {
+          q: `Is my first review really free?`,
+          a: `Yes — your first review is free, once per account. It is the full review, not a cut-down version.`,
+        },
+        {
+          q: `How do I claim it?`,
+          a: `Nothing to do. When you have no ${reviews} and you are still eligible, I apply the free review automatically the moment you submit.`,
+        },
+        {
+          q: `It charged me a ${review} instead.`,
+          a: `The free review is a one-time thing per account. If you have already used it, later reviews need a ${review}. If you believe that is wrong, email pgs@embiggen.co.in.`,
+        },
+        {
+          q: `Does the free review still get an invoice?`,
+          a: `Yes. A GST invoice is generated even when the amount is ₹0, and it is emailed to you like any other.`,
+        },
+      ],
+    },
+    {
+      id: 'personal-review',
+      title: `When PGS reviews your ${plan} himself`,
+      blurb: 'The occasional personal note on top of my review.',
+      items: [
+        {
+          q: `I got an email from PGS about my ${plan}.`,
+          a: `Sometimes PGS reads a review personally and sends you a short note in his own words — a second pair of eyes on top of mine. It is commentary and suggestions, never a score or a grade.`,
+        },
+        {
+          q: `Can I get PGS to personally review my ${plan}?`,
+          a: `Yes — that's a paid one-to-one conversation with PGS, separate from my automated review. Book it at subramaniampg.guru/work/book-consulting (“A Conversation with PGS”): ₹1,180 for 30 minutes, ₹2,360 for 60 minutes, or ₹3,540 for 90 minutes. Those are GST-inclusive — the amount you actually pay. Bring your ${plan} and context and he'll work through it with you live.`,
+        },
+        {
+          q: `Who can see what I submit?`,
+          a: `Your submissions are visible to PGS, as the person behind ${v.product}, so he can review them and help. They are not shared more widely. The privacy policy has the full detail on how your data is handled.`,
+        },
+      ],
+    },
+  ]
+}
+
+// ─── Walkthrough slides ─────────────────────────────────────────────────
+
+export type Shot = { kind: 'shot'; img: string; alt: string; caption: string }
+export type Note = { kind: 'note'; heading: string; body: string }
+export type Cta = { kind: 'cta'; heading: string; body: string }
+export type Slide = Shot | Note | Cta
+
+/** "How <Product> works" — the pre-sign-in product tour. `slug` selects the
+ *  captured screenshot set (`okr-ally` | `goal-ally`); every caption reads in
+ *  the brand's vocabulary. */
+export function howItWorks(v: BrandVocab): Slide[] {
+  const slug = v.path.slice(1) // 'okr-ally' | 'goal-ally'
+  const pair = v.key === 'okr_ally' ? 'an Objective and its Key Results' : 'a Goal and its Sub-goals'
+  return [
+    {
+      kind: 'shot',
+      img: `/${slug}/walkthrough/01-intro.png`,
+      alt: `The ${v.product} intro screen`,
+      caption: `This is the front door. Bring the ${v.objective} and ${v.krPlural} you've already drafted — I don't write them from scratch. I score them against a fixed five-part rubric, tell you honestly what's working and what isn't, and hand back two rewrites. Your first review is free.`,
+    },
+    {
+      kind: 'shot',
+      img: `/${slug}/walkthrough/02-signin.png`,
+      alt: 'The email sign-in step',
+      caption: `First, your email. I send a one-time 6-digit code — no password to set or remember. It's how your reviews, ${v.reviews} and saved context stay tied to you between visits.`,
+    },
+    {
+      kind: 'shot',
+      img: `/${slug}/walkthrough/03-context-company.png`,
+      alt: 'The first context question — about your company',
+      caption:
+        "Once you're in, a couple of quick basics — your name, your company — then three context questions. First: what your company does, who it serves, how big it is. The more detail here, the sharper the review, and I save it to your profile so you only write it once.",
+    },
+    {
+      kind: 'shot',
+      img: `/${slug}/walkthrough/04-context-business.png`,
+      alt: 'The second context question — where the company is right now',
+      caption: `Next, where the company is right now — its strategic direction, the challenges it's facing, the openings it sees, and the trends around it. Answer whichever of these matter to your ${v.objectiveLower}. This is the context that lets me judge whether your ${v.plan} is aimed at what actually counts this quarter.`,
+    },
+    {
+      kind: 'shot',
+      img: `/${slug}/walkthrough/05-context-role.png`,
+      alt: 'The third context question — your own role',
+      caption:
+        "The last context question is your own role — what you're accountable for, and what you can and can't directly move. If any answer along the way is too thin to work with, I ask one focused follow-up before we continue. Answering these well is usually what lifts a review from generic to genuinely useful.",
+    },
+    {
+      kind: 'shot',
+      img: `/${slug}/walkthrough/06-objective.png`,
+      alt: `Entering the ${v.objective}`,
+      caption: `Now the ${v.objective} — one sentence naming the outcome you want by the end of the cycle, not an activity or a direction of travel. Send me the one you already drafted.`,
+    },
+    {
+      kind: 'shot',
+      img: `/${slug}/walkthrough/07-key-results.png`,
+      alt: `Entering the ${v.krPlural}`,
+      caption: `Then one to six ${v.krPlural}, each a measurable result in baseline-and-target form: a metric, where it starts, where you want it, and by when. You can add a few initiatives under any ${v.krShort}.`,
+    },
+    {
+      kind: 'shot',
+      img: `/${slug}/walkthrough/08-confirm.png`,
+      alt: 'The confirm screen before submitting',
+      caption: `One last look at everything I'm about to review — every line is still editable here. Then submit: one review, one ${v.review}, and it runs. A failed generation refunds automatically.`,
+    },
+    {
+      kind: 'shot',
+      img: `/${slug}/walkthrough/09-report.png`,
+      alt: 'The report: score, criteria breakdown, feedback, and two rewrites',
+      caption: `At the end you get an overall score, how it breaks down across the five criteria, what works and what to tighten on the ${v.objective} and every ${v.krShort}, and two full rewrites — one that repairs your draft, one built fresh from the outcome. It's on screen and in your inbox as a PDF.`,
+    },
+    {
+      kind: 'cta',
+      heading: "That's the whole conversation.",
+      body: `Bring ${pair}, plus a few minutes for the context questions. I'll take it from there.`,
+    },
+  ]
+}
+
+export function orgAdmin(v: BrandVocab): Slide[] {
+  return [
+    {
+      kind: 'note',
+      heading: `The ${v.review} pool`,
+      body: `Your company bought a pool of ${v.reviews}. This tab shows how many were purchased, how many you've handed out, and how many are still available. The pool is the company's — it's tracked completely separately from anyone's personal ${v.reviews} and never touches them.`,
+    },
+    {
+      kind: 'note',
+      heading: `Handing ${v.reviews} to your team`,
+      body: `Allocate any number of ${v.reviews} to a teammate by email. If they don't have an account yet, allocating creates one and emails them. Their reviews spend company ${v.reviews} first, and only fall back to personal ${v.reviews} once yours run out. You can reclaim whatever a person hasn't spent back into the pool at any time.`,
+    },
+    {
+      kind: 'note',
+      heading: 'Set the company context — and publish it',
+      body: 'Everyone on your team runs their review on the company and business context you write here — they can\'t change it. Nothing goes live until you press "Confirm and publish". Until you do, no one on the team can submit a review, so set this up first. Republishing later applies to future reviews only; reviews already run keep the context they were run with.',
+    },
+    {
+      kind: 'note',
+      heading: 'Seeing usage',
+      body: `The usage report shows, per person, what you allocated, what they've used on reviews, what's been reclaimed, and what's left — and gives you a PDF. Every figure is scoped to your company and is independent of that person's own ${v.product} account.`,
+    },
+  ]
+}
+
+export function employee(v: BrandVocab): Slide[] {
+  return [
+    {
+      kind: 'note',
+      heading: 'Your company sets part of the context',
+      body: "Your company admin has written the company and business context once, for the whole team. You'll see it as you go, but it's read-only — that's deliberate, so every review at your company runs on the same footing. You don't need to write it.",
+    },
+    {
+      kind: 'note',
+      heading: 'Your role is yours',
+      body: "The one context question that's yours to answer is your own role — what you're accountable for, and what you can and can't directly move. Fill it in as fully as you can; alongside the company context, it's what makes the review specific to you rather than generic.",
+    },
+    {
+      kind: 'note',
+      heading: 'Everything else is the same',
+      body: `From there it works exactly as it does for anyone: your ${v.objective}, your ${v.krPlural}, a confirm screen, then a scored report with feedback and two rewrites — on screen and in your inbox. Your company ${v.reviews} are spent first.`,
+    },
+  ]
+}
