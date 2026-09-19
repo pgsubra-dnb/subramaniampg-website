@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Inter, Lora } from 'next/font/google'
+import SiteHelpChatbot from '@/components/HelpChatbot/SiteHelpChatbot'
 import './globals.css'
 
 const inter = Inter({
@@ -118,7 +119,10 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(personJsonLd) }}
         />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <SiteHelpChatbot />
+      </body>
     </html>
   )
 }

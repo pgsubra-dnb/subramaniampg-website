@@ -13,10 +13,13 @@ import { type Brand, DEFAULT_BRAND, vocab, type BrandVocab } from '@/lib/okrAlly
  * + e2e.
  */
 
-type QA = { q: string; a: string }
-type Topic = { id: string; title: string; blurb: string; items: QA[] }
+export type QA = { q: string; a: string }
+export type Topic = { id: string; title: string; blurb: string; items: QA[] }
 
-function topicsFor(v: BrandVocab): Topic[] {
+/** Exported so the help chatbot's knowledge base (lib/helpChatbot/surfaces.ts)
+ *  can flatten the SAME content this tab renders — one source, no duplicate
+ *  copy to keep in sync. */
+export function topicsFor(v: BrandVocab): Topic[] {
   const plan = v.plan // "OKR" | "Goal Plan"
   const planPlural = v.planPlural // "OKRs" | "Goal Plans"
   const objLower = v.objectiveLower // "objective" | "goal"
