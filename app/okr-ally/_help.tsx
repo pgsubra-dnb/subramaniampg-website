@@ -127,6 +127,10 @@ export function topicsFor(v: BrandVocab): Topic[] {
           q: `Who can see the company's usage?`,
           a: `The designated admin sees the pool and each employee's company-${review.toLowerCase()} figures — allocated, used, remaining — and nothing about anyone's personal ${v.product} account. Employees don't see the pool or other people's allocations.`,
         },
+        {
+          q: `Can the admin role be handed to someone else?`,
+          a: `Yes. On the Company tab, the current admin can transfer the role to an existing member of the company's account immediately, or invite a new email — that person only becomes admin once they sign in and explicitly accept, so nothing changes until then. If the current admin can't be reached to do this themselves, email pgs@embiggen.co.in for a manual override — there's no automated way around an unreachable admin.`,
+        },
       ],
     },
     {

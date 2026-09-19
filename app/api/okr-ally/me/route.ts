@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser, getAvailableCredits } from '@/lib/okrAlly'
-import { getOrgContextForMember } from '@/lib/okrAllyOrg'
+import { getOrgContextForMember, getPendingAdminInviteFor } from '@/lib/okrAllyOrg'
 import { corporateDemoFor } from '@/lib/okrAllyDemo'
 
 export const dynamic = 'force-dynamic'
@@ -15,10 +15,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ authenticated: false })
     }
 
-    const [credits, org, corpDemo] = await Promise.all([
+    const [credits, org, corpDemo, pendingAdminInvite] = await Promise.all([
       getAvailableCredits(user.id),
       getOrgContextForMember(user),
       user.is_demo ? corporateDemoFor(user.id) : Promise.resolve(null),
+      getPendingAdminInviteFor(user.email),
     ])
 
     return NextResponse.json({
@@ -53,6 +54,10 @@ export async function GET(req: NextRequest) {
             adminEmail: org.adminEmail,
           }
         : null,
+      // Admin handover (migration 016) — set only when THIS signed-in email
+      // has a pending invite to become an admin somewhere. The client shows
+      // an explicit accept prompt; sign-in alone never grants admin.
+      pendingAdminInvite,
     })
   } catch (error) {
     console.error('OKR Ally me error:', error)

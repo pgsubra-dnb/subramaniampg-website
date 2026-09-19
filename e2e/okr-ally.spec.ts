@@ -1,7 +1,8 @@
 import crypto from 'node:crypto'
 import { test, expect, Page } from '@playwright/test'
 import { FAIL_BASE_URL } from '../playwright.config'
-import { validateReviewOutput, buildSystemPrompt, buildUserContent } from '../lib/okrAllyReview'
+import { validateReviewOutput, buildSystemPrompt, buildUserContent, type SuggestedOkrOption } from '../lib/okrAllyReview'
+import { buildKrCsv } from '../lib/okrAllyCsv'
 import { validateInput, LIMITS } from '../lib/okrAllySubmission'
 import { contextFieldMax } from '../lib/okrAllyContext'
 import { PACKS } from '../lib/okrAllyBilling'
@@ -48,6 +49,13 @@ import {
   allocateOrgCredits,
   reclaimOrgCredits,
   getEmployeeOrgReport,
+  getOrgAdminContext,
+  getOrgMembers,
+  transferAdminToExistingMember,
+  inviteAdminByEmail,
+  cancelAdminInvite,
+  acceptAdminInvite,
+  OrgError,
 } from '../lib/okrAllyOrg'
 import { grantCreditsAsAdmin, sendImprovementEmail } from '../lib/okrAllyAdmin'
 import { generateStoreAndEmailReport } from '../lib/okrAllyReport'
@@ -329,14 +337,32 @@ test('ownership: report and invoice downloads are scoped to the owner', async ({
   expect((await ctxA.request.get(`/api/okr-ally/submission/${submissionId}`, { headers: { cookie: a.cookieHeader } })).status()).toBe(200)
   expect((await ctxA.request.get(`/api/okr-ally/invoice/${invoiceId}`, { headers: { cookie: a.cookieHeader } })).status()).toBe(200)
 
+  // CSV route: owner OK for both options, bad ?option 400, missing option 404
+  const csvUrl = (opt: string) => `/api/okr-ally/report/${submissionId}/csv?option=${opt}`
+  const csvRefined = await ctxA.request.get(csvUrl('refined'), { headers: { cookie: a.cookieHeader } })
+  expect(csvRefined.status()).toBe(200)
+  expect(csvRefined.headers()['content-type']).toContain('text/csv')
+  // seedCompletedReview's fixture predates the metric fields entirely (no
+  // metric_name/from_value/to_value/period on its KRs or initiatives) — the
+  // route must degrade to blank cells, never throw, for any review stored
+  // before this feature shipped.
+  const csvBody = await csvRefined.text()
+  const csvRows = csvBody.trim().split('\r\n')
+  expect(csvRows[0]).toBe('Type,#,Text,Metric,From,To,Period,Owning team')
+  expect(csvRows[1]).toBe('KR,1,k,,,,,')
+  expect((await ctxA.request.get(csvUrl('fresh'), { headers: { cookie: a.cookieHeader } })).status()).toBe(200)
+  expect((await ctxA.request.get(csvUrl('bogus'), { headers: { cookie: a.cookieHeader } })).status()).toBe(400)
+
   // other user: 404
   expect((await ctxB.request.get(`/api/okr-ally/report/${submissionId}`, { headers: { cookie: b.cookieHeader } })).status()).toBe(404)
   expect((await ctxB.request.get(`/api/okr-ally/submission/${submissionId}`, { headers: { cookie: b.cookieHeader } })).status()).toBe(404)
   expect((await ctxB.request.get(`/api/okr-ally/invoice/${invoiceId}`, { headers: { cookie: b.cookieHeader } })).status()).toBe(404)
+  expect((await ctxB.request.get(csvUrl('refined'), { headers: { cookie: b.cookieHeader } })).status()).toBe(404)
 
   // unauthenticated: 401
   expect((await ctxB.request.get(`/api/okr-ally/report/${submissionId}`, { headers: { cookie: '' } })).status()).toBe(401)
   expect((await ctxB.request.get(`/api/okr-ally/invoice/${invoiceId}`, { headers: { cookie: '' } })).status()).toBe(401)
+  expect((await ctxB.request.get(csvUrl('refined'), { headers: { cookie: '' } })).status()).toBe(401)
 
   await ctxA.close()
   await ctxB.close()
@@ -1416,6 +1442,149 @@ test('corporate: report is org-scoped; a pre-existing personal account is left f
 })
 
 // ══════════════════════════════════════════════════════════
+// 16b. Admin handover — transfer to an existing member (immediate), invite a
+//      new email (pending until explicit accept), cancel, cross-org guard.
+//      Pure lib-level: no browser session needed, just real OkrAllyUser rows.
+// ══════════════════════════════════════════════════════════
+
+test('admin handover: transfer to an existing org member is immediate', async () => {
+  const { id: orgId, gstin } = await seedOrg('Handover Co')
+  createdGstins.push(gstin)
+  const admin = await resolveOrCreateUser(`okr-e2e-ho-admin-${Date.now()}@example.com`)
+  createdUsers.push(admin.id)
+  const member = await resolveOrCreateUser(`okr-e2e-ho-member-${Date.now()}@example.com`)
+  createdUsers.push(member.id)
+  await makeOrgAdmin(admin.id, orgId)
+  await joinOrg(member.id, orgId)
+  const freshAdmin = await resolveOrCreateUser(admin.email) // re-read — makeOrgAdmin wrote the DB, not this JS object
+
+  const result = await transferAdminToExistingMember(freshAdmin, member.id)
+  expect(result.ok).toBe(true)
+  expect(result).toMatchObject({ newAdminEmail: member.email })
+  // BREVO_API_KEY isn't set for this test run, so emailed is expected false
+  // here — the field just needs to exist and reflect both sends succeeding.
+  expect(typeof (result as { emailed: boolean }).emailed).toBe('boolean')
+
+  expect(await getUserOrgFields(admin.id)).toEqual({ organization_id: orgId, is_org_admin: false })
+  expect(await getUserOrgFields(member.id)).toEqual({ organization_id: orgId, is_org_admin: true })
+
+  // the old admin has genuinely lost the gate, not just the DB flag
+  const staleAdmin = await resolveOrCreateUser(admin.email)
+  await expect(getOrgAdminContext(staleAdmin)).rejects.toBeInstanceOf(OrgError)
+})
+
+test('admin handover: transfer rejects someone outside the organization', async () => {
+  const { id: orgId, gstin } = await seedOrg('Handover Co 2')
+  createdGstins.push(gstin)
+  const admin = await resolveOrCreateUser(`okr-e2e-ho-admin2-${Date.now()}@example.com`)
+  createdUsers.push(admin.id)
+  await makeOrgAdmin(admin.id, orgId)
+  const freshAdmin = await resolveOrCreateUser(admin.email)
+  const outsider = await resolveOrCreateUser(`okr-e2e-ho-outsider-${Date.now()}@example.com`)
+  createdUsers.push(outsider.id)
+
+  const result = await transferAdminToExistingMember(freshAdmin, outsider.id)
+  expect(result.ok).toBe(false)
+  expect(await getUserOrgFields(admin.id)).toEqual({ organization_id: orgId, is_org_admin: true })
+  expect(await getUserOrgFields(outsider.id)).toEqual({ organization_id: null, is_org_admin: false })
+})
+
+test('admin handover: invite-by-email is pending until the invited email signs in and explicitly accepts', async () => {
+  const { id: orgId, gstin } = await seedOrg('Handover Co 3')
+  createdGstins.push(gstin)
+  const admin = await resolveOrCreateUser(`okr-e2e-ho-admin3-${Date.now()}@example.com`)
+  createdUsers.push(admin.id)
+  await makeOrgAdmin(admin.id, orgId)
+  const freshAdmin = await resolveOrCreateUser(admin.email)
+  const inviteeEmail = `okr-e2e-ho-invitee-${Date.now()}@example.com`
+
+  const invited = await inviteAdminByEmail(freshAdmin, inviteeEmail)
+  expect(invited).toEqual({ ok: true, invitedEmail: inviteeEmail })
+
+  // current admin unaffected; the invite shows up on org status
+  expect(await getUserOrgFields(admin.id)).toEqual({ organization_id: orgId, is_org_admin: true })
+  const ctxBefore = await getOrgAdminContext(freshAdmin)
+  expect(ctxBefore.pendingAdminEmail).toBe(inviteeEmail)
+
+  // signing in alone (i.e. the row simply existing) must NOT grant admin
+  const invitee = await resolveOrCreateUser(inviteeEmail)
+  createdUsers.push(invitee.id)
+  expect(await getUserOrgFields(invitee.id)).toEqual({ organization_id: null, is_org_admin: false })
+
+  // the explicit accept is what flips it
+  const accepted = await acceptAdminInvite(invitee)
+  expect(accepted).toEqual({ ok: true, organizationName: 'Handover Co 3' })
+  expect(await getUserOrgFields(invitee.id)).toEqual({ organization_id: orgId, is_org_admin: true })
+  expect(await getUserOrgFields(admin.id)).toEqual({ organization_id: orgId, is_org_admin: false })
+
+  const ctxAfter = await getOrgAdminContext(await resolveOrCreateUser(inviteeEmail))
+  expect(ctxAfter.pendingAdminEmail).toBeNull()
+})
+
+test('admin handover: cancelling a pending invite clears it; accepting afterwards is rejected', async () => {
+  const { id: orgId, gstin } = await seedOrg('Handover Co 4')
+  createdGstins.push(gstin)
+  const admin = await resolveOrCreateUser(`okr-e2e-ho-admin4-${Date.now()}@example.com`)
+  createdUsers.push(admin.id)
+  await makeOrgAdmin(admin.id, orgId)
+  const freshAdmin = await resolveOrCreateUser(admin.email)
+  const inviteeEmail = `okr-e2e-ho-invitee4-${Date.now()}@example.com`
+  await inviteAdminByEmail(freshAdmin, inviteeEmail)
+
+  expect(await cancelAdminInvite(freshAdmin)).toEqual({ ok: true })
+  expect((await getOrgAdminContext(freshAdmin)).pendingAdminEmail).toBeNull()
+
+  const invitee = await resolveOrCreateUser(inviteeEmail)
+  createdUsers.push(invitee.id)
+  const result = await acceptAdminInvite(invitee)
+  expect(result.ok).toBe(false)
+  expect(await getUserOrgFields(invitee.id)).toEqual({ organization_id: null, is_org_admin: false })
+})
+
+test('admin handover: accept is blocked when the invited email already belongs to a DIFFERENT org', async () => {
+  const orgA = await seedOrg('Handover Org A')
+  createdGstins.push(orgA.gstin)
+  const orgB = await seedOrg('Handover Org B')
+  createdGstins.push(orgB.gstin)
+  const adminB = await resolveOrCreateUser(`okr-e2e-ho-adminB-${Date.now()}@example.com`)
+  createdUsers.push(adminB.id)
+  await makeOrgAdmin(adminB.id, orgB.id)
+  const freshAdminB = await resolveOrCreateUser(adminB.email)
+
+  const member = await resolveOrCreateUser(`okr-e2e-ho-crossmember-${Date.now()}@example.com`)
+  createdUsers.push(member.id)
+  await joinOrg(member.id, orgA.id) // already a member of Org A
+
+  await inviteAdminByEmail(freshAdminB, member.email) // Org B invites them to be ITS admin
+
+  const staleMember = await resolveOrCreateUser(member.email) // organization_id still = orgA
+  const result = await acceptAdminInvite(staleMember)
+  expect(result.ok).toBe(false)
+  // unchanged — still a plain member of Org A, Org B never touched them
+  expect(await getUserOrgFields(member.id)).toEqual({ organization_id: orgA.id, is_org_admin: false })
+  expect((await getOrgAdminContext(freshAdminB)).pendingAdminEmail).toBe(member.email) // invite still pending, not silently consumed
+})
+
+test('admin handover: getOrgMembers lists the admin first, then every other member', async () => {
+  const { id: orgId, gstin } = await seedOrg('Handover Co 5')
+  createdGstins.push(gstin)
+  const admin = await resolveOrCreateUser(`okr-e2e-ho-admin5-${Date.now()}@example.com`)
+  createdUsers.push(admin.id)
+  const m1 = await resolveOrCreateUser(`okr-e2e-ho-m1-${Date.now()}@example.com`)
+  createdUsers.push(m1.id)
+  const m2 = await resolveOrCreateUser(`okr-e2e-ho-m2-${Date.now()}@example.com`)
+  createdUsers.push(m2.id)
+  await makeOrgAdmin(admin.id, orgId)
+  const freshAdmin = await resolveOrCreateUser(admin.email)
+  await joinOrg(m1.id, orgId)
+  await joinOrg(m2.id, orgId)
+
+  const members = await getOrgMembers(freshAdmin)
+  expect(members[0]).toMatchObject({ id: admin.id, isOrgAdmin: true })
+  expect(members.map((m) => m.id).sort()).toEqual([admin.id, m1.id, m2.id].sort())
+})
+
+// ══════════════════════════════════════════════════════════
 // 17. Admin-only 24h signed session + admin-unlimited reviews
 // ══════════════════════════════════════════════════════════
 test('admin session token: signature + 24h window cannot be forged', () => {
@@ -2323,6 +2492,13 @@ LANGUAGE OF OKRs (apply to every rewritten line and to KR feedback text):
 - Before finalizing any line, check: the verb demands movement, an outsider would understand what success looks like, a single owner is identifiable.
 - KR lines stay in strict baseline-and-target format. Any "impact" framing goes into the rationale field, never the KR text.
 
+METRIC FIELDS (apply to every KR AND every initiative under it, in both options). Populate metric_name, from_value, to_value, period as separate structured fields, in addition to writing the KR line itself in prose:
+- metric_name: the noun form of what's being measured (e.g. "number of presentations", "churn"), never the action ("increase presentations" is wrong).
+- from_value: the stated baseline, verbatim as given (e.g. "8%"). Leave it "" (empty string) when no baseline was stated — do not invent one.
+- to_value: the stated or rewritten target, verbatim (e.g. "5%", "20 presentations"). Always populate this for a KR.
+- period: the cadence or timeframe if one was stated or implied (e.g. "monthly", "per quarter", "by end of Q3"). Leave it "" when none was stated.
+- Most initiatives are action items with no measurable target of their own — leave all four fields "" on an initiative unless it plainly states one (e.g. "Run 2 pilot workshops" → metric_name "pilot workshops run", to_value "2").
+
 OUTPUT. Call submit_okr_review exactly once with every field populated. Do not write any prose outside the tool call.`
 
 const SAMPLE_INPUT = {
@@ -2568,4 +2744,61 @@ test('help chatbot escalate: rejects an invalid email and an empty question', as
     })
   )
   expect(noQuestion.status).toBe(400)
+})
+
+// ── Metrics CSV export ────────────────────────────────────────────────────
+
+const SAMPLE_OPTION: SuggestedOkrOption = {
+  label: 'Refined Original',
+  objective: 'Grow revenue',
+  rationale: 'because',
+  key_results: [
+    {
+      text: 'Reduce churn from 8% to 5%',
+      status: 'modified',
+      metric_name: 'churn',
+      from_value: '8%',
+      to_value: '5%',
+      period: 'quarterly',
+      initiatives: [
+        { action: 'Run 2 pilot workshops, "onboarding" track', owning_team: 'Product', metric_name: 'pilot workshops run', from_value: '', to_value: '2', period: '' },
+        { action: 'Ship a win-back email flow', owning_team: 'Marketing', metric_name: '', from_value: '', to_value: '', period: '' },
+      ],
+    },
+    {
+      text: '10 presentations/month',
+      status: 'unchanged',
+      metric_name: 'number of presentations',
+      from_value: '',
+      to_value: '10',
+      period: 'monthly',
+      initiatives: [
+        { action: 'Book venues', owning_team: 'Sales', metric_name: '', from_value: '', to_value: '', period: '' },
+        { action: 'Draft the deck', owning_team: 'Sales', metric_name: '', from_value: '', to_value: '', period: '' },
+      ],
+    },
+  ],
+}
+
+test('metrics CSV: one row per KR plus one row per initiative, header shape', () => {
+  const csv = buildKrCsv(SAMPLE_OPTION, 'okr_ally')
+  const rows = csv.trim().split('\r\n')
+  expect(rows[0]).toBe('Type,#,Text,Metric,From,To,Period,Owning team')
+  // 2 KRs + 2 initiatives each = 6 data rows + 1 header
+  expect(rows.length).toBe(7)
+  expect(rows[1]).toBe('KR,1,Reduce churn from 8% to 5%,churn,8%,5%,quarterly,')
+  expect(rows[4]).toBe('KR,2,10 presentations/month,number of presentations,,10,monthly,')
+  expect(rows[5]).toBe('Initiative,2,Book venues,,,,,Sales')
+})
+
+test('metrics CSV: goal_ally uses "Sub-goal" as the KR row type', () => {
+  const csv = buildKrCsv(SAMPLE_OPTION, 'goal_ally')
+  expect(csv.split('\r\n')[1]).toContain('Sub-goal,1,')
+})
+
+test('metrics CSV: fields with commas or quotes are RFC4180-escaped', () => {
+  const csv = buildKrCsv(SAMPLE_OPTION, 'okr_ally')
+  const rows = csv.trim().split('\r\n')
+  // initiative action contains a comma and embedded quotes
+  expect(rows[2]).toBe('Initiative,1,"Run 2 pilot workshops, ""onboarding"" track",pilot workshops run,,2,,Product')
 })

@@ -63,10 +63,28 @@ export interface CriterionScore {
   weight: number
   rationale: string
 }
+export interface OkrOptionInitiative {
+  action: string
+  owning_team: string
+  /** Metrics CSV export (design doc addendum). Noun-form metric name (e.g.
+   *  "number of pilot workshops run"), empty string when the initiative
+   *  carries no measurable target of its own — most won't. */
+  metric_name: string
+  from_value: string
+  to_value: string
+  period: string
+}
 export interface OkrOptionKR {
   text: string
   status: 'modified' | 'unchanged' | 'new'
-  initiatives: { action: string; owning_team: string }[]
+  initiatives: OkrOptionInitiative[]
+  /** Metrics CSV export (design doc addendum). Noun-form metric name (e.g.
+   *  "number of presentations", not "increase presentations"). from_value is
+   *  empty string when the KR states no baseline (only a target). */
+  metric_name: string
+  from_value: string
+  to_value: string
+  period: string
 }
 export interface SuggestedOkrOption {
   label: 'Refined Original' | 'Fresh Rewrite'
@@ -163,10 +181,14 @@ const REVIEW_TOOL = {
               items: {
                 type: 'object',
                 additionalProperties: false,
-                required: ['text', 'status', 'initiatives'],
+                required: ['text', 'status', 'initiatives', 'metric_name', 'from_value', 'to_value', 'period'],
                 properties: {
                   text: { type: 'string' },
                   status: { type: 'string', enum: ['modified', 'unchanged', 'new'] },
+                  metric_name: { type: 'string' },
+                  from_value: { type: 'string' },
+                  to_value: { type: 'string' },
+                  period: { type: 'string' },
                   initiatives: {
                     type: 'array',
                     minItems: 2,
@@ -174,10 +196,14 @@ const REVIEW_TOOL = {
                     items: {
                       type: 'object',
                       additionalProperties: false,
-                      required: ['action', 'owning_team'],
+                      required: ['action', 'owning_team', 'metric_name', 'from_value', 'to_value', 'period'],
                       properties: {
                         action: { type: 'string' },
                         owning_team: { type: 'string' },
+                        metric_name: { type: 'string' },
+                        from_value: { type: 'string' },
+                        to_value: { type: 'string' },
+                        period: { type: 'string' },
                       },
                     },
                   },
@@ -239,6 +265,13 @@ LANGUAGE OF ${v.planPlural} (apply to every rewritten line and to ${v.krShort} f
 - Prefer outcome and delivery language over input and enablement language.
 - Before finalizing any line, check: the verb demands movement, an outsider would understand what success looks like, a single owner is identifiable.
 - ${v.krShort} lines stay in strict baseline-and-target format. Any "impact" framing goes into the rationale field, never the ${v.krShort} text.
+
+METRIC FIELDS (apply to every ${v.krShort} AND every initiative under it, in both options). Populate metric_name, from_value, to_value, period as separate structured fields, in addition to writing the ${v.krShort} line itself in prose:
+- metric_name: the noun form of what's being measured (e.g. "number of presentations", "churn"), never the action ("increase presentations" is wrong).
+- from_value: the stated baseline, verbatim as given (e.g. "8%"). Leave it "" (empty string) when no baseline was stated — do not invent one.
+- to_value: the stated or rewritten target, verbatim (e.g. "5%", "20 presentations"). Always populate this for a ${v.krShort}.
+- period: the cadence or timeframe if one was stated or implied (e.g. "monthly", "per quarter", "by end of Q3"). Leave it "" when none was stated.
+- Most initiatives are action items with no measurable target of their own — leave all four fields "" on an initiative unless it plainly states one (e.g. "Run 2 pilot workshops" → metric_name "pilot workshops run", to_value "2").
 
 OUTPUT. Call submit_okr_review exactly once with every field populated. Do not write any prose outside the tool call.`
 }
@@ -336,6 +369,11 @@ export function validateReviewOutput(raw: unknown): { ok: true; review: ReviewOu
       if (!['modified', 'unchanged', 'new'].includes(kr.status)) {
         return { ok: false, reason: `${opt.label} KR bad status` }
       }
+      for (const field of ['metric_name', 'from_value', 'to_value', 'period'] as const) {
+        if (typeof kr[field] !== 'string') {
+          return { ok: false, reason: `${opt.label} KR "${kr.text.slice(0, 40)}" has non-string ${field}` }
+        }
+      }
       if (!Array.isArray(kr.initiatives)) return { ok: false, reason: `${opt.label} KR initiatives not array` }
       // Every rewritten KR must carry 2-3 initiatives (design intent, confirmed).
       // Too few OR too many is a generation defect — fail here so runReview()
@@ -352,6 +390,14 @@ export function validateReviewOutput(raw: unknown): { ok: true; review: ReviewOu
         }
         if (typeof it.owning_team !== 'string' || !it.owning_team.trim()) {
           return { ok: false, reason: `${opt.label} KR "${kr.text.slice(0, 40)}" has an initiative with no owning_team` }
+        }
+        for (const field of ['metric_name', 'from_value', 'to_value', 'period'] as const) {
+          if (typeof it[field] !== 'string') {
+            return {
+              ok: false,
+              reason: `${opt.label} KR "${kr.text.slice(0, 40)}" has an initiative with non-string ${field}`,
+            }
+          }
         }
       }
     }

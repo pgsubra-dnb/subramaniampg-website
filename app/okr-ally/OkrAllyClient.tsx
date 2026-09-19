@@ -31,6 +31,10 @@ interface Me {
     organizationId: string | null
   }
   orgContext?: OrgContext | null
+  /** Admin handover (migration 016) — set only when this signed-in email has
+   *  been invited to become an org's admin and hasn't accepted (or declined
+   *  by ignoring it) yet. Signing in alone never grants admin. */
+  pendingAdminInvite?: { organizationName: string; invitedAt: string } | null
   seenWalkthroughs?: string[]
   /** Demo session (migrations 014/015) — nothing is charged/emailed/recorded.
    *  Drives the demo banner and the simulated sign-in. */
@@ -351,6 +355,10 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
 
       {isDemo && (
         <DemoBanner brand={brand} corporate={!!me?.demoCorporate} role={me?.demoRole ?? null} />
+      )}
+
+      {me?.authenticated && phase === 'app' && me.pendingAdminInvite && (
+        <AdminInviteBanner brand={brand} invite={me.pendingAdminInvite} onDone={refreshMe} />
       )}
 
       {me?.authenticated && phase === 'app' && !showingReport && !showingAdmin && (
@@ -740,6 +748,73 @@ function OrgContextPending({
           your role context is still yours to fill in when you do.
         </p>
       )}
+    </div>
+  )
+}
+
+/** Shown to an invited user until they explicitly accept or dismiss —
+ *  signing in never grants admin on its own (lib/okrAllyOrg.ts acceptAdminInvite). */
+function AdminInviteBanner({
+  brand,
+  invite,
+  onDone,
+}: {
+  brand: Brand
+  invite: { organizationName: string; invitedAt: string }
+  onDone: () => void
+}) {
+  const v = vocab(brand)
+  const [busy, setBusy] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  if (dismissed) return null
+
+  async function accept() {
+    setBusy(true)
+    setErr(null)
+    try {
+      const res = await fetch('/api/okr-ally/org/accept-admin-invite', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ brand }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setErr(j.error || 'Could not accept the invite.')
+        setBusy(false)
+        return
+      }
+      onDone()
+    } catch {
+      setErr('Network problem — nothing was accepted.')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${T.gold}`,
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 18,
+        background: T.goldTint,
+      }}
+    >
+      <p style={{ fontSize: 13.5, color: T.charcoal, lineHeight: 1.6, margin: '0 0 10px' }}>
+        You&apos;ve been invited to become the {v.product} admin for <strong>{invite.organizationName}</strong>.
+        Nothing changes until you accept.
+      </p>
+      <div className="flex gap-2">
+        <Btn small onClick={accept} disabled={busy}>
+          {busy ? 'Accepting…' : 'Accept and become admin'}
+        </Btn>
+        <Btn small variant="ghost" onClick={() => setDismissed(true)} disabled={busy}>
+          Not now
+        </Btn>
+      </div>
+      {err && <p style={{ fontSize: 12.5, color: T.error, marginTop: 8 }}>{err}</p>}
     </div>
   )
 }
