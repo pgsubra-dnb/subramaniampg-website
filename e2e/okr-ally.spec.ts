@@ -57,7 +57,13 @@ import {
   acceptAdminInvite,
   OrgError,
 } from '../lib/okrAllyOrg'
-import { grantCreditsAsAdmin, sendImprovementEmail } from '../lib/okrAllyAdmin'
+import {
+  grantCreditsAsAdmin,
+  sendImprovementEmail,
+  overrideOrgAdmin,
+  getOrgAdminOverrideStatus,
+  isNotAdminError,
+} from '../lib/okrAllyAdmin'
 import { generateStoreAndEmailReport } from '../lib/okrAllyReport'
 import { getReviewForSubmission } from '../lib/okrAllySubmission'
 import {
@@ -1582,6 +1588,113 @@ test('admin handover: getOrgMembers lists the admin first, then every other memb
   const members = await getOrgMembers(freshAdmin)
   expect(members[0]).toMatchObject({ id: admin.id, isOrgAdmin: true })
   expect(members.map((m) => m.id).sort()).toEqual([admin.id, m1.id, m2.id].sort())
+})
+
+// ══════════════════════════════════════════════════════════
+// 16c. PGS manual org-admin override (/admin/customers "Change admin") — the
+//      unreachable-admin escape hatch. Unlike the self-serve handover above,
+//      requires is_admin (not is_org_admin) and is immediate for BOTH an
+//      existing member and a brand-new email — no accept step, since PGS is
+//      vouching for the change. Pure lib-level, same style as 16b.
+// ══════════════════════════════════════════════════════════
+
+async function makePgsAdmin(email: string) {
+  const u = await resolveOrCreateUser(email)
+  createdUsers.push(u.id)
+  await setAdmin(u.id, true)
+  return resolveOrCreateUser(email) // re-read — setAdmin wrote the DB, not this JS object
+}
+
+test('org admin override: sets a brand-new email as admin immediately, demotes the old admin', async () => {
+  const { id: orgId, gstin } = await seedOrg('Override Co')
+  createdGstins.push(gstin)
+  const oldAdmin = await resolveOrCreateUser(`okr-e2e-ov-admin-${Date.now()}@example.com`)
+  createdUsers.push(oldAdmin.id)
+  await makeOrgAdmin(oldAdmin.id, orgId)
+  const pgs = await makePgsAdmin(`okr-e2e-ov-pgs-${Date.now()}@example.com`)
+  const newAdminEmail = `okr-e2e-ov-new-${Date.now()}@example.com`
+
+  const result = await overrideOrgAdmin(pgs, { organizationId: orgId, newAdminEmail, note: 'e2e note' })
+  expect(result.ok).toBe(true)
+  expect(result).toMatchObject({ organizationName: 'Override Co', newAdminEmail, wasNewAccount: true })
+  expect(typeof (result as { emailed: boolean }).emailed).toBe('boolean')
+
+  expect(await getUserOrgFields(oldAdmin.id)).toEqual({ organization_id: orgId, is_org_admin: false })
+  const created = await resolveOrCreateUser(newAdminEmail)
+  createdUsers.push(created.id)
+  expect(await getUserOrgFields(created.id)).toEqual({ organization_id: orgId, is_org_admin: true })
+})
+
+test('org admin override: an existing member becomes admin immediately; old admin stays a plain member', async () => {
+  const { id: orgId, gstin } = await seedOrg('Override Co 2')
+  createdGstins.push(gstin)
+  const oldAdmin = await resolveOrCreateUser(`okr-e2e-ov-admin2-${Date.now()}@example.com`)
+  createdUsers.push(oldAdmin.id)
+  const member = await resolveOrCreateUser(`okr-e2e-ov-member2-${Date.now()}@example.com`)
+  createdUsers.push(member.id)
+  await makeOrgAdmin(oldAdmin.id, orgId)
+  await joinOrg(member.id, orgId)
+  const pgs = await makePgsAdmin(`okr-e2e-ov-pgs2-${Date.now()}@example.com`)
+
+  const result = await overrideOrgAdmin(pgs, { organizationId: orgId, newAdminEmail: member.email })
+  expect(result).toMatchObject({ ok: true, newAdminEmail: member.email, wasNewAccount: false })
+  expect(await getUserOrgFields(oldAdmin.id)).toEqual({ organization_id: orgId, is_org_admin: false })
+  expect(await getUserOrgFields(member.id)).toEqual({ organization_id: orgId, is_org_admin: true })
+})
+
+test('org admin override: blocked when the target already belongs to a DIFFERENT org', async () => {
+  const orgA = await seedOrg('Override Org A')
+  createdGstins.push(orgA.gstin)
+  const orgB = await seedOrg('Override Org B')
+  createdGstins.push(orgB.gstin)
+  const memberOfA = await resolveOrCreateUser(`okr-e2e-ov-crossmember-${Date.now()}@example.com`)
+  createdUsers.push(memberOfA.id)
+  await joinOrg(memberOfA.id, orgA.id)
+  const pgs = await makePgsAdmin(`okr-e2e-ov-pgs3-${Date.now()}@example.com`)
+
+  const result = await overrideOrgAdmin(pgs, { organizationId: orgB.id, newAdminEmail: memberOfA.email })
+  expect(result.ok).toBe(false)
+  // unchanged — still a plain member of Org A, Org B never touched them
+  expect(await getUserOrgFields(memberOfA.id)).toEqual({ organization_id: orgA.id, is_org_admin: false })
+})
+
+test('org admin override: requires is_admin', async () => {
+  const { id: orgId, gstin } = await seedOrg('Override Co 4')
+  createdGstins.push(gstin)
+  const notAdmin = await resolveOrCreateUser(`okr-e2e-ov-notadmin-${Date.now()}@example.com`)
+  createdUsers.push(notAdmin.id)
+
+  let thrown: unknown
+  try {
+    await overrideOrgAdmin(notAdmin, { organizationId: orgId, newAdminEmail: 'whoever@example.com' })
+  } catch (e) {
+    thrown = e
+  }
+  expect(isNotAdminError(thrown)).toBe(true)
+})
+
+test('org admin override status: lists the current admin and every other member, admin-gated', async () => {
+  const { id: orgId, gstin } = await seedOrg('Override Co 5')
+  createdGstins.push(gstin)
+  const admin = await resolveOrCreateUser(`okr-e2e-ov-admin5-${Date.now()}@example.com`)
+  createdUsers.push(admin.id)
+  const member = await resolveOrCreateUser(`okr-e2e-ov-member5-${Date.now()}@example.com`)
+  createdUsers.push(member.id)
+  await makeOrgAdmin(admin.id, orgId)
+  await joinOrg(member.id, orgId)
+  const pgs = await makePgsAdmin(`okr-e2e-ov-pgs5-${Date.now()}@example.com`)
+
+  const status = await getOrgAdminOverrideStatus(pgs, orgId)
+  expect(status).toMatchObject({ organizationId: orgId, organizationName: 'Override Co 5', currentAdminEmail: admin.email })
+  expect(status?.members.map((m) => m.id).sort()).toEqual([admin.id, member.id].sort())
+
+  let thrown: unknown
+  try {
+    await getOrgAdminOverrideStatus(admin, orgId) // org admin, not PGS admin
+  } catch (e) {
+    thrown = e
+  }
+  expect(isNotAdminError(thrown)).toBe(true)
 })
 
 // ══════════════════════════════════════════════════════════

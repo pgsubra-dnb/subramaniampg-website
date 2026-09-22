@@ -1,5 +1,5 @@
 import type { OkrAllyUser } from '@/lib/okrAlly'
-import { query, withTransaction } from '@/lib/okrAlly'
+import { query, withTransaction, resolveOrCreateUser } from '@/lib/okrAlly'
 import { RUBRIC, REVIEW_MODEL, ANTHROPIC_VERSION } from '@/lib/okrAllyReview'
 import type {
   ReviewOutput,
@@ -190,6 +190,9 @@ export interface AdminCustomerRow {
   lastActivity: string | null
   status: AdminCustomerStatus
   firstPurchaseDate: string | null
+  /** Corporate rows only — the current org admin's email, for the
+   *  "Change admin" override panel. Always null for individuals. */
+  currentAdminEmail: string | null
 }
 
 export interface AdminCustomerSummary {
@@ -214,6 +217,7 @@ interface RawCustomerRow {
   users_in_account?: string | number | null
   last_activity: string | null
   first_purchase_date: string | null
+  current_admin_email?: string | null
 }
 
 /** 'Purchased not used' beats 'Low use' beats 'Active' — see the build doc's
@@ -287,7 +291,8 @@ const ORGANIZATIONS_SQL = `
     COALESCE(bal.credits_remaining, 0)      AS credits_remaining,
     COALESCE(uc.users_count, 0)             AS users_in_account,
     sub.last_activity,
-    pt.first_purchase_date
+    pt.first_purchase_date,
+    admin_u.email                           AS current_admin_email
   FROM organizations o
   LEFT JOIN (
     SELECT organization_id, MIN(created_at) AS first_purchase_date
@@ -326,6 +331,11 @@ const ORGANIZATIONS_SQL = `
      WHERE s.is_demo = FALSE AND u.organization_id IS NOT NULL
      GROUP BY u.organization_id
   ) sub ON sub.organization_id = o.id
+  LEFT JOIN LATERAL (
+    SELECT email FROM users
+     WHERE organization_id = o.id AND is_org_admin = true
+     ORDER BY created_at LIMIT 1
+  ) admin_u ON true
   WHERE o.is_demo = FALSE
 `
 
@@ -360,6 +370,7 @@ export async function listAdminCustomers(user: OkrAllyUser): Promise<AdminCustom
       lastActivity: r.last_activity,
       status: computeStatus(base),
       firstPurchaseDate: r.first_purchase_date,
+      currentAdminEmail: type === 'corporate' ? r.current_admin_email ?? null : null,
     }
   }
 
@@ -912,5 +923,194 @@ export async function grantCreditsAsAdmin(
     recipientEmail: recipient.email,
     recipientName: recipient.name,
     emailed,
+  }
+}
+
+// ─── Manual org-admin override (PGS-only, unreachable-admin escape hatch) ──
+//
+// The self-serve handover in lib/okrAllyOrg.ts (transferAdminToExistingMember /
+// inviteAdminByEmail) only works if the CURRENT admin is signed in and able to
+// act — both are gated by requireOrgAdmin. When that admin can't be reached,
+// the Company tab's own copy already tells the customer to email PGS for a
+// manual override (app/okr-ally/_org.tsx). This is that override, done from
+// the PGS admin panel instead of by hand against the database.
+//
+// Deliberately immediate for BOTH an existing member and a brand-new email —
+// unlike the self-serve invite path, there is no accept step here. PGS is
+// vouching for the request (normally after confirming it with the client out
+// of band), so the safety net the self-serve path needs isn't needed here.
+
+export interface OrgAdminOverrideMember {
+  id: string
+  email: string
+  name: string
+  isOrgAdmin: boolean
+}
+
+export interface OrgAdminOverrideStatus {
+  organizationId: string
+  organizationName: string
+  currentAdminEmail: string | null
+  members: OrgAdminOverrideMember[]
+}
+
+export async function getOrgAdminOverrideStatus(
+  user: OkrAllyUser,
+  organizationId: string
+): Promise<OrgAdminOverrideStatus | null> {
+  requireAdmin(user)
+  if (!UUID_RE.test(organizationId)) return null
+
+  const org = await query<{ id: string; name: string }>(
+    `SELECT id, name FROM organizations WHERE id = $1`,
+    [organizationId]
+  )
+  if (!org.rows[0]) return null
+
+  const members = await query<{ id: string; email: string; name: string; is_org_admin: boolean }>(
+    `SELECT id, email, name, is_org_admin FROM users
+      WHERE organization_id = $1
+      ORDER BY is_org_admin DESC, created_at`,
+    [organizationId]
+  )
+  const current = members.rows.find((m) => m.is_org_admin)
+
+  return {
+    organizationId: org.rows[0].id,
+    organizationName: org.rows[0].name,
+    currentAdminEmail: current?.email ?? null,
+    members: members.rows.map((m) => ({
+      id: m.id,
+      email: m.email,
+      name: m.name,
+      isOrgAdmin: m.is_org_admin,
+    })),
+  }
+}
+
+export type OverrideOrgAdminResult =
+  | { ok: true; organizationName: string; newAdminEmail: string; wasNewAccount: boolean; emailed: boolean }
+  | { ok: false; error: string }
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+class OverrideRollback extends Error {}
+
+/**
+ * PGS sets an organization's admin directly, bypassing requireOrgAdmin —
+ * for the case where the outgoing admin can't be reached to hand it over
+ * themselves. Works whether the new admin already has an account (member of
+ * this org or not) or has never signed in before (account created here, same
+ * as resolveOrCreateUser does on first sign-in).
+ *
+ * The org row and the target user row are both re-read `FOR UPDATE` inside
+ * the transaction (not just checked beforehand) — the same fix PR #56 applied
+ * to acceptAdminInvite, closing the same class of race: a concurrent
+ * override/allocation landing between `resolveOrCreateUser` and the write
+ * could otherwise still slip a cross-org conflict past a plain pre-check.
+ */
+export async function overrideOrgAdmin(
+  user: OkrAllyUser,
+  input: { organizationId: string; newAdminEmail: string; note?: string | null; brand?: Brand }
+): Promise<OverrideOrgAdminResult> {
+  requireAdmin(user)
+
+  if (!UUID_RE.test(input.organizationId)) {
+    return { ok: false, error: 'Bad organizationId' }
+  }
+  const email = (input.newAdminEmail || '').trim().toLowerCase()
+  if (!EMAIL_RE.test(email)) return { ok: false, error: 'Enter a valid email address.' }
+  const note =
+    typeof input.note === 'string' && input.note.trim() ? input.note.trim().slice(0, 500) : null
+
+  const preexisting = await query<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [email])
+  const wasNewAccount = preexisting.rowCount === 0
+
+  // Own connection, outside the transaction — same pattern fulfilCorporatePurchase
+  // uses for the admin account it tags. The tag itself happens inside the
+  // transaction below (re-checked under lock), so it rolls back together.
+  const target = await resolveOrCreateUser(email)
+
+  let org: { id: string; name: string }
+  let oldAdmin: { id: string; email: string; name: string } | undefined
+  try {
+    ;({ org, oldAdmin } = await withTransaction(async (client) => {
+      const orgRes = await client.query<{ id: string; name: string }>(
+        `SELECT id, name FROM organizations WHERE id = $1 FOR UPDATE`,
+        [input.organizationId]
+      )
+      const o = orgRes.rows[0]
+      if (!o) throw new OverrideRollback('Organization not found.')
+
+      const targetRes = await client.query<{ organization_id: string | null }>(
+        `SELECT organization_id FROM users WHERE id = $1 FOR UPDATE`,
+        [target.id]
+      )
+      const targetOrgId = targetRes.rows[0]?.organization_id ?? null
+      if (targetOrgId && targetOrgId !== o.id) {
+        throw new OverrideRollback(
+          `${email} already belongs to a different organization. Move them out first, or use a different email.`
+        )
+      }
+
+      const oldAdminRes = await client.query<{ id: string; email: string; name: string }>(
+        `SELECT id, email, name FROM users WHERE organization_id = $1 AND is_org_admin = true`,
+        [o.id]
+      )
+      const prevAdmin = oldAdminRes.rows[0]
+      if (prevAdmin && prevAdmin.id === target.id) {
+        throw new OverrideRollback(`${email} is already the admin for ${o.name}.`)
+      }
+
+      await client.query(
+        `UPDATE users SET is_org_admin = false WHERE organization_id = $1 AND is_org_admin = true`,
+        [o.id]
+      )
+      await client.query(`UPDATE users SET organization_id = $1, is_org_admin = true WHERE id = $2`, [
+        o.id,
+        target.id,
+      ])
+      await client.query(
+        `UPDATE organizations
+            SET pending_admin_email = NULL, pending_admin_invited_by = NULL, pending_admin_invited_at = NULL
+          WHERE id = $1`,
+        [o.id]
+      )
+      return { org: o, oldAdmin: prevAdmin }
+    }))
+  } catch (e) {
+    if (e instanceof OverrideRollback) return { ok: false, error: e.message }
+    throw e
+  }
+
+  const v = vocab(input.brand ?? DEFAULT_BRAND)
+  const noteHtml = note ? `<p style="font-size:13px;color:${tokens.textSecondary};">Note from PGS: ${note.replace(/</g, '&lt;')}</p>` : ''
+  const [oldAdminEmailed, newAdminEmailed] = await Promise.all([
+    oldAdmin
+      ? sendBrevoEmail({
+          to: oldAdmin.email,
+          toName: oldAdmin.name,
+          subject: `You're no longer the ${v.product} admin for ${org.name}`,
+          htmlContent: `<p>Subramaniam P G has made ${target.name} (${target.email}) the ${v.product} admin for ${org.name} at your organization's request. You can still run your own ${v.reviews} as a regular member.</p>${noteHtml}`,
+          textContent: `Subramaniam P G has made ${target.name} (${target.email}) the ${v.product} admin for ${org.name} at your organization's request. You can still run your own ${v.reviews} as a regular member.${note ? `\n\nNote from PGS: ${note}` : ''}`,
+          skipBcc: true,
+        })
+      : Promise.resolve(true),
+    sendBrevoEmail({
+      to: target.email,
+      toName: target.name,
+      subject: `You're the ${v.product} admin for ${org.name}`,
+      htmlContent: `<p>Subramaniam P G has made you the ${v.product} admin for ${org.name}. Sign in at <a href="https://subramaniampg.guru${v.path}">subramaniampg.guru${v.path}</a> with this email address and open the Company tab to manage the pool.</p>${noteHtml}`,
+      textContent: `Subramaniam P G has made you the ${v.product} admin for ${org.name}. Sign in at https://subramaniampg.guru${v.path} with this email address and open the Company tab to manage the pool.${note ? `\n\nNote from PGS: ${note}` : ''}`,
+      skipBcc: true,
+    }),
+  ])
+
+  return {
+    ok: true,
+    organizationName: org.name,
+    newAdminEmail: target.email,
+    wasNewAccount,
+    emailed: oldAdminEmailed && newAdminEmailed,
   }
 }
