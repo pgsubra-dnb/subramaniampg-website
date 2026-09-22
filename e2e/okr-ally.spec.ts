@@ -1673,6 +1673,17 @@ test('org admin override: requires is_admin', async () => {
   expect(isNotAdminError(thrown)).toBe(true)
 })
 
+test('org admin override: rejects setting the PGS platform-admin account itself as an org admin', async () => {
+  const { id: orgId, gstin } = await seedOrg('Override Co 6')
+  createdGstins.push(gstin)
+  const pgsEmail = `okr-e2e-ov-pgs6-${Date.now()}@example.com`
+  const pgs = await makePgsAdmin(pgsEmail)
+
+  const result = await overrideOrgAdmin(pgs, { organizationId: orgId, newAdminEmail: pgsEmail })
+  expect(result.ok).toBe(false)
+  expect(await getUserOrgFields(pgs.id)).toEqual({ organization_id: null, is_org_admin: false })
+})
+
 test('org admin override status: lists the current admin and every other member, admin-gated', async () => {
   const { id: orgId, gstin } = await seedOrg('Override Co 5')
   createdGstins.push(gstin)

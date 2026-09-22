@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { tokens as T } from '@/lib/okrAllyTokens'
 
 // ─── shared types (mirror lib/okrAllyAdmin.ts JSON) ─────────────────────
@@ -418,24 +418,32 @@ function OrgAdminOverridePanel({
   const [loadError, setLoadError] = useState<string | null>(null)
   const [email, setEmail] = useState('')
   const [note, setNote] = useState('')
+  // The organizations table doesn't record which surface (OKR Ally / Goal
+  // Ally) a customer belongs to — there's nothing to default this from, so
+  // PGS picks it explicitly rather than the notification email silently
+  // assuming OKR Ally for a Goal Ally customer.
+  const [brand, setBrand] = useState<'okr_ally' | 'goal_ally'>('okr_ally')
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-    fetch(`/api/okr-ally/admin/org/${organizationId}`, { credentials: 'same-origin' })
+  // Shared by the mount-time load and the post-success refresh — re-fetching
+  // instead of hand-patching local state means the panel can't drift from
+  // what the server actually did (e.g. a brand-new admin who wasn't in the
+  // member list yet still shows up correctly after this).
+  const reload = useCallback(() => {
+    return fetch(`/api/okr-ally/admin/org/${organizationId}`, { credentials: 'same-origin' })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Request failed (${r.status})`))))
       .then((j: OrgOverrideStatus) => {
-        if (!cancelled) setStatus(j)
+        setStatus(j)
+        setLoadError(null)
       })
-      .catch((e) => {
-        if (!cancelled) setLoadError(String(e.message || e))
-      })
-    return () => {
-      cancelled = true
-    }
+      .catch((e) => setLoadError(String(e.message || e)))
   }, [organizationId])
+
+  useEffect(() => {
+    reload()
+  }, [reload])
 
   async function setAdmin() {
     const target = email.trim().toLowerCase()
@@ -446,7 +454,7 @@ function OrgAdminOverridePanel({
       const res = await fetch('/api/okr-ally/admin/org/override-admin', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ organizationId, newAdminEmail: target, note: note.trim() || undefined }),
+        body: JSON.stringify({ organizationId, newAdminEmail: target, note: note.trim() || undefined, brand }),
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -466,15 +474,7 @@ function OrgAdminOverridePanel({
       setEmail('')
       setNote('')
       setConfirming(false)
-      setStatus((s) =>
-        s
-          ? {
-              ...s,
-              currentAdminEmail: j.newAdminEmail,
-              members: s.members.map((m) => ({ ...m, isOrgAdmin: m.email === j.newAdminEmail })),
-            }
-          : s
-      )
+      reload()
     } catch {
       setMsg({ kind: 'err', text: 'Network problem — nothing was changed.' })
     } finally {
@@ -549,6 +549,32 @@ function OrgAdminOverridePanel({
           )}
 
           <label style={{ display: 'block', fontSize: 12, color: T.textSecondary, margin: '0 0 4px' }}>
+            Product (the notification email&apos;s wording/link — the organizations table doesn&apos;t
+            track this, so pick the one this customer actually bought)
+          </label>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            {(['okr_ally', 'goal_ally'] as const).map((b) => (
+              <button
+                key={b}
+                type="button"
+                onClick={() => setBrand(b)}
+                style={{
+                  background: brand === b ? T.textPrimary : 'none',
+                  color: brand === b ? T.surface : T.textPrimary,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 6,
+                  padding: '4px 10px',
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {b === 'okr_ally' ? 'OKR Ally' : 'Goal Ally'}
+              </button>
+            ))}
+          </div>
+
+          <label style={{ display: 'block', fontSize: 12, color: T.textSecondary, margin: '0 0 4px' }}>
             New admin&apos;s email (pick a member above, or type any email — existing or brand new)
           </label>
           <input
@@ -592,7 +618,7 @@ function OrgAdminOverridePanel({
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12.5, color: T.error, fontWeight: 600 }}>
-                Make {email.trim()} the admin immediately, no confirmation from them?
+                Make {email.trim().toLowerCase()} the admin immediately, no confirmation from them?
               </span>
               <button
                 type="button"

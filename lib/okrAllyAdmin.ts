@@ -10,6 +10,7 @@ import type {
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
 import { tokens } from '@/lib/okrAllyTokens'
+import { EMAIL_RE, Rollback, clearPendingAdminInvite } from '@/lib/okrAllyOrg'
 
 /**
  * OKR Ally — admin (expert) review screen (design doc §4 / §9 / §12).
@@ -292,7 +293,7 @@ const ORGANIZATIONS_SQL = `
     COALESCE(uc.users_count, 0)             AS users_in_account,
     sub.last_activity,
     pt.first_purchase_date,
-    admin_u.email                           AS current_admin_email
+    admin_u.current_admin_email             AS current_admin_email
   FROM organizations o
   LEFT JOIN (
     SELECT organization_id, MIN(created_at) AS first_purchase_date
@@ -331,11 +332,12 @@ const ORGANIZATIONS_SQL = `
      WHERE s.is_demo = FALSE AND u.organization_id IS NOT NULL
      GROUP BY u.organization_id
   ) sub ON sub.organization_id = o.id
-  LEFT JOIN LATERAL (
-    SELECT email FROM users
-     WHERE organization_id = o.id AND is_org_admin = true
-     ORDER BY created_at LIMIT 1
-  ) admin_u ON true
+  LEFT JOIN (
+    SELECT DISTINCT ON (organization_id) organization_id, email AS current_admin_email
+      FROM users
+     WHERE organization_id IS NOT NULL AND is_org_admin = true
+     ORDER BY organization_id, created_at
+  ) admin_u ON admin_u.organization_id = o.id
   WHERE o.is_demo = FALSE
 `
 
@@ -992,10 +994,6 @@ export type OverrideOrgAdminResult =
   | { ok: true; organizationName: string; newAdminEmail: string; wasNewAccount: boolean; emailed: boolean }
   | { ok: false; error: string }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-class OverrideRollback extends Error {}
-
 /**
  * PGS sets an organization's admin directly, bypassing requireOrgAdmin —
  * for the case where the outgoing admin can't be reached to hand it over
@@ -1020,6 +1018,9 @@ export async function overrideOrgAdmin(
   }
   const email = (input.newAdminEmail || '').trim().toLowerCase()
   if (!EMAIL_RE.test(email)) return { ok: false, error: 'Enter a valid email address.' }
+  if (email === user.email.toLowerCase()) {
+    return { ok: false, error: "That's your own PGS admin account — pick a customer account instead." }
+  }
   const note =
     typeof input.note === 'string' && input.note.trim() ? input.note.trim().slice(0, 500) : null
 
@@ -1040,7 +1041,7 @@ export async function overrideOrgAdmin(
         [input.organizationId]
       )
       const o = orgRes.rows[0]
-      if (!o) throw new OverrideRollback('Organization not found.')
+      if (!o) throw new Rollback('Organization not found.')
 
       const targetRes = await client.query<{ organization_id: string | null }>(
         `SELECT organization_id FROM users WHERE id = $1 FOR UPDATE`,
@@ -1048,18 +1049,22 @@ export async function overrideOrgAdmin(
       )
       const targetOrgId = targetRes.rows[0]?.organization_id ?? null
       if (targetOrgId && targetOrgId !== o.id) {
-        throw new OverrideRollback(
+        throw new Rollback(
           `${email} already belongs to a different organization. Move them out first, or use a different email.`
         )
       }
 
+      // FOR UPDATE here too — this row is about to be demoted by the next
+      // statement, and locking it closes the same window a concurrent
+      // transferAdminToExistingMember/acceptAdminInvite could otherwise use
+      // to read a stale "who's currently admin" between here and the write.
       const oldAdminRes = await client.query<{ id: string; email: string; name: string }>(
-        `SELECT id, email, name FROM users WHERE organization_id = $1 AND is_org_admin = true`,
+        `SELECT id, email, name FROM users WHERE organization_id = $1 AND is_org_admin = true FOR UPDATE`,
         [o.id]
       )
       const prevAdmin = oldAdminRes.rows[0]
       if (prevAdmin && prevAdmin.id === target.id) {
-        throw new OverrideRollback(`${email} is already the admin for ${o.name}.`)
+        throw new Rollback(`${email} is already the admin for ${o.name}.`)
       }
 
       await client.query(
@@ -1070,28 +1075,26 @@ export async function overrideOrgAdmin(
         o.id,
         target.id,
       ])
-      await client.query(
-        `UPDATE organizations
-            SET pending_admin_email = NULL, pending_admin_invited_by = NULL, pending_admin_invited_at = NULL
-          WHERE id = $1`,
-        [o.id]
-      )
+      await clearPendingAdminInvite(client, o.id)
       return { org: o, oldAdmin: prevAdmin }
     }))
   } catch (e) {
-    if (e instanceof OverrideRollback) return { ok: false, error: e.message }
+    if (e instanceof Rollback) return { ok: false, error: e.msg }
     throw e
   }
 
   const v = vocab(input.brand ?? DEFAULT_BRAND)
-  const noteHtml = note ? `<p style="font-size:13px;color:${tokens.textSecondary};">Note from PGS: ${note.replace(/</g, '&lt;')}</p>` : ''
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const targetNameHtml = esc(target.name)
+  const orgNameHtml = esc(org.name)
+  const noteHtml = note ? `<p style="font-size:13px;color:${tokens.textSecondary};">Note from PGS: ${esc(note)}</p>` : ''
   const [oldAdminEmailed, newAdminEmailed] = await Promise.all([
     oldAdmin
       ? sendBrevoEmail({
           to: oldAdmin.email,
           toName: oldAdmin.name,
           subject: `You're no longer the ${v.product} admin for ${org.name}`,
-          htmlContent: `<p>Subramaniam P G has made ${target.name} (${target.email}) the ${v.product} admin for ${org.name} at your organization's request. You can still run your own ${v.reviews} as a regular member.</p>${noteHtml}`,
+          htmlContent: `<p>Subramaniam P G has made ${targetNameHtml} (${esc(target.email)}) the ${v.product} admin for ${orgNameHtml} at your organization's request. You can still run your own ${v.reviews} as a regular member.</p>${noteHtml}`,
           textContent: `Subramaniam P G has made ${target.name} (${target.email}) the ${v.product} admin for ${org.name} at your organization's request. You can still run your own ${v.reviews} as a regular member.${note ? `\n\nNote from PGS: ${note}` : ''}`,
           skipBcc: true,
         })
@@ -1100,7 +1103,7 @@ export async function overrideOrgAdmin(
       to: target.email,
       toName: target.name,
       subject: `You're the ${v.product} admin for ${org.name}`,
-      htmlContent: `<p>Subramaniam P G has made you the ${v.product} admin for ${org.name}. Sign in at <a href="https://subramaniampg.guru${v.path}">subramaniampg.guru${v.path}</a> with this email address and open the Company tab to manage the pool.</p>${noteHtml}`,
+      htmlContent: `<p>Subramaniam P G has made you the ${v.product} admin for ${orgNameHtml}. Sign in at <a href="https://subramaniampg.guru${v.path}">subramaniampg.guru${v.path}</a> with this email address and open the Company tab to manage the pool.</p>${noteHtml}`,
       textContent: `Subramaniam P G has made you the ${v.product} admin for ${org.name}. Sign in at https://subramaniampg.guru${v.path} with this email address and open the Company tab to manage the pool.${note ? `\n\nNote from PGS: ${note}` : ''}`,
       skipBcc: true,
     }),
