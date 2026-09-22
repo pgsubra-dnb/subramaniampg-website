@@ -58,7 +58,7 @@ export function requireOrgAdmin(user: OkrAllyUser): string {
   return user.organization_id
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const ALLOC_MAX = 5000
 
 // ─── Corporate purchase fulfilment (verify-payment + webhook) ──────────────
@@ -464,7 +464,7 @@ export async function getOrgContextForMember(user: OkrAllyUser): Promise<OrgCont
   }
 }
 
-class Rollback extends Error {
+export class Rollback extends Error {
   constructor(
     public msg: string,
     public row?: number,
@@ -1069,7 +1069,7 @@ export async function getOrgMembers(user: OkrAllyUser): Promise<OrgMember[]> {
   }))
 }
 
-async function clearPendingAdminInvite(client: PoolClient, orgId: string): Promise<void> {
+export async function clearPendingAdminInvite(client: PoolClient, orgId: string): Promise<void> {
   await client.query(
     `UPDATE organizations
         SET pending_admin_email = NULL, pending_admin_invited_by = NULL, pending_admin_invited_at = NULL
@@ -1100,11 +1100,29 @@ export async function transferAdminToExistingMember(
 
   const orgName = (await getOrgAdminContext(user)).organization.name
 
-  await withTransaction(async (client) => {
-    await client.query(`UPDATE users SET is_org_admin = false WHERE id = $1`, [user.id])
-    await client.query(`UPDATE users SET is_org_admin = true WHERE id = $1`, [target.id])
-    await clearPendingAdminInvite(client, orgId)
-  })
+  try {
+    await withTransaction(async (client) => {
+      // Lock the org row and re-verify the target's membership under it —
+      // same fix PR #56 applied to acceptAdminInvite, closing the same race
+      // against a concurrent overrideOrgAdmin (the PGS manual-override path)
+      // touching the same org: without this lock, a stale pre-transaction
+      // read here could still fire after that org's admin was reassigned.
+      await client.query(`SELECT id FROM organizations WHERE id = $1 FOR UPDATE`, [orgId])
+      const freshTarget = await client.query<{ organization_id: string | null }>(
+        `SELECT organization_id FROM users WHERE id = $1 FOR UPDATE`,
+        [target.id]
+      )
+      if (freshTarget.rows[0]?.organization_id !== orgId) {
+        throw new Rollback('That person is not a member of your organization.')
+      }
+      await client.query(`UPDATE users SET is_org_admin = false WHERE id = $1`, [user.id])
+      await client.query(`UPDATE users SET is_org_admin = true WHERE id = $1`, [target.id])
+      await clearPendingAdminInvite(client, orgId)
+    })
+  } catch (e) {
+    if (e instanceof Rollback) return { ok: false, error: e.msg }
+    throw e
+  }
 
   // Both notifications must land for `emailed` to read true — if either
   // silently fails (e.g. Brevo down), the UI should say so rather than
