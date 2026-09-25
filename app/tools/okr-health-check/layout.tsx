@@ -1,9 +1,9 @@
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'OKR Health Check | Subramaniam P G',
+  title: 'OKR Maturity Check | Subramaniam P G',
   description:
-    'Answer 8 quick questions and get your OKR Health Check in under two minutes.',
+    'Answer 8 quick questions and get your OKR Maturity Check in under two minutes.',
   robots: {
     index: false,
     follow: false,

@@ -31,7 +31,7 @@ export default function StickyMobileCTA() {
         className="block w-full text-center px-6 py-3 rounded font-medium text-sm"
         style={{ backgroundColor: '#633806', color: '#FAEEDA' }}
       >
-        Take the 2-Minute OKR Health Check
+        Take the 2-Minute OKR Maturity Check
       </Link>
     </div>
   )

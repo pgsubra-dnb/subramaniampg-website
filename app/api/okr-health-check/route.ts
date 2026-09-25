@@ -149,7 +149,7 @@ Growth Architect and Executive Coach<br>
 Embiggen Consulting LLP<br>
 pgs@embiggen.co.in`
 
-  return { subject: 'Your OKR Health Check Report', text, html }
+  return { subject: 'Your OKR Maturity Check Report', text, html }
 }
 
 async function sendLeadNotification(data: {
@@ -166,7 +166,7 @@ async function sendLeadNotification(data: {
     day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
 
-  const text = `New OKR Health Check lead.
+  const text = `New OKR Maturity Check lead.
 
 Name: ${data.name}
 Email: ${data.email}
@@ -185,9 +185,9 @@ Submitted: ${submittedAt}`
     method: 'POST',
     headers: { 'api-key': apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      sender: { name: 'OKR Health Check', email: 'pgs@embiggen.co.in' },
+      sender: { name: 'OKR Maturity Check', email: 'pgs@embiggen.co.in' },
       to: [{ email: 'pgs@embiggen.co.in', name: 'Subramaniam P G' }],
-      subject: `New OKR Health Check Lead — ${data.name}, ${data.level}`,
+      subject: `New OKR Maturity Check Lead — ${data.name}, ${data.level}`,
       htmlContent: text.replace(/\n/g, '<br>'),
       textContent: text,
     }),

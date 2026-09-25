@@ -298,12 +298,12 @@ function GateForm({ onSubmit }: { onSubmit: (d: UserData) => void }) {
       <main className="flex-1 flex items-center justify-center px-4 py-16 lg:py-24">
         <div className="w-full max-w-md">
           <div className="text-center mb-10">
-            <p className="section-label mb-4">FREE OKR HEALTH CHECK</p>
+            <p className="section-label mb-4">FREE OKR MATURITY CHECK</p>
             <h1 className="font-lora text-3xl sm:text-4xl font-bold text-[#2C2C2A] leading-tight mb-4">
               How Healthy Are Your OKRs, Really
             </h1>
             <p className="text-[#5F5E5A] leading-relaxed mb-4">
-              Answer 8 quick questions. Get your OKR Health Check in under two minutes.
+              Answer 8 quick questions. Get your OKR Maturity Check in under two minutes.
             </p>
             <p className="text-sm text-[#888780] leading-relaxed">
               Most OKR systems fail quietly. Teams write Objectives, set Key Results, then drift back to
@@ -392,7 +392,7 @@ function GateForm({ onSubmit }: { onSubmit: (d: UserData) => void }) {
               onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#7a4408')}
               onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#633806')}
             >
-              Start the Health Check
+              Start the OKR Maturity Check
             </button>
           </form>
         </div>
@@ -417,7 +417,7 @@ function QuestionsStage({ onComplete }: { onComplete: (answers: Record<number, n
 
       <main className="max-w-3xl mx-auto px-4 sm:px-6 py-12 lg:py-16">
         <div className="mb-10">
-          <p className="section-label mb-2">OKR HEALTH CHECK</p>
+          <p className="section-label mb-2">OKR MATURITY CHECK</p>
           <h1 className="font-lora text-2xl sm:text-3xl font-bold text-[#2C2C2A] mb-4">
             Answer honestly — there are no right or wrong responses.
           </h1>

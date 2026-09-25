@@ -7,7 +7,7 @@ const BASE = 'https://www.subramaniampg.guru'
 export const metadata = {
   title: 'OKR-Led Execution System for Founders and CXOs | Subramaniam P G',
   description:
-    'Faster, predictable revenue growth using an OKR-led execution system. Take the 2-minute OKR Health Check and see where your team actually stands.',
+    'Faster, predictable revenue growth using an OKR-led execution system. Take the 2-minute OKR Maturity Check and see where your team actually stands.',
   alternates: { canonical: `${BASE}/okr-growth` },
   openGraph: {
     title: 'OKR-Led Execution System | Subramaniam P G',
@@ -109,7 +109,7 @@ export default function OkrGrowthPage() {
           </p>
           <div className="flex flex-col items-center gap-4">
             <PrimaryButton href="/tools/okr-health-check">
-              Take the 2-Minute OKR Health Check
+              Take the 2-Minute OKR Maturity Check
             </PrimaryButton>
             <SecondaryLink href="https://cal.id/pgs/short-discussion">
               Or book a 15-minute call
@@ -304,7 +304,7 @@ export default function OkrGrowthPage() {
         <div className="relative z-10 max-w-[640px] mx-auto text-center">
           <div className="flex flex-col items-center gap-4">
             <PrimaryButton href="/tools/okr-health-check">
-              Take the 2-Minute OKR Health Check
+              Take the 2-Minute OKR Maturity Check
             </PrimaryButton>
             <SecondaryLink href="https://cal.id/pgs/short-discussion">
               Or book a 15-minute call
