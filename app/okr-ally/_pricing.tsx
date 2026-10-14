@@ -33,9 +33,9 @@ const money = (n: number) => `₹${n.toLocaleString('en-IN')}`
  * (same reasoning as the Help copy). This only hides the input — the whole
  * coupon mechanism (validate-coupon, applyCoupon, price adjustment, the
  * one-per-account free-first-review coupon) is untouched. Flip to true if a
- * coupon is ever issued.
+ * coupon is ever issued. TEMPORARILY TRUE for the PCEP1 webinar coupon (valid to 10 Nov 2026). Set back to false after that.
  */
-const SHOW_COUPON_FIELD = false
+const SHOW_COUPON_FIELD = true
 
 export default function PricingTab({
   onBalanceChange,
