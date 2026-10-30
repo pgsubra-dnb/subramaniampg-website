@@ -164,6 +164,7 @@ export async function POST(req: NextRequest) {
         buyerName: user.name,
         buyerEmail: user.email,
         brand,
+        retailConsumer: true, // individual pack path: no GSTIN => Tamil Nadu, CGST + SGST (lib/okrAllyTaxPlace.ts)
       })
       if (inv.ok) invoiceNumber = inv.invoice.invoice_number
     } else {

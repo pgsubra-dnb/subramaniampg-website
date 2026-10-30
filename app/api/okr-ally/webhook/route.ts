@@ -158,6 +158,7 @@ export async function POST(req: NextRequest) {
           buyerName: buyer.name,
           buyerEmail: buyer.email,
           brand,
+          retailConsumer: true, // individual pack path: no GSTIN => Tamil Nadu, CGST + SGST (lib/okrAllyTaxPlace.ts)
         })
       }
     }
