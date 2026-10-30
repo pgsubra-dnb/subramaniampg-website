@@ -3,7 +3,7 @@ import { withTransaction, getSiteSettings } from '@/lib/okrAlly'
 import { sendBrevoEmail } from '@/lib/sendBrevoEmail'
 import { putPdf } from '@/lib/okrAllyBlob'
 import { PACKS } from '@/lib/okrAllyBilling'
-import { GST_STATES, stateCode, stateCodeFromGstin } from '@/lib/indiaGstStates'
+import { resolveTaxPlace } from '@/lib/okrAllyTaxPlace'
 import { assertFulfillmentAllowed, FulfillmentBlockedError } from '@/lib/fulfillmentGuard'
 import { isDemoRequest } from '@/lib/okrAllyDemoContext'
 import { tokens } from '@/lib/okrAllyTokens'
@@ -103,6 +103,12 @@ export interface CreateInvoiceInput {
    *  'goal_ally' says "Goal Ally". Consulting invoices pass their own labels
    *  and ignore this. */
   brand?: Brand
+  /** Set ONLY by the individual pack path (verify-payment and the webhook). An
+   *  individual without a GSTIN is then invoiced with place of supply Tamil
+   *  Nadu and CGST + SGST, whatever state they chose at checkout (the chosen
+   *  state stays in the Razorpay order notes). Amounts never change. Consulting,
+   *  corporate, Academy and the ₹0 review invoice leave it unset. */
+  retailConsumer?: boolean
 }
 
 export type CreateInvoiceResult =
@@ -130,24 +136,6 @@ async function nextInvoiceNumber(client: PoolClient, yearMonth: string): Promise
   )
   const n = String(res.rows[0].last_number).padStart(4, '0')
   return `OKR/${yearMonth}/${n}`
-}
-
-interface TaxSplit {
-  cgst: number | null
-  sgst: number | null
-  igst: number | null
-}
-
-function computeTaxSplit(
-  gstAmount: number,
-  buyerStateCode: string | null,
-  supplierStateCode: string | null
-): TaxSplit {
-  if (buyerStateCode && supplierStateCode && buyerStateCode === supplierStateCode) {
-    const cgst = Math.round((gstAmount / 2) * 100) / 100
-    return { cgst, sgst: Math.round((gstAmount - cgst) * 100) / 100, igst: null }
-  }
-  return { cgst: null, sgst: null, igst: gstAmount }
 }
 
 const amount = (v: number | string) =>
@@ -379,20 +367,22 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<C
 
     // The ₹0 free-review invoice has no checkout step and therefore no buyer
     // state. GST is nil either way, so default the place of supply to the
-    // supplier's own registered state (an intra-state nil invoice).
-    const placeInput =
-      input.placeOfSupply?.trim() ||
-      (input.razorpayPaymentId ? '' : stateCodeFromGstin(settings.supplierGstin) || '')
-    const placeCode = stateCode(placeInput)
-    const resolvedPlace = placeCode ? GST_STATES.find((s) => s.code === placeCode)!.name : null
-    if (!resolvedPlace) {
+    // supplier's own registered state (an intra-state nil invoice). An individual
+    // pack buyer without a GSTIN (retailConsumer) is invoiced in Tamil Nadu with
+    // CGST + SGST; see lib/okrAllyTaxPlace.ts.
+    const taxPlace = resolveTaxPlace({
+      placeOfSupply: input.placeOfSupply,
+      buyerGstin: input.buyerGstin,
+      gstAmount: input.gstAmount,
+      supplierGstin: settings.supplierGstin,
+      razorpayPaymentId: input.razorpayPaymentId,
+      retailConsumer: input.retailConsumer,
+    })
+    if (!taxPlace.ok) {
       console.error('OKR Ally invoice: invalid place of supply', input.placeOfSupply)
       return { ok: false, reason: 'invalid-place-of-supply' }
     }
-
-    const buyerStateCode = input.buyerGstin ? stateCodeFromGstin(input.buyerGstin) : placeCode
-    const supplierStateCode = stateCodeFromGstin(settings.supplierGstin)
-    const split = computeTaxSplit(input.gstAmount, buyerStateCode, supplierStateCode)
+    const { resolvedPlace, split } = taxPlace
 
     const existing = await fetchExistingInvoice(idKey.col, idKey.val)
     if (existing) return { ok: true, created: false, invoice: existing }
