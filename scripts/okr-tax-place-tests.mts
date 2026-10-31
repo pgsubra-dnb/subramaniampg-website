@@ -135,6 +135,13 @@ const chkTaxSplit = (r: ReturnType<typeof run>) => (r.split.cgst !== null && r.s
   void callBlock
 }
 
+// ---------------------------------------------------------------- the e2e suite cannot run against production by accident
+{
+  const cfg = read('playwright.config.ts')
+  ok('playwright.config.ts refuses to run unless E2E_ALLOW_DATABASE_WRITES=1, and the message says .env.local is the live production database', /E2E_ALLOW_DATABASE_WRITES !== '1'/.test(cfg) && /LIVE PRODUCTION database/.test(cfg) && cfg.indexOf('E2E_ALLOW_DATABASE_WRITES') < cfg.indexOf('export default defineConfig'))
+  ok('the new e2e test carries the same warning', /WARNING: this test issues four REAL GST invoices/.test(read('e2e/okr-ally.spec.ts')))
+}
+
 // ---------------------------------------------------------------- the individual form and create-order ask for nothing; corporate still asks
 {
   const form = read('app/okr-ally/_pricing.tsx')

@@ -2976,6 +2976,9 @@ test('metrics CSV: the review-ready email attaches both option CSVs alongside th
   }
 })
 
+// WARNING: this test issues four REAL GST invoices (it uses up four numbers in the live OKR/YY-MM sequence, uploads PDFs and sends
+// emails). The suite refuses to start unless E2E_ALLOW_DATABASE_WRITES=1 (playwright.config.ts); only set it against a throwaway database,
+// because .env.local points at the live production one.
 // ---- individual pack invoices: always Tamil Nadu, CGST 9 + SGST 9 (the individual form asks for neither a state nor a GSTIN) ----
 test('individual pack invoice is Tamil Nadu with CGST + SGST, whatever state or GSTIN an old order carried; the amounts are unchanged', async ({ context }) => {
   test.setTimeout(120_000)
