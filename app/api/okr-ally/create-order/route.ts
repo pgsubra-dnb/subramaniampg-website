@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import Razorpay from 'razorpay'
 import { getSessionUser, getCreditsRemaining } from '@/lib/okrAlly'
 import { getPack, gstBreakdown, validateCoupon } from '@/lib/okrAllyBilling'
-import { GST_STATES, stateCode, GSTIN_RE } from '@/lib/indiaGstStates'
 import { toBrand, vocab } from '@/lib/okrAllyBrand'
 
 export const dynamic = 'force-dynamic'
@@ -12,13 +11,13 @@ export const dynamic = 'force-dynamic'
  * Body: {
  *   pack: 'single' | 'pack5' | 'pack10',
  *   couponCode?: string,  // percentage discount on the pack price
- *   buyerState: string,   // mandatory — place of supply (name or 2-digit code)
- *   buyerGstin?: string,  // optional — printed on the GST invoice for input tax credit
+ *   (buyerState and buyerGstin are no longer asked or used for an individual: an older page may still send them, and they are
+ *   ignored. Every individual order is invoiced for Tamil Nadu with CGST 9 + SGST 9.)
  * }
  *
  * The pack price and GST are computed server-side from lib/okrAllyBilling PACKS
- * — the client never sends an amount. base/gst/total and the buyer's
- * state/GSTIN are stamped onto the order notes so verify-payment and the
+ * — the client never sends an amount. base/gst/total and the place of supply
+ * (Tamil Nadu) are stamped onto the order notes so verify-payment and the
  * webhook can issue the invoice from trusted data.
  *
  * This route only handles *paid* pack purchases. The free first review is a
@@ -69,25 +68,9 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Place of supply — mandatory (drives the invoice tax split).
-    const rawState = typeof body.buyerState === 'string' ? body.buyerState.trim() : ''
-    const code = rawState && stateCode(rawState)
-    if (!code) {
-      return NextResponse.json(
-        { error: 'Select your state (place of supply) to continue' },
-        { status: 400 }
-      )
-    }
-    const placeOfSupply = GST_STATES.find((s) => s.code === code)!.name
-
-    let buyerGstin: string | null = null
-    if (typeof body.buyerGstin === 'string' && body.buyerGstin.trim()) {
-      const g = body.buyerGstin.trim().toUpperCase()
-      if (!GSTIN_RE.test(g)) {
-        return NextResponse.json({ error: 'That GSTIN is not valid' }, { status: 400 })
-      }
-      buyerGstin = g
-    }
+    // An individual gives neither a state nor a GSTIN: every individual order is Tamil Nadu, CGST 9 + SGST 9. Any buyerState or
+    // buyerGstin from an older page is ignored (never validated, never stored), so an old page cannot fail here.
+    const placeOfSupply = 'Tamil Nadu'
 
     const razorpay = new Razorpay({
       key_id: process.env.RAZORPAY_KEY_ID!,
@@ -113,7 +96,7 @@ export async function POST(req: NextRequest) {
         gst: String(gst),
         total: String(total),
         placeOfSupply,
-        buyerGstin: buyerGstin ?? '',
+        buyerGstin: '',
       },
     })
 

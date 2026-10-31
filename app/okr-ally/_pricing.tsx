@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { AllyRow, Btn, T } from './_ui'
-import { GST_STATES, GSTIN_RE } from '@/lib/indiaGstStates'
 import { type Brand, DEFAULT_BRAND, vocab, reviewCount } from '@/lib/okrAllyBrand'
 
 interface Pack {
@@ -49,8 +48,6 @@ export default function PricingTab({
 }) {
   const v = vocab(brand)
   const [status, setStatus] = useState<Status | null>(null)
-  const [state, setState] = useState('')
-  const [gstin, setGstin] = useState('')
   const [coupon, setCoupon] = useState('')
   const [couponApplied, setCouponApplied] = useState<{ code: string; pricing: Record<string, Pack> } | null>(null)
   const [couponMsg, setCouponMsg] = useState<string | null>(null)
@@ -98,20 +95,11 @@ export default function PricingTab({
     }
   }
 
-  const gstinInvalid = gstin.trim().length > 0 && !GSTIN_RE.test(gstin.trim().toUpperCase())
 
   async function buy(pack: Pack) {
     setMsg(null)
     if (isDemo) {
       setMsg({ kind: 'err', text: 'Purchases are turned off in demo mode.' })
-      return
-    }
-    if (!state) {
-      setMsg({ kind: 'err', text: 'Choose your state — it sets the place of supply on the invoice.' })
-      return
-    }
-    if (gstinInvalid) {
-      setMsg({ kind: 'err', text: 'That GSTIN isn’t in the right format — 15 characters, e.g. 29ABCDE1234F1Z5. Clear it or fix it.' })
       return
     }
     setBusy(pack.id)
@@ -122,8 +110,6 @@ export default function PricingTab({
         body: JSON.stringify({
           pack: pack.id,
           brand,
-          buyerState: state,
-          buyerGstin: gstin.trim() || undefined,
           couponCode: couponApplied?.code,
         }),
       })
@@ -257,7 +243,7 @@ export default function PricingTab({
               </div>
               <button
                 onClick={() => buy(p)}
-                disabled={busy !== null || gstinInvalid}
+                disabled={busy !== null}
                 style={{
                   marginTop: 10,
                   width: '100%',
@@ -283,39 +269,9 @@ export default function PricingTab({
         <div style={{ fontSize: 12.5, fontWeight: 600, color: T.gold, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10 }}>
           Billing details
         </div>
-        <label style={{ display: 'block', fontSize: 12.5, color: T.muted, marginBottom: 4 }}>State (place of supply) *</label>
-        <select
-          value={state}
-          onChange={(e) => setState(e.target.value)}
-          style={{ width: '100%', padding: '9px 10px', borderRadius: 8, border: `1px solid ${T.hairline}`, fontSize: 13.5, background: '#fff', marginBottom: 10 }}
-        >
-          <option value="">Select your state…</option>
-          {GST_STATES.map((s) => (
-            <option key={s.code} value={s.name}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-        <label style={{ display: 'block', fontSize: 12.5, color: T.muted, marginBottom: 4 }}>GSTIN (optional — for input tax credit)</label>
-        <input
-          value={gstin}
-          onChange={(e) => setGstin(e.target.value.toUpperCase())}
-          placeholder="e.g. 29ABCDE1234F1Z5"
-          maxLength={15}
-          style={{
-            width: '100%',
-            padding: '9px 10px',
-            borderRadius: 8,
-            border: `1px solid ${gstinInvalid ? T.error : T.hairline}`,
-            fontSize: 13.5,
-            marginBottom: gstinInvalid ? 2 : 10,
-          }}
-        />
-        {gstinInvalid && (
-          <p style={{ fontSize: 11.5, color: T.error, margin: '0 0 10px' }}>
-            Not a valid GSTIN — it&apos;s 15 characters: 2-digit state code, then the 10-character PAN, then 3 more.
-          </p>
-        )}
+        <p style={{ fontSize: 12.5, color: T.muted, margin: '0 0 10px' }}>
+          Your GST invoice is issued for Tamil Nadu: CGST 9% + SGST 9%.
+        </p>
         {SHOW_COUPON_FIELD && (
           <>
             <label style={{ display: 'block', fontSize: 12.5, color: T.muted, marginBottom: 4 }}>Coupon code (optional)</label>

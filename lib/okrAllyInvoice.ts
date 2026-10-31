@@ -103,11 +103,12 @@ export interface CreateInvoiceInput {
    *  'goal_ally' says "Goal Ally". Consulting invoices pass their own labels
    *  and ignore this. */
   brand?: Brand
-  /** Set ONLY by the individual pack path (verify-payment and the webhook). An
-   *  individual without a GSTIN is then invoiced with place of supply Tamil
-   *  Nadu and CGST + SGST, whatever state they chose at checkout (the chosen
-   *  state stays in the Razorpay order notes). Amounts never change. Consulting,
-   *  corporate, Academy and the ₹0 review invoice leave it unset. */
+  /** Set ONLY by the individual pack path (verify-payment and the webhook). The
+   *  invoice is then ALWAYS place of supply Tamil Nadu with CGST 9 + SGST 9, and
+   *  carries no buyer GSTIN: any state or GSTIN an older checkout page (or an
+   *  order created before this rule) put in the order notes is ignored. Amounts
+   *  never change. Consulting, corporate, Academy and the ₹0 review invoice
+   *  leave it unset. */
   retailConsumer?: boolean
 }
 
@@ -419,7 +420,7 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<C
             input.razorpayPaymentId,
             input.submissionId ?? null,
             number,
-            input.buyerGstin,
+            input.retailConsumer ? null : input.buyerGstin, // an individual's invoice carries no buyer GSTIN
             input.buyerAddress ?? null,
             input.listPrice,
             input.discountPercent,

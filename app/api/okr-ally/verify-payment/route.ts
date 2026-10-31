@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
     const gst = Number(notes.gst)
     const total = Number(notes.total)
     let invoiceNumber: string | null = null
-    if (base && gst && total && notes.placeOfSupply) {
+    if (base && gst && total) {
       const inv = await createAndSendInvoice({
         userId: user.id,
         razorpayPaymentId: razorpay_payment_id,
@@ -159,8 +159,8 @@ export async function POST(req: NextRequest) {
         baseAmount: base,
         gstAmount: gst,
         totalAmount: total,
-        buyerGstin: notes.buyerGstin || null,
-        placeOfSupply: notes.placeOfSupply,
+        buyerGstin: notes.buyerGstin || null, // ignored for an individual (retailConsumer)
+        placeOfSupply: notes.placeOfSupply || '', // ignored for an individual (retailConsumer)
         buyerName: user.name,
         buyerEmail: user.email,
         brand,

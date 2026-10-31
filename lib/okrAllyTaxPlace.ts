@@ -5,10 +5,11 @@ import { GST_STATES, stateCode, stateCodeFromGstin } from './indiaGstStates'
  * (scripts/okr-tax-place-tests.mts). Used by createAndSendInvoice in lib/okrAllyInvoice.ts.
  *
  * Rules:
- * - Buyer with a GSTIN (a corporate, or an individual who gave one): the GSTIN's state decides the split; the place of
- *   supply printed is the state the buyer chose.
- * - Individual WITHOUT a GSTIN, on the individual pack path (`retailConsumer`): place of supply is Tamil Nadu and the tax is
- *   CGST + SGST, whatever state the buyer chose at checkout. The chosen state is still captured in the Razorpay order notes.
+ * - Individual on the individual pack path (`retailConsumer`): place of supply is Tamil Nadu and the tax is CGST 9 + SGST 9, always.
+ *   The individual checkout asks for neither a state nor a GSTIN; any state or GSTIN an older page (or an order created before this
+ *   rule) carries is ignored here.
+ * - A buyer with a GSTIN who is NOT on that path (a corporate): the GSTIN's state decides the split; the place of supply printed is
+ *   the state the buyer chose (unchanged).
  * - Everything else (consulting, the ₹0 free-review invoice, Academy): the state chosen decides, as before.
  * Only the tax head and the place of supply are decided here. No amount ever changes.
  */
@@ -45,7 +46,7 @@ export interface TaxPlaceInput {
 export type TaxPlaceResult = { ok: true; resolvedPlace: string; split: TaxSplit } | { ok: false }
 
 export function resolveTaxPlace(input: TaxPlaceInput): TaxPlaceResult {
-  const retail = input.retailConsumer === true && !input.buyerGstin
+  const retail = input.retailConsumer === true
   const placeInput = retail
     ? RETAIL_PLACE_OF_SUPPLY_CODE
     : input.placeOfSupply?.trim() || (input.razorpayPaymentId ? '' : stateCodeFromGstin(input.supplierGstin) || '')
@@ -53,7 +54,8 @@ export function resolveTaxPlace(input: TaxPlaceInput): TaxPlaceResult {
   const resolvedPlace = placeCode ? GST_STATES.find((s) => s.code === placeCode)!.name : null
   if (!resolvedPlace) return { ok: false }
 
-  const buyerStateCode = input.buyerGstin ? stateCodeFromGstin(input.buyerGstin) : placeCode
+  // An individual is always in the place just worked out (Tamil Nadu); otherwise the GSTIN's state decides, else the chosen state.
+  const buyerStateCode = retail ? placeCode : input.buyerGstin ? stateCodeFromGstin(input.buyerGstin) : placeCode
   const supplierStateCode = stateCodeFromGstin(input.supplierGstin)
   return { ok: true, resolvedPlace, split: computeTaxSplit(input.gstAmount, buyerStateCode, supplierStateCode) }
 }
