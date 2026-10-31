@@ -2975,3 +2975,52 @@ test('metrics CSV: the review-ready email attaches both option CSVs alongside th
     delete process.env.BREVO_API_KEY
   }
 })
+
+// WARNING: this test issues four REAL GST invoices (it uses up four numbers in the live OKR/YY-MM sequence, uploads PDFs and sends
+// emails). The suite refuses to start unless E2E_ALLOW_DATABASE_WRITES=1 (playwright.config.ts); only set it against a throwaway database,
+// because .env.local points at the live production one.
+// ---- individual pack invoices: always Tamil Nadu, CGST 9 + SGST 9 (the individual form asks for neither a state nor a GSTIN) ----
+test('individual pack invoice is Tamil Nadu with CGST + SGST, whatever state or GSTIN an old order carried; the amounts are unchanged', async ({ context }) => {
+  test.setTimeout(120_000)
+  const { createAndSendInvoice } = await import('../lib/okrAllyInvoice')
+  const base = PACKS.single.basePrice
+  const gst = Math.round(base * 0.18)
+  const cases = [
+    { label: 'new form: no state, no GSTIN', place: '', gstin: null as string | null },
+    { label: 'old page: Karnataka, no GSTIN', place: 'Karnataka', gstin: null },
+    { label: 'old order: Karnataka with a Karnataka GSTIN', place: 'Karnataka', gstin: '29AAACP1234C1Z5' },
+    { label: 'old order: Tamil Nadu with a Delhi GSTIN', place: 'Tamil Nadu', gstin: '07AAACP1234C1Z5' },
+  ]
+  for (const c of cases) {
+    const user = await signIn(context, 'http://localhost:3200')
+    createdUsers.push(user.userId)
+    const payId = rzId('pay')
+    const r = await createAndSendInvoice({
+      userId: user.userId,
+      razorpayPaymentId: payId,
+      listPrice: base,
+      discountPercent: null,
+      couponCode: null,
+      baseAmount: base,
+      gstAmount: gst,
+      totalAmount: base + gst,
+      buyerGstin: c.gstin,
+      placeOfSupply: c.place,
+      buyerName: 'Individual Buyer',
+      buyerEmail: user.email,
+      retailConsumer: true,
+    })
+    expect(r.ok, c.label).toBe(true)
+    const row = (await pool.query<{ place_of_supply: string; gstin: string | null; cgst_amount: string | null; sgst_amount: string | null; igst_amount: string | null; base_amount: string; gst_amount: string; total_amount: string }>(
+      `SELECT place_of_supply, gstin, cgst_amount, sgst_amount, igst_amount, base_amount, gst_amount, total_amount FROM invoices WHERE razorpay_payment_id = $1`,
+      [payId]
+    )).rows[0]
+    expect(row.place_of_supply, c.label).toBe('Tamil Nadu')
+    expect(row.gstin, c.label).toBeNull()
+    expect(row.igst_amount, c.label).toBeNull()
+    expect(Number(row.cgst_amount) + Number(row.sgst_amount), c.label).toBeCloseTo(gst, 2)
+    expect(Number(row.base_amount)).toBe(base)
+    expect(Number(row.gst_amount)).toBe(gst)
+    expect(Number(row.total_amount)).toBe(base + gst)
+  }
+})

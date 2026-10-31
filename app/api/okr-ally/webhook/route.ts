@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
     const base = Number(notes.base)
     const gst = Number(notes.gst)
     const total = Number(notes.total)
-    if (base && gst && total && notes.placeOfSupply) {
+    if (base && gst && total) {
       const buyer = await getUserById(notes.userId)
       if (buyer) {
         await createAndSendInvoice({
@@ -153,8 +153,8 @@ export async function POST(req: NextRequest) {
           baseAmount: base,
           gstAmount: gst,
           totalAmount: total,
-          buyerGstin: notes.buyerGstin || null,
-          placeOfSupply: notes.placeOfSupply,
+          buyerGstin: notes.buyerGstin || null, // ignored for an individual (retailConsumer)
+          placeOfSupply: notes.placeOfSupply || '', // ignored for an individual (retailConsumer)
           buyerName: buyer.name,
           buyerEmail: buyer.email,
           brand,

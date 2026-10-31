@@ -30,6 +30,17 @@ if (fs.existsSync(envLocal)) {
   }
 }
 
+// SAFETY GUARD. This repo's .env.local carries the REAL production DATABASE_URL, SANITY_API_TOKEN and BLOB_READ_WRITE_TOKEN, and this suite
+// runs the real fulfilment paths against them: it creates test users, issues REAL GST invoices (using up numbers in the live OKR/YY-MM
+// invoice sequence), uploads PDFs to the production Blob store and sends invoice emails. So it refuses to run unless you say you mean it:
+// point DATABASE_URL (and the other tokens) at a throwaway copy, then set E2E_ALLOW_DATABASE_WRITES=1.
+if (process.env.E2E_ALLOW_DATABASE_WRITES !== '1') {
+  throw new Error(
+    'e2e refused: .env.local points at the LIVE PRODUCTION database and this suite issues real invoices (it burns invoice numbers), ' +
+      'uploads PDFs and sends emails. Use a throwaway database and tokens, then set E2E_ALLOW_DATABASE_WRITES=1 to run it.'
+  )
+}
+
 const HAPPY_PORT = 3200
 const FAIL_PORT = 3201
 
