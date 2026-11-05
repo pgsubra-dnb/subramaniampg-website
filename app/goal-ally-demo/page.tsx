@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
+import NavBar from '@/components/NavBar'
+import Footer from '@/components/Footer'
 import DemoPlayer from './DemoPlayer'
 
 const TITLE = 'Goal Ally demo'
@@ -39,70 +40,46 @@ export default function GoalAllyDemoPage({
   const tryHref = `${APP_LINK}?src=${encodeURIComponent(src)}`
 
   return (
-    <div className="gad-root">
-      <style>{`
-        .gad-root {
-          background: #2E1B05;
-          min-height: 100vh;
-          color: #FAEEDA;
-          font-family: var(--font-inter, Inter, system-ui, sans-serif);
-        }
-        .gad-root * { box-sizing: border-box; }
-        .gad-wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
-        .gad-header { border-bottom: 1px solid #5A3812; padding: 28px 0; }
-        .gad-brand { font-size: 16px; font-weight: 600; color: #FAEEDA; text-decoration: none; }
-        .gad-brand span { color: #F0997B; }
-        .gad-main { padding: 56px 0 72px; text-align: center; }
-        .gad-h1 { font-size: 40px; line-height: 1.15; font-weight: 700; margin: 0 0 12px; }
-        .gad-sub { font-size: 18px; color: #E0C9A6; margin: 0 0 36px; }
-        .gad-player {
-          width: 100%; max-width: 960px; margin: 0 auto;
-          aspect-ratio: 16 / 9; background: #000;
-          border: 1px solid #5A3812; border-radius: 12px; overflow: hidden;
-        }
-        .gad-actions { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-top: 36px; }
-        .gad-btn {
-          display: inline-block; padding: 14px 28px; border-radius: 10px;
-          font-size: 16px; font-weight: 600; text-decoration: none;
-          border: 1px solid transparent;
-        }
-        .gad-btn:hover { opacity: 0.9; }
-        .gad-btn-primary { background: #D85A30; border-color: #D85A30; color: #2A0E03; }
-        .gad-btn-secondary { background: transparent; border-color: #8A5A22; color: #FAEEDA; }
-        @media (max-width: 600px) {
-          .gad-h1 { font-size: 30px; }
-          .gad-main { padding: 36px 0 56px; }
-          .gad-btn { width: 100%; text-align: center; }
-        }
-      `}</style>
+    <div className="min-h-screen" style={{ backgroundColor: '#FAF8F5' }}>
+      <NavBar />
 
-      <header className="gad-header">
-        <div className="gad-wrap">
-          <Link href="/" className="gad-brand">
-            Subramaniam <span>P G</span>
-          </Link>
-        </div>
-      </header>
+      <main className="max-w-5xl mx-auto px-6 pt-12 pb-20 text-center">
+        <p className="text-xs font-medium tracking-widest uppercase text-[#633806] mb-4">
+          Goal Ally
+        </p>
+        <h1 className="font-lora text-4xl sm:text-5xl font-bold text-[#2C2C2A] leading-snug mb-3">
+          {TITLE}
+        </h1>
+        <p className="text-lg text-[#4A4944] mb-10">{DESCRIPTION}</p>
 
-      <main className="gad-main">
-        <div className="gad-wrap">
-          <h1 className="gad-h1">{TITLE}</h1>
-          <p className="gad-sub">{DESCRIPTION}</p>
-
-          <div className="gad-player">
+        <div
+          className="w-full max-w-[960px] mx-auto bg-white rounded-xl p-2 sm:p-3 border"
+          style={{ borderColor: '#E8E4DC', boxShadow: '0 4px 24px rgba(44,44,42,0.08)' }}
+        >
+          <div className="rounded-lg overflow-hidden bg-black" style={{ aspectRatio: '16 / 9' }}>
             <DemoPlayer src={src} />
           </div>
+        </div>
 
-          <div className="gad-actions">
-            <a href={tryHref} className="gad-btn gad-btn-primary">
-              Try Goal Ally free
-            </a>
-            <a href={CAL_LINK} className="gad-btn gad-btn-secondary" target="_blank" rel="noopener noreferrer">
-              Talk to us
-            </a>
-          </div>
+        <div className="flex flex-wrap justify-center gap-3 mt-10">
+          <a
+            href={tryHref}
+            className="bg-[#633806] text-[#FAEEDA] px-6 py-3 rounded font-medium text-sm"
+          >
+            Try Goal Ally free
+          </a>
+          <a
+            href={CAL_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="border border-[#633806] text-[#633806] px-6 py-3 rounded font-medium text-sm"
+          >
+            Talk to us
+          </a>
         </div>
       </main>
+
+      <Footer />
     </div>
   )
 }

@@ -9,7 +9,7 @@ export default function DemoPlayer({ src }: { src: string }) {
     <MuxPlayer
       playbackId={PLAYBACK_ID}
       streamType="on-demand"
-      accentColor="#D85A30"
+      accentColor="#633806"
       metadata={{
         video_title: 'Goal Ally demo',
         custom_1: src,
