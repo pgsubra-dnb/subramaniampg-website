@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import Image from 'next/image'
+import { AllyLoading } from './_loading'
+import { loadDraftAndProfile } from '@/lib/okrAllyLoad'
 import { Page, TopBar, InstallAppBanner, AllyRow, Btn, Field, ShareCard, T, AVATAR, keyframes } from './_ui'
 import StepForm from './_form'
 import ReportScreen, { FullReport } from './_report'
@@ -171,10 +173,11 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
           setTab('company')
         }
         refreshStatus()
-        const [d, prof] = await Promise.all([
-          (await fetch('/api/okr-ally/draft')).json(),
-          (await fetch('/api/okr-ally/profile')).json().catch(() => null),
-        ])
+        // Both requests start together; wait for both.
+        const { draft: d, profile: prof } = await loadDraftAndProfile<
+          { formState?: FormState | null },
+          Parameters<typeof prefillFromProfile>[0]
+        >()
         const prefill = prof ? prefillFromProfile(prof, m) : null
         setProfilePrefill(prefill)
         // "Meaningful progress" = past the first stop of whichever flow applies.
@@ -283,13 +286,7 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
   }
 
   if (phase === 'loading') {
-    return (
-      <Page>
-        <style>{keyframes}</style>
-        <TopBar brand={brand} />
-        <p style={{ color: T.muted, fontSize: 14 }}>Loading…</p>
-      </Page>
-    )
+    return <AllyLoading brand={brand} animate={false} />
   }
 
   const showingReport = phase === 'app' && reportId !== null
