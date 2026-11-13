@@ -174,7 +174,10 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
         }
         refreshStatus()
         // Both requests start together; wait for both.
-        const { draft: d, profile: prof } = await loadDraftAndProfile()
+        const { draft: d, profile: prof } = await loadDraftAndProfile<
+          { formState?: FormState | null },
+          Parameters<typeof prefillFromProfile>[0]
+        >()
         const prefill = prof ? prefillFromProfile(prof, m) : null
         setProfilePrefill(prefill)
         // "Meaningful progress" = past the first stop of whichever flow applies.
@@ -283,7 +286,7 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
   }
 
   if (phase === 'loading') {
-    return <AllyLoading brand={brand} />
+    return <AllyLoading brand={brand} animate={false} />
   }
 
   const showingReport = phase === 'app' && reportId !== null

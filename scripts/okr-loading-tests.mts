@@ -66,7 +66,7 @@ const tick = () => new Promise((r) => setTimeout(r, 5))
   ok('both fail: one clean rejection', await loadDraftAndProfile(f5).then(() => false, () => true))
   await tick()
   const client = read('app/okr-ally/OkrAllyClient.tsx')
-  ok('the client uses it, and the two fetches are no longer awaited one after the other', /loadDraftAndProfile\(\)/.test(client) && !/\(await fetch\('\/api\/okr-ally\/draft'\)\)/.test(client) && !/\(await fetch\('\/api\/okr-ally\/profile'\)\)/.test(client))
+  ok('the client uses it, and the two fetches are no longer awaited one after the other', /loadDraftAndProfile</.test(client) && !/\(await fetch\('\/api\/okr-ally\/draft'\)\)/.test(client) && !/\(await fetch\('\/api\/okr-ally\/profile'\)\)/.test(client))
   const lib = read('lib/okrAllyLoad.ts')
   ok('the API routes are unchanged (the helper only calls GET /draft and GET /profile)', /\/api\/okr-ally\/draft/.test(lib) && /\/api\/okr-ally\/profile/.test(lib) && !/method|PUT|POST|DELETE/.test(lib.replace(/\/\*[\s\S]*?\*\//g, '')))
 }
@@ -80,16 +80,29 @@ for (const [brand, product] of [['okr_ally', 'OKR Ally'], ['goal_ally', 'Goal Al
   ok(`${brand}: flat blocks: a title block and three card blocks`, (html.match(/height:96px/g) ?? []).length === 3 && /height:28px/.test(html))
   ok(`${brand}: shows the right product name in the top bar`, html.includes(product))
   ok(`${brand}: no visible "Loading…" paragraph any more`, !/Loading…/.test(html))
-  ok(`${brand}: fades in (class present)`, /class="okra-loading"/.test(html))
+  ok(`${brand}: the route screen fades in (fade class present)`, /class="okra-loading okra-loading-fade"/.test(html))
+  const still = renderToStaticMarkup(createElement(AllyLoading, { brand, animate: false }))
+  ok(
+    `${brand}: animate={false} leaves the fade class off but keeps the same blocks, text and aria`,
+    /class="okra-loading"/.test(still) && !/class="[^"]*okra-loading-fade/.test(still) && /role="status" class="okra-sr">Loading</.test(still) && /aria-busy="true"/.test(still) && (still.match(/height:96px/g) ?? []).length === 3
+  )
 }
 {
   const css = LOADING_CSS
-  ok('loading CSS: fade of 150 ms, starting at once (no delay)', /\.okra-loading\{animation:okraLoadFade 150ms ease-out\}/.test(css) && !/animation-delay/.test(css))
-  ok('loading CSS: no animation for reduced motion', /prefers-reduced-motion: reduce\)\{\.okra-loading\{animation:none\}/.test(css))
+  ok('loading CSS: fade of 150 ms, starting at once (no delay)', /\.okra-loading-fade\{animation:okraLoadFade 150ms ease-out\}/.test(css) && !/animation-delay/.test(css))
+  ok('loading CSS: no animation for reduced motion', /prefers-reduced-motion: reduce\)\{\.okra-loading-fade\{animation:none\}/.test(css))
   const src = read('app/okr-ally/_loading.tsx').replace(/\/\*[\s\S]*?\*\//g, '')
   ok('loading screen: no spinner, no gradient, no shadow', !/gradient|shadow|spin|rotate|blur|okraPulse/i.test(src + css))
   ok('both pages use it as their loading.tsx, goal-ally with its own brand', /AllyLoading/.test(read('app/okr-ally/loading.tsx')) && /AllyLoading brand="goal_ally"/.test(read('app/goal-ally/loading.tsx')))
-  ok('the client shows it while it checks sign-in (phase loading) for both brands', /phase === 'loading'\) \{\s*return <AllyLoading brand=\{brand\} \/>/.test(read('app/okr-ally/OkrAllyClient.tsx')) && /brand="goal_ally"/.test(read('app/goal-ally/page.tsx')))
+  ok('the client shows it with the animation OFF (the route loading screen has just faded in), for both brands', /phase === 'loading'\) \{\s*return <AllyLoading brand=\{brand\} animate=\{false\} \/>/.test(read('app/okr-ally/OkrAllyClient.tsx')) && /brand="goal_ally"/.test(read('app/goal-ally/page.tsx')))
+}
+{
+  // The route's loading.tsx runs on the server. _ui.tsx is a 'use client' file: from the server only its components may be used.
+  const ld = read('app/okr-ally/_loading.tsx').replace(/\/\*[\s\S]*?\*\//g, '')
+  ok('server-safe: _loading.tsx takes only components (Page, TopBar) from the use-client _ui file, never T or other values', /import \{ Page, TopBar \} from '\.\/_ui'/.test(ld) && !/\bT\./.test(ld) && /from '@\/lib\/okrAllyTokens'/.test(ld))
+  ok('server-safe: _loading.tsx has no use client, hooks or browser globals', !/use client|useState|useEffect|window\.|document\./.test(ld))
+  ok('_ui.tsx still says use client (so Page and TopBar are client components when loading.tsx renders on the server)', /^'use client'/.test(read('app/okr-ally/_ui.tsx')))
+  ok('lint: no explicit any in the new helper (next build fails on it)', !/\bany\b/.test(read('lib/okrAllyLoad.ts').replace(/\/\*[\s\S]*?\*\//g, '')))
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

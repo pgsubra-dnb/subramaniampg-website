@@ -6,11 +6,11 @@
  *  - the profile request itself failing (network error) rejects, as it did.
  * The API routes are unchanged.
  */
-export async function loadDraftAndProfile(
+export async function loadDraftAndProfile<D = unknown, P = unknown>(
   fetchFn: typeof fetch = fetch
-): Promise<{ draft: any; profile: any | null }> {
-  const draftP = fetchFn('/api/okr-ally/draft').then((r) => r.json())
-  const profileP = fetchFn('/api/okr-ally/profile').then((r) => r.json().catch(() => null))
+): Promise<{ draft: D; profile: P | null }> {
+  const draftP: Promise<D> = fetchFn('/api/okr-ally/draft').then((r) => r.json())
+  const profileP: Promise<P | null> = fetchFn('/api/okr-ally/profile').then((r) => r.json().catch(() => null))
   // If the draft fails first, the profile request is still running; its own later failure must not go unhandled.
   profileP.catch(() => {})
   const [draft, profile] = await Promise.all([draftP, profileP])
