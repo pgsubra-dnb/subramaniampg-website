@@ -48,11 +48,16 @@ export default function PricingTab({
   brand = DEFAULT_BRAND,
   isDemo = false,
   initialPlan = 'corporate',
+  signedIn = true,
+  onRequireSignIn,
 }: {
   onBalanceChange: (n: number) => void
   brand?: Brand
   /** Which rate card opens first — from `?plan=` in the URL; defaults to Corporate. */
   initialPlan?: Plan
+  /** Signed-out visitors see the public rate card only — no balances, no coupon, and Buy asks them to sign in. */
+  signedIn?: boolean
+  onRequireSignIn?: (plan: Plan) => void
   /** Demo session — prices are shown for the audience, but buying is disabled. */
   isDemo?: boolean
 }) {
@@ -93,6 +98,16 @@ export default function PricingTab({
   }
 
   useEffect(() => {
+    if (!signedIn) {
+      // Public read-only rate card — no user data.
+      fetch('/api/okr-ally/pricing')
+        .then((r) => r.json())
+        .then((j: { packs: Pack[] }) =>
+          setStatus({ creditsRemaining: 0, personalCredits: 0, orgCredits: [], freeReviewAvailable: false, packs: j.packs }),
+        )
+        .catch(() => {})
+      return
+    }
     fetch('/api/okr-ally/status')
       .then((r) => r.json())
       .then(setStatus)
@@ -104,7 +119,7 @@ export default function PricingTab({
     return () => {
       document.body.removeChild(s)
     }
-  }, [])
+  }, [signedIn])
 
   function priceFor(p: Pack): Pack {
     return couponApplied?.pricing[p.id] ?? p
@@ -136,6 +151,10 @@ export default function PricingTab({
 
   async function buy(pack: Pack) {
     setMsg(null)
+    if (!signedIn) {
+      onRequireSignIn?.(plan)
+      return
+    }
     if (isDemo) {
       setMsg({ kind: 'err', text: 'Purchases are turned off in demo mode.' })
       return
@@ -220,6 +239,7 @@ export default function PricingTab({
 
   return (
     <div>
+      {signedIn && (
       <AllyRow>
         You have <strong>{status.creditsRemaining}</strong>{' '}
         {status.creditsRemaining === 1 ? v.review : v.reviews}.
@@ -232,6 +252,7 @@ export default function PricingTab({
         )}
         {status.freeReviewAvailable && ` Your first review is free — it won't touch your ${v.reviews}.`}
       </AllyRow>
+      )}
 
       {isDemo && (
         <div
@@ -347,7 +368,9 @@ export default function PricingTab({
               to discuss.
             </p>
 
-            {isDemo ? (
+            {!signedIn ? (
+              <Btn onClick={() => onRequireSignIn?.('corporate')}>Buy {v.reviews}</Btn>
+            ) : isDemo ? (
               <Btn onClick={() => setMsg({ kind: 'err', text: 'Purchases are turned off in demo mode.' })}>
                 Buy {v.reviews}
               </Btn>
@@ -418,7 +441,7 @@ export default function PricingTab({
             <p style={{ fontSize: 12.5, color: T.muted, margin: '0 0 10px' }}>
               Your GST invoice is issued for Tamil Nadu: CGST 9% + SGST 9%.
             </p>
-            {SHOW_COUPON_FIELD && (
+            {SHOW_COUPON_FIELD && signedIn && (
               <>
                 <label style={{ display: 'block', fontSize: 12.5, color: T.muted, marginBottom: 4 }}>Coupon code (optional)</label>
                 <div className="flex gap-2">
