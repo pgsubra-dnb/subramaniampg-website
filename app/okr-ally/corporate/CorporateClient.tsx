@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Page, TopBar, Btn, T, keyframes } from '../_ui'
 import { GST_STATES, GSTIN_RE } from '@/lib/indiaGstStates'
 import { type Brand, DEFAULT_BRAND, vocab, reviewCount } from '@/lib/okrAllyBrand'
+import { BUNDLES, gst } from '@/lib/okrAllyBundles'
 
 /**
  * Corporate review-credit bundles — three fixed sizes, GST added on top.
@@ -15,12 +16,6 @@ import { type Brand, DEFAULT_BRAND, vocab, reviewCount } from '@/lib/okrAllyBran
  * (see lib/okrAllyBrand.ts).
  */
 
-const BUNDLES = [
-  { id: 'b100', credits: 100, base: 6000 },
-  { id: 'b200', credits: 200, base: 11000 },
-  { id: 'b500', credits: 500, base: 25000 },
-]
-const gst = (b: number) => Math.round(b * 0.18)
 const money = (n: number) => `₹${n.toLocaleString('en-IN')}`
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

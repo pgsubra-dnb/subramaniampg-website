@@ -103,7 +103,7 @@ export function topicsFor(v: BrandVocab): Topic[] {
       items: [
         {
           q: `How does a company buy ${reviews}?`,
-          a: `If several people at your company want to run their ${planPlural} through me, buy a shared pool instead of individual packs. Sign in, open the Pricing & Plans tab, and follow “Looking for team or company ${reviews}?” — or go straight to subramaniampg.guru${v.path}/corporate. Pick a bundle, enter your company name, GSTIN and registered address, choose the state for the invoice, and name the person who will manage the pool (the “designated admin” — that can be you or a colleague). Pay by card or UPI. The GST invoice is made out to the company, not to you personally.`,
+          a: `If several people at your company want to run their ${planPlural} through me, buy a shared pool instead of individual packs. Sign in, open the Pricing & Plans tab and choose Corporate, then Buy ${reviews} — or go straight to subramaniampg.guru${v.path}/corporate. Pick a bundle, enter your company name, GSTIN and registered address, choose the state for the invoice, and name the person who will manage the pool (the “designated admin” — that can be you or a colleague). Pay by card or UPI. The GST invoice is made out to the company, not to you personally.`,
         },
         {
           q: `What are the bundles?`,
