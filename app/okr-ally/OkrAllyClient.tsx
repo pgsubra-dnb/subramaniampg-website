@@ -7,7 +7,7 @@ import { loadDraftAndProfile } from '@/lib/okrAllyLoad'
 import { Page, TopBar, InstallAppBanner, AllyRow, Btn, Field, ShareCard, T, AVATAR, keyframes } from './_ui'
 import StepForm from './_form'
 import ReportScreen, { FullReport } from './_report'
-import PricingTab from './_pricing'
+import PricingTab, { type Plan } from './_pricing'
 import HistoryTab from './_history'
 import HelpTab from './_help'
 import { AdminList, AdminReviewScreen } from './_admin'
@@ -57,6 +57,7 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
   const v = vocab(brand)
   const [phase, setPhase] = useState<Phase>('loading')
   const [tab, setTab] = useState<Tab>('ally')
+  const [initialPlan, setInitialPlan] = useState<Plan>('corporate')
   const [me, setMe] = useState<Me | null>(null)
   const [status, setStatus] = useState<Status | null>(null)
   const [draft, setDraft] = useState<FormState | null>(null)
@@ -148,7 +149,11 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
     // it stays in the URL until the user leaves the intro (startFlow strips it) —
     // stripping it here would let a StrictMode re-run fall through to the app.
     const demoWantsIntro = params.get('demo') === 'intro'
-    if (params.has('tab')) window.history.replaceState({}, '', v.path)
+    // `?plan=corporate|individual` (or `?tab=pricing`) — opens Pricing & Plans on that rate card.
+    const planParam = params.get('plan')
+    const wantsPricing = params.get('tab') === 'pricing' || planParam === 'corporate' || planParam === 'individual'
+    if (planParam === 'corporate' || planParam === 'individual') setInitialPlan(planParam)
+    if (params.has('tab') || params.has('plan')) window.history.replaceState({}, '', v.path)
     ;(async () => {
       try {
         const m: Me = await (await fetch('/api/okr-ally/me')).json()
@@ -172,6 +177,7 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
         if (m.user?.isOrgAdmin && (wantsCompanyTab || (m.orgContext && !m.orgContext.confirmed))) {
           setTab('company')
         }
+        if (wantsPricing && !(m.user?.isOrgAdmin && (wantsCompanyTab || (m.orgContext && !m.orgContext.confirmed)))) setTab('pricing')
         refreshStatus()
         // Both requests start together; wait for both.
         const { draft: d, profile: prof } = await loadDraftAndProfile<
@@ -450,6 +456,7 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
         <PricingTab
           brand={brand}
           isDemo={isDemo}
+          initialPlan={initialPlan}
           onBalanceChange={(n) => setStatus((s) => (s ? { ...s, creditsRemaining: n } : s))}
         />
       )}

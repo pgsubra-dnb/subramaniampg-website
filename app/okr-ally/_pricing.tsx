@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AllyRow, Btn, T } from './_ui'
 import { type Brand, DEFAULT_BRAND, vocab, reviewCount } from '@/lib/okrAllyBrand'
+import { BUNDLES, gst } from '@/lib/okrAllyBundles'
 
 interface Pack {
   id: string
@@ -26,6 +27,12 @@ type RazorpayCtor = new (opts: any) => { open: () => void }
 
 const money = (n: number) => `₹${n.toLocaleString('en-IN')}`
 
+export type Plan = 'corporate' | 'individual'
+const PLANS: [Plan, string][] = [
+  ['corporate', 'Corporate'],
+  ['individual', 'Individual'],
+]
+
 /**
  * Coupon codes aren't being issued right now, so a visible "enter a coupon code"
  * field just moves the "…where do I get one?" confusion to the checkout screen
@@ -40,9 +47,12 @@ export default function PricingTab({
   onBalanceChange,
   brand = DEFAULT_BRAND,
   isDemo = false,
+  initialPlan = 'corporate',
 }: {
   onBalanceChange: (n: number) => void
   brand?: Brand
+  /** Which rate card opens first — from `?plan=` in the URL; defaults to Corporate. */
+  initialPlan?: Plan
   /** Demo session — prices are shown for the audience, but buying is disabled. */
   isDemo?: boolean
 }) {
@@ -53,6 +63,34 @@ export default function PricingTab({
   const [couponMsg, setCouponMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [plan, setPlan] = useState<Plan>(initialPlan)
+  const tabRefs = useRef<Record<Plan, HTMLButtonElement | null>>({ corporate: null, individual: null })
+
+  // Keep the URL in step with the selected rate card so the link is shareable
+  // (…?tab=pricing&plan=corporate). Cleared again when leaving the Pricing tab.
+  useEffect(() => {
+    window.history.replaceState({}, '', `${v.path}?tab=pricing&plan=${plan}`)
+  }, [plan, v.path])
+  useEffect(
+    () => () => {
+      if (window.location.search.includes('plan=')) window.history.replaceState({}, '', v.path)
+    },
+    [v.path],
+  )
+
+  function onTabKey(e: React.KeyboardEvent, i: number) {
+    const last = PLANS.length - 1
+    const next =
+      e.key === 'ArrowRight' ? (i === last ? 0 : i + 1)
+      : e.key === 'ArrowLeft' ? (i === 0 ? last : i - 1)
+      : e.key === 'Home' ? 0
+      : e.key === 'End' ? last
+      : -1
+    if (next < 0) return
+    e.preventDefault()
+    setPlan(PLANS[next][0])
+    tabRefs.current[PLANS[next][0]]?.focus()
+  }
 
   useEffect(() => {
     fetch('/api/okr-ally/status')
@@ -217,127 +255,196 @@ export default function PricingTab({
         </div>
       )}
 
-      <div className="grid gap-3 mb-5" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
-        {status.packs.map((p) => {
-          const price = priceFor(p)
+      <div
+        role="tablist"
+        aria-label="Plan type"
+        style={{
+          display: 'flex',
+          gap: 4,
+          padding: 4,
+          marginBottom: 18,
+          background: T.card,
+          border: `1px solid ${T.hairline}`,
+          borderRadius: 12,
+        }}
+      >
+        {PLANS.map(([id, label], i) => {
+          const active = plan === id
           return (
-            <div
-              key={p.id}
+            <button
+              key={id}
+              ref={(el) => {
+                tabRefs.current[id] = el
+              }}
+              role="tab"
+              type="button"
+              id={`plan-tab-${id}`}
+              aria-selected={active}
+              aria-controls={`plan-panel-${id}`}
+              tabIndex={active ? 0 : -1}
+              onClick={() => setPlan(id)}
+              onKeyDown={(e) => onTabKey(e, i)}
               style={{
-                background: p.id === 'pack10' ? T.emerald : T.card,
-                color: p.id === 'pack10' ? '#fff' : T.charcoal,
-                border: p.id === 'pack10' ? 'none' : `1px solid ${T.hairline}`,
-                borderRadius: 12,
-                padding: 16,
+                flex: 1,
+                minHeight: 44,
+                padding: '10px 12px',
+                borderRadius: 9,
+                border: 'none',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-inter), sans-serif',
+                fontSize: 14,
+                fontWeight: 700,
+                background: active ? T.emerald : 'transparent',
+                color: active ? '#fff' : T.muted,
+                boxShadow: active ? '0 1px 3px rgba(0,0,0,.18)' : 'none',
               }}
             >
-              <div style={{ fontFamily: 'var(--font-inter), sans-serif', fontWeight: 600, fontSize: 15 }}>{p.label}</div>
-              <div style={{ fontSize: 12.5, opacity: 0.85 }}>
-                {reviewCount(brand, p.credits)} · {money(price.perReview ?? p.base / p.credits)} each
-              </div>
-              <div style={{ fontSize: 20, fontWeight: 700, marginTop: 8, fontFamily: 'var(--font-inter), sans-serif' }}>
-                {money(price.total)}
-              </div>
-              <div style={{ fontSize: 11.5, opacity: 0.8 }}>
-                {money(price.base)} + {money(price.gst)} GST
-              </div>
-              <button
-                onClick={() => buy(p)}
-                disabled={busy !== null}
-                style={{
-                  marginTop: 10,
-                  width: '100%',
-                  padding: '8px 0',
-                  borderRadius: 8,
-                  border: p.id === 'pack10' ? '1px solid rgba(255,255,255,.5)' : `1px solid ${T.emerald}`,
-                  background: p.id === 'pack10' ? '#fff' : T.emerald,
-                  color: p.id === 'pack10' ? T.emeraldDark : '#fff',
-                  fontWeight: 600,
-                  fontSize: 13,
-                  cursor: busy ? 'not-allowed' : 'pointer',
-                  opacity: busy && busy !== p.id ? 0.6 : 1,
-                }}
-              >
-                {busy === p.id ? 'Opening…' : 'Buy'}
-              </button>
-            </div>
+              {label}
+            </button>
           )
         })}
       </div>
 
-      <div style={{ background: T.card, border: `1px solid ${T.hairline}`, borderRadius: 12, padding: 16 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 600, color: T.gold, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10 }}>
-          Billing details
-        </div>
-        <p style={{ fontSize: 12.5, color: T.muted, margin: '0 0 10px' }}>
-          Your GST invoice is issued for Tamil Nadu: CGST 9% + SGST 9%.
-        </p>
-        {SHOW_COUPON_FIELD && (
+      <div role="tabpanel" id="plan-panel-corporate" aria-labelledby="plan-tab-corporate" hidden={plan !== 'corporate'}>
+        {plan === 'corporate' && (
           <>
-            <label style={{ display: 'block', fontSize: 12.5, color: T.muted, marginBottom: 4 }}>Coupon code (optional)</label>
-            <div className="flex gap-2">
-              <input
-                value={coupon}
-                onChange={(e) => setCoupon(e.target.value.toUpperCase())}
-                placeholder="Code"
-                style={{ flex: 1, padding: '9px 10px', borderRadius: 8, border: `1px solid ${T.hairline}`, fontSize: 13.5 }}
-              />
-              <Btn small variant="ghost" onClick={applyCoupon}>
-                Apply
-              </Btn>
+            <p style={{ color: T.muted, fontSize: 14, lineHeight: 1.6, margin: '0 0 14px' }}>
+              Buy a pool of {v.reviews} against your company GSTIN. A designated admin then allocates them
+              to employee emails and can reclaim what&apos;s unused. One GST invoice, addressed to the company.
+            </p>
+
+            <div className="grid gap-3 mb-4" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
+              {BUNDLES.map((b) => (
+                <div
+                  key={b.id}
+                  style={{
+                    background: b.id === 'b200' ? T.emerald : T.card,
+                    color: b.id === 'b200' ? '#fff' : T.charcoal,
+                    border: b.id === 'b200' ? 'none' : `1px solid ${T.hairline}`,
+                    borderRadius: 12,
+                    padding: 16,
+                  }}
+                >
+                  <div style={{ fontFamily: 'var(--font-inter), sans-serif', fontWeight: 600, fontSize: 16 }}>
+                    {reviewCount(brand, b.credits)}
+                  </div>
+                  <div style={{ fontSize: 12.5, opacity: 0.85 }}>{money(Math.round(b.base / b.credits))} each</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, marginTop: 8, fontFamily: 'var(--font-inter), sans-serif' }}>
+                    {money(b.base + gst(b.base))}
+                  </div>
+                  <div style={{ fontSize: 11.5, opacity: 0.8 }}>
+                    {money(b.base)} + {money(gst(b.base))} GST
+                  </div>
+                </div>
+              ))}
             </div>
-            {couponMsg && (
-              <p style={{ fontSize: 12, color: couponApplied ? T.emeraldDark : T.error, margin: '6px 0 0' }}>{couponMsg}</p>
+
+            <p style={{ fontSize: 12.5, color: T.muted, marginBottom: 14 }}>
+              Need more than 500 {v.reviews}? Email us at{' '}
+              <a href="mailto:pgs@embiggen.co.in" style={{ color: T.emeraldDark, fontWeight: 600 }}>
+                pgs@embiggen.co.in
+              </a>{' '}
+              to discuss.
+            </p>
+
+            {isDemo ? (
+              <Btn onClick={() => setMsg({ kind: 'err', text: 'Purchases are turned off in demo mode.' })}>
+                Buy {v.reviews}
+              </Btn>
+            ) : (
+              <a href={`${v.path}/corporate`} style={{ textDecoration: 'none' }}>
+                <Btn>Buy {v.reviews}</Btn>
+              </a>
             )}
           </>
         )}
       </div>
 
-      <p style={{ fontSize: 11.5, color: T.muted, marginTop: 12 }}>
-        GST is 18%. A numbered GST invoice is emailed for every purchase. Your first review is free, one per account.
-      </p>
-
-      {(() => {
-        const inner = (
+      <div role="tabpanel" id="plan-panel-individual" aria-labelledby="plan-tab-individual" hidden={plan !== 'individual'}>
+        {plan === 'individual' && (
           <>
-            <div style={{ fontFamily: 'var(--font-inter), sans-serif', fontWeight: 600, fontSize: 15, color: T.bubbleText }}>
-              Looking for team or company {v.reviews}?
+          <div className="grid gap-3 mb-5" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
+            {status.packs.map((p) => {
+              const price = priceFor(p)
+              return (
+                <div
+                  key={p.id}
+                  style={{
+                    background: p.id === 'pack10' ? T.emerald : T.card,
+                    color: p.id === 'pack10' ? '#fff' : T.charcoal,
+                    border: p.id === 'pack10' ? 'none' : `1px solid ${T.hairline}`,
+                    borderRadius: 12,
+                    padding: 16,
+                  }}
+                >
+                  <div style={{ fontFamily: 'var(--font-inter), sans-serif', fontWeight: 600, fontSize: 15 }}>{p.label}</div>
+                  <div style={{ fontSize: 12.5, opacity: 0.85 }}>
+                    {reviewCount(brand, p.credits)} · {money(price.perReview ?? p.base / p.credits)} each
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 700, marginTop: 8, fontFamily: 'var(--font-inter), sans-serif' }}>
+                    {money(price.total)}
+                  </div>
+                  <div style={{ fontSize: 11.5, opacity: 0.8 }}>
+                    {money(price.base)} + {money(price.gst)} GST
+                  </div>
+                  <button
+                    onClick={() => buy(p)}
+                    disabled={busy !== null}
+                    style={{
+                      marginTop: 10,
+                      width: '100%',
+                      padding: '8px 0',
+                      borderRadius: 8,
+                      border: p.id === 'pack10' ? '1px solid rgba(255,255,255,.5)' : `1px solid ${T.emerald}`,
+                      background: p.id === 'pack10' ? '#fff' : T.emerald,
+                      color: p.id === 'pack10' ? T.emeraldDark : '#fff',
+                      fontWeight: 600,
+                      fontSize: 13,
+                      cursor: busy ? 'not-allowed' : 'pointer',
+                      opacity: busy && busy !== p.id ? 0.6 : 1,
+                    }}
+                  >
+                    {busy === p.id ? 'Opening…' : 'Buy'}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+
+          <div style={{ background: T.card, border: `1px solid ${T.hairline}`, borderRadius: 12, padding: 16 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: T.gold, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10 }}>
+              Billing details
             </div>
-            <div style={{ fontSize: 12.5, color: T.bubbleText, opacity: 0.85, marginTop: 4 }}>
-              Buy a pool of 100, 200 or 500 {v.reviews} against your company GSTIN and hand them to your team.
-              One GST invoice, one admin, clean cost reporting.
-            </div>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: T.emeraldDark, marginTop: 8 }}>
-              See corporate bundles →
-            </div>
+            <p style={{ fontSize: 12.5, color: T.muted, margin: '0 0 10px' }}>
+              Your GST invoice is issued for Tamil Nadu: CGST 9% + SGST 9%.
+            </p>
+            {SHOW_COUPON_FIELD && (
+              <>
+                <label style={{ display: 'block', fontSize: 12.5, color: T.muted, marginBottom: 4 }}>Coupon code (optional)</label>
+                <div className="flex gap-2">
+                  <input
+                    value={coupon}
+                    onChange={(e) => setCoupon(e.target.value.toUpperCase())}
+                    placeholder="Code"
+                    style={{ flex: 1, padding: '9px 10px', borderRadius: 8, border: `1px solid ${T.hairline}`, fontSize: 13.5 }}
+                  />
+                  <Btn small variant="ghost" onClick={applyCoupon}>
+                    Apply
+                  </Btn>
+                </div>
+                {couponMsg && (
+                  <p style={{ fontSize: 12, color: couponApplied ? T.emeraldDark : T.error, margin: '6px 0 0' }}>{couponMsg}</p>
+                )}
+              </>
+            )}
+          </div>
+
+          <p style={{ fontSize: 11.5, color: T.muted, marginTop: 12 }}>
+            GST is 18%. A numbered GST invoice is emailed for every purchase. Your first review is free, one per account.
+          </p>
           </>
-        )
-        const box: React.CSSProperties = {
-          display: 'block',
-          width: '100%',
-          textAlign: 'left',
-          marginTop: 18,
-          textDecoration: 'none',
-          background: T.emeraldTint,
-          border: `1px solid ${T.emeraldBorder}`,
-          borderRadius: 12,
-          padding: 16,
-          cursor: 'pointer',
-        }
-        return isDemo ? (
-          <button
-            type="button"
-            style={box}
-            onClick={() => setMsg({ kind: 'err', text: 'Purchases are turned off in demo mode.' })}
-          >
-            {inner}
-          </button>
-        ) : (
-          <a href={`${v.path}/corporate`} style={box}>
-            {inner}
-          </a>
-        )
-      })()}
+        )}
+      </div>
     </div>
   )
 }
