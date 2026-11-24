@@ -21,6 +21,8 @@ type RoleWalkthrough = 'org_admin' | 'employee'
 
 type Phase = 'loading' | 'intro' | 'walkthrough' | 'email' | 'app' | 'signedout'
 type Tab = 'ally' | 'pricing' | 'history' | 'help' | 'admin' | 'company'
+/** Signed-out menu. Only public content lives here. */
+type PubTab = 'about' | 'ally' | 'pricing' | 'help'
 
 interface Me {
   authenticated: boolean
@@ -58,6 +60,9 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
   const [phase, setPhase] = useState<Phase>('loading')
   const [tab, setTab] = useState<Tab>('ally')
   const [initialPlan, setInitialPlan] = useState<Plan>('corporate')
+  // Signed-out visitors: which public tab is open, and where to send them after sign-in.
+  const [pubTab, setPubTab] = useState<PubTab>('about')
+  const [returnTo, setReturnTo] = useState<string | null>(null)
   const [me, setMe] = useState<Me | null>(null)
   const [status, setStatus] = useState<Status | null>(null)
   const [draft, setDraft] = useState<FormState | null>(null)
@@ -159,6 +164,7 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
         const m: Me = await (await fetch('/api/okr-ally/me')).json()
         setMe(m)
         if (!m.authenticated) {
+          if (wantsPricing) setPubTab('pricing')
           setPhase('intro')
           return
         }
@@ -196,6 +202,7 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
         }
         setPhase('app')
       } catch {
+        if (wantsPricing) setPubTab('pricing')
         setPhase('intro')
       }
     })()
@@ -242,8 +249,15 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
     if (typeof window !== 'undefined' && window.location.search.includes('demo=')) {
       window.history.replaceState({}, '', v.path)
     }
+    if (!me?.authenticated) {
+      // Signed out: the Ally tab is the sign-in screen.
+      setReturnTo(null)
+      setPubTab('ally')
+      setPhase('intro')
+      return
+    }
     setPhase('email')
-  }, [v.path])
+  }, [v.path, me?.authenticated])
 
   function prefillFromProfile(
     prof: {
@@ -377,7 +391,56 @@ export default function OkrAllyClient({ brand = DEFAULT_BRAND }: { brand?: Brand
           }}
         />
       )}
-      {phase === 'intro' && (
+      {phase === 'intro' && !me?.authenticated && (
+        <>
+          <NavBar
+            tab={pubTab}
+            items={[
+              ['about', 'About'],
+              ['ally', 'Ally'],
+              ['pricing', 'Pricing & Plans'],
+              ['help', 'Help'],
+            ]}
+            onChange={(t) => {
+              setReturnTo(null)
+              setPubTab(t)
+            }}
+          />
+          {pubTab === 'about' && (
+            <Intro
+              brand={brand}
+              onStart={startFlow}
+              onSeeHow={() => setPhase('walkthrough')}
+              onSeePricing={() => setPubTab('pricing')}
+              onSignIn={startFlow}
+            />
+          )}
+          {pubTab === 'ally' && (
+            <>
+              {returnTo && (
+                <p style={{ color: T.muted, fontSize: 13.5, margin: '0 0 12px' }}>
+                  Sign in to continue — you&apos;ll come straight back to Pricing &amp; Plans.
+                </p>
+              )}
+              <EmailGate brand={brand} returnTo={returnTo} />
+            </>
+          )}
+          {pubTab === 'pricing' && (
+            <PricingTab
+              brand={brand}
+              signedIn={false}
+              initialPlan={initialPlan}
+              onBalanceChange={() => {}}
+              onRequireSignIn={(plan) => {
+                setReturnTo(`${v.path}?tab=pricing&plan=${plan}`)
+                setPubTab('ally')
+              }}
+            />
+          )}
+          {pubTab === 'help' && <HelpTab brand={brand} />}
+        </>
+      )}
+      {phase === 'intro' && me?.authenticated && (
         <Intro brand={brand} onStart={startFlow} onSeeHow={() => setPhase('walkthrough')} />
       )}
       {phase === 'walkthrough' && (
@@ -518,6 +581,19 @@ function TabBar({
     ...(isOrgAdmin ? ([['company', 'Company']] as [Tab, string][]) : []),
     ...(isAdmin ? ([['admin', 'Admin']] as [Tab, string][]) : []),
   ]
+  return <NavBar tab={tab} items={tabs} onChange={onChange} />
+}
+
+/** The top menu — shared by the signed-in and signed-out tab sets. */
+function NavBar<K extends string>({
+  tab,
+  items: tabs,
+  onChange,
+}: {
+  tab: K
+  items: [K, string][]
+  onChange: (t: K) => void
+}) {
   return (
     <div
       className="flex gap-1 mb-6"
@@ -549,7 +625,20 @@ function TabBar({
   )
 }
 
-function Intro({ brand, onStart, onSeeHow }: { brand: Brand; onStart: () => void; onSeeHow: () => void }) {
+function Intro({
+  brand,
+  onStart,
+  onSeeHow,
+  onSeePricing,
+  onSignIn,
+}: {
+  brand: Brand
+  onStart: () => void
+  onSeeHow: () => void
+  /** Signed-out About tab only. */
+  onSeePricing?: () => void
+  onSignIn?: () => void
+}) {
   const v = vocab(brand)
   return (
     <div style={{ textAlign: 'center', padding: '8px 0 24px' }}>
@@ -574,6 +663,16 @@ function Intro({ brand, onStart, onSeeHow }: { brand: Brand; onStart: () => void
         <Btn variant="ghost" onClick={onSeeHow}>
           See how it works
         </Btn>
+        {onSeePricing && (
+          <Btn variant="ghost" onClick={onSeePricing}>
+            See pricing
+          </Btn>
+        )}
+        {onSignIn && (
+          <Btn variant="ghost" onClick={onSignIn}>
+            Sign in
+          </Btn>
+        )}
       </div>
       <p style={{ marginTop: 12, fontSize: 12.5, color: T.muted }}>Your first review is free.</p>
       <div
@@ -869,10 +968,13 @@ function EmailGate({
   brand,
   isDemo = false,
   onDemoVerified,
+  returnTo = null,
 }: {
   brand: Brand
   isDemo?: boolean
   onDemoVerified?: () => void
+  /** Client-built same-site path to land on after sign-in (e.g. back to Pricing). */
+  returnTo?: string | null
 }) {
   const [email, setEmail] = useState(isDemo ? 'you@company.com' : '')
   const [code, setCode] = useState('')
@@ -965,7 +1067,7 @@ function EmailGate({
       const j = await r.json().catch(() => ({}))
       if (r.ok && j.ok) {
         // Full reload so the load effect picks up the freshly-set session cookie.
-        window.location.assign(j.redirect || vocab(brand).path)
+        window.location.assign(returnTo || j.redirect || vocab(brand).path)
         return
       }
       setLocalErr(j.error || 'That code isn’t right. Check it and try again, or request a new one.')

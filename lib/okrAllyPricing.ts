@@ -24,6 +24,23 @@ export interface OkrAllyStatus {
   links: { booking: string | null; substack: string | null; linkedin: string | null }
 }
 
+/** The individual rate card — static, no user data. Shared by the signed-in
+ *  status payload and the public /api/okr-ally/pricing route. */
+export function getPackRateCard(): OkrAllyStatus['packs'] {
+  return Object.values(PACKS).map((p) => {
+    const b = gstBreakdown(p.basePrice)
+    return {
+      id: p.id,
+      label: p.label,
+      credits: p.credits,
+      base: b.base,
+      gst: b.gst,
+      total: b.total,
+      perReview: Math.round((p.basePrice / p.credits) * 100) / 100,
+    }
+  })
+}
+
 export async function getStatus(userId: string): Promise<OkrAllyStatus> {
   const [credits, settings] = await Promise.all([
     getAvailableCredits(userId),
@@ -38,18 +55,7 @@ export async function getStatus(userId: string): Promise<OkrAllyStatus> {
 
   const creditsRemaining = credits.total
 
-  const packs = Object.values(PACKS).map((p) => {
-    const b = gstBreakdown(p.basePrice)
-    return {
-      id: p.id,
-      label: p.label,
-      credits: p.credits,
-      base: b.base,
-      gst: b.gst,
-      total: b.total,
-      perReview: Math.round((p.basePrice / p.credits) * 100) / 100,
-    }
-  })
+  const packs = getPackRateCard()
 
   return {
     creditsRemaining,
