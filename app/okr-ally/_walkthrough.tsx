@@ -1,8 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import Image from 'next/image'
-import { T, Btn, AVATAR } from './_ui'
+import { T, Btn, AllyAvatar } from './_ui'
 import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
 import { howItWorks, orgAdmin, employee, type Shot, type Note, type Cta } from '@/lib/okrAllyHelpContent'
 
@@ -224,9 +223,7 @@ function NoteView({ slide }: { slide: Note }) {
 function CtaView({ slide, brand, onAction }: { slide: Cta; brand: Brand; onAction?: () => void }) {
   return (
     <div style={{ textAlign: 'center', padding: '28px 0', animation: 'okraIn .3s ease both' }}>
-      <div style={{ width: 68, height: 68, borderRadius: '50%', overflow: 'hidden', margin: '0 auto 16px', border: `3px solid ${T.emerald}` }}>
-        <Image src={AVATAR} alt={vocab(brand).product} width={68} height={68} />
-      </div>
+      <AllyAvatar size={68} ring={3} brand={brand} alt={vocab(brand).product} style={{ margin: '0 auto 16px' }} />
       <h2 style={{ fontFamily: 'var(--font-inter), sans-serif', fontSize: 20, fontWeight: 600, color: T.charcoal, margin: 0 }}>
         {slide.heading}
       </h2>
@@ -248,9 +245,7 @@ function CtaView({ slide, brand, onAction }: { slide: Cta; brand: Brand; onActio
 function CaptionBubble({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex gap-2.5 items-start" style={{ marginTop: 14 }}>
-      <div style={{ width: 32, height: 32, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, border: `2px solid ${T.emerald}` }}>
-        <Image src={AVATAR} alt="Ally" width={32} height={32} />
-      </div>
+      <AllyAvatar size={32} />
       <div
         style={{
           background: T.emeraldTint,
