@@ -40,35 +40,21 @@ export function Page({ children }: { children: ReactNode }) {
 }
 
 export function TopBar({ right, brand = DEFAULT_BRAND }: { right?: ReactNode; brand?: Brand }) {
-  const product = vocab(brand).product
+  const v = vocab(brand)
   return (
     <div
       className="flex items-center justify-between mb-7 pb-4"
       style={{ borderBottom: `1px solid ${T.hairline}` }}
     >
-      <div className="flex items-center gap-2">
-        <div style={{ width: 30, height: 30, borderRadius: '50%', overflow: 'hidden', flexShrink: 0 }}>
-          <Image src={AVATAR} alt={product} width={30} height={30} />
-        </div>
-        <span style={{ fontFamily: 'var(--font-inter), sans-serif', fontWeight: 700, color: T.charcoal, fontSize: 16 }}>
-          {product}
-        </span>
-        <span
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase',
-            color: T.gold,
-            background: T.goldTint,
-            padding: '3px 8px',
-            borderRadius: 20,
-            marginLeft: 4,
-          }}
-        >
-          Powered by AI
-        </span>
-      </div>
+      {/* Wordmark already carries the name and "Powered by AI" (720x192 source). */}
+      <Image
+        src={v.headerLogo}
+        alt={`${v.product} — Powered by AI`}
+        width={172}
+        height={46}
+        priority
+        style={{ height: 46, width: 'auto' }}
+      />
       <div className="flex items-center gap-3 text-sm">{right}</div>
     </div>
   )

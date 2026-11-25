@@ -50,6 +50,8 @@ export interface BrandVocab {
   path: string
   /** Logo / wordmark image for the app header and PDF. */
   logo: string
+  /** Wordmark (symbol + name + "Powered by AI") shown in the in-app header. 720x192 PNG. */
+  headerLogo: string
   /** The single-outcome statement — "Objective" / "Goal". */
   objective: string
   objectiveLower: string
@@ -81,6 +83,7 @@ const OKR_ALLY: BrandVocab = {
   product: 'OKR Ally',
   path: '/okr-ally',
   logo: '/okr-ally/report-logo.jpg',
+  headerLogo: '/okr-ally/okr-ally-logo-v2.png',
   objective: 'Objective',
   objectiveLower: 'objective',
   kr: 'Key Result',
@@ -100,6 +103,7 @@ const GOAL_ALLY: BrandVocab = {
   product: 'Goal Ally',
   path: '/goal-ally',
   logo: '/goal-ally/report-logo.jpg',
+  headerLogo: '/goal-ally/goal-ally-logo-v2.png',
   objective: 'Goal',
   objectiveLower: 'goal',
   kr: 'Sub-goal',
