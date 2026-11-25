@@ -13,11 +13,12 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, title: 'OKR Ally', statusBarStyle: 'default' },
   icons: {
     icon: [
-      { url: '/okr-ally/icon-32.png', sizes: '32x32', type: 'image/png' },
-      { url: '/okr-ally/icon-192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/okr-ally/icon-512.png', sizes: '512x512', type: 'image/png' },
+      { url: '/okr-ally/okr-ally-icon-v2-16.png', sizes: '16x16', type: 'image/png' },
+      { url: '/okr-ally/okr-ally-icon-v2-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/okr-ally/okr-ally-icon-v2-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/okr-ally/okr-ally-icon-v2-512.png', sizes: '512x512', type: 'image/png' },
     ],
-    apple: [{ url: '/okr-ally/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+    apple: [{ url: '/okr-ally/okr-ally-apple-touch-icon-v2.png', sizes: '180x180', type: 'image/png' }],
   },
 }
 
