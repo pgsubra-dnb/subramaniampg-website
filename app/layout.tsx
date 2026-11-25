@@ -118,6 +118,8 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(personJsonLd) }}
         />
+        {/* eslint-disable-next-line @next/next/no-sync-scripts -- Zoho PageSense snippet must load synchronously in <head> */}
+        <script src="https://cdn-in.pagesense.io/js/embiggenconsultingllp/b204c6244e5d45f08581b5a7bf119b7f.js"></script>
       </head>
       <body>
         {children}
