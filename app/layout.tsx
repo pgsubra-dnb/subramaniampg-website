@@ -66,6 +66,17 @@ export const metadata: Metadata = {
     googleBot: { index: true, follow: true, 'max-image-preview': 'large' },
   },
   alternates: { canonical: BASE },
+  // Versioned files so browsers don't keep serving the old favicon from cache.
+  icons: {
+    icon: [
+      { url: '/favicon-v2.ico', sizes: '16x16 32x32 48x48', type: 'image/x-icon' },
+      { url: '/site-icon-v2-16.png', sizes: '16x16', type: 'image/png' },
+      { url: '/site-icon-v2-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/site-icon-v2-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/site-icon-v2-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [{ url: '/site-apple-touch-icon-v2.png', sizes: '180x180', type: 'image/png' }],
+  },
 }
 
 const personJsonLd = {
