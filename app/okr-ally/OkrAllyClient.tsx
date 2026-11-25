@@ -1,10 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import Image from 'next/image'
 import { AllyLoading } from './_loading'
 import { loadDraftAndProfile } from '@/lib/okrAllyLoad'
-import { Page, TopBar, InstallAppBanner, AllyRow, Btn, Field, ShareCard, T, AVATAR, keyframes } from './_ui'
+import { Page, TopBar, InstallAppBanner, AllyRow, Btn, Field, ShareCard, T, AllyAvatar, keyframes } from './_ui'
 import StepForm from './_form'
 import ReportScreen, { FullReport } from './_report'
 import PricingTab, { type Plan } from './_pricing'
@@ -642,9 +641,7 @@ function Intro({
   const v = vocab(brand)
   return (
     <div style={{ textAlign: 'center', padding: '8px 0 24px' }}>
-      <div style={{ width: 84, height: 84, borderRadius: '50%', overflow: 'hidden', margin: '0 auto 16px', border: `3px solid ${T.emerald}` }}>
-        <Image src={AVATAR} alt={v.product} width={84} height={84} />
-      </div>
+      <AllyAvatar size={84} ring={3} brand={brand} alt={v.product} style={{ margin: '0 auto 16px' }} />
       <h1 style={{ fontFamily: 'var(--font-inter), sans-serif', fontSize: 24, fontWeight: 600, color: T.charcoal, margin: 0 }}>
         Hi, I&apos;m Ally.
       </h1>
@@ -926,9 +923,7 @@ function SignedOut({ brand, onContinue }: { brand: Brand; onContinue: () => void
   const v = vocab(brand)
   return (
     <div style={{ textAlign: 'center', padding: '8px 0 24px' }}>
-      <div style={{ width: 72, height: 72, borderRadius: '50%', overflow: 'hidden', margin: '0 auto 14px', border: `3px solid ${T.emerald}` }}>
-        <Image src={AVATAR} alt={v.product} width={72} height={72} />
-      </div>
+      <AllyAvatar size={72} ring={3} brand={brand} alt={v.product} style={{ margin: '0 auto 14px' }} />
       <h1 style={{ fontFamily: 'var(--font-inter), sans-serif', fontSize: 22, fontWeight: 600, color: T.charcoal, margin: 0 }}>
         You&apos;re signed out.
       </h1>

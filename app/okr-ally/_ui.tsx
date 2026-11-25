@@ -1,6 +1,7 @@
 'use client'
 
 import Image from 'next/image'
+import { usePathname } from 'next/navigation'
 import { ReactNode, useEffect, useRef, useState } from 'react'
 import { tokens, dataViz } from '@/lib/okrAllyTokens'
 import { type Brand, DEFAULT_BRAND, vocab } from '@/lib/okrAllyBrand'
@@ -29,7 +30,43 @@ export const T = {
   bubbleText: tokens.primaryContrast,
 }
 
-export const AVATAR = '/okr-ally/ally-avatar.png'
+/**
+ * Round Ally avatar, per product. Pass `brand` where it's known; otherwise it is
+ * read from the route (so chat components that carry no brand prop still show
+ * the right one). `/goal-ally*` (including the demo page) is Goal Ally.
+ */
+export function AllyAvatar({
+  size,
+  ring = 2,
+  brand,
+  alt = 'Ally',
+  style,
+}: {
+  size: number
+  ring?: number
+  brand?: Brand
+  alt?: string
+  style?: React.CSSProperties
+}) {
+  const pathname = usePathname()
+  const b: Brand = brand ?? (pathname?.includes('goal-ally') ? 'goal_ally' : 'okr_ally')
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        overflow: 'hidden',
+        flexShrink: 0,
+        border: `${ring}px solid ${T.emerald}`,
+        boxSizing: 'border-box',
+        ...style,
+      }}
+    >
+      <Image src={vocab(b).avatar} alt={alt} width={size} height={size} />
+    </div>
+  )
+}
 
 export function Page({ children }: { children: ReactNode }) {
   return (
@@ -63,9 +100,7 @@ export function TopBar({ right, brand = DEFAULT_BRAND }: { right?: ReactNode; br
 export function AllyRow({ children }: { children: ReactNode }) {
   return (
     <div className="flex gap-2.5 mb-4 items-end" style={{ animation: 'okraIn .35s ease both' }}>
-      <div style={{ width: 34, height: 34, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, border: `2px solid ${T.emerald}` }}>
-        <Image src={AVATAR} alt="Ally" width={34} height={34} />
-      </div>
+      <AllyAvatar size={34} />
       <div
         style={{
           background: T.emeraldTint,
@@ -428,9 +463,7 @@ export function GeneratingIndicator({ brand = DEFAULT_BRAND }: { brand?: Brand }
   }, [])
   return (
     <div className="flex gap-2.5 mb-4 items-end" style={{ animation: 'okraIn .35s ease both' }}>
-      <div style={{ width: 34, height: 34, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, border: `2px solid ${T.emerald}` }}>
-        <Image src={AVATAR} alt="Ally" width={34} height={34} />
-      </div>
+      <AllyAvatar size={34} brand={brand} />
       <div
         style={{
           background: T.emeraldTint,

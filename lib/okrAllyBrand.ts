@@ -52,6 +52,8 @@ export interface BrandVocab {
   logo: string
   /** Wordmark (symbol + name + "Powered by AI") shown in the in-app header. 720x192 PNG. */
   headerLogo: string
+  /** Round Ally avatar (336x336 PNG) shown in chat bubbles, the intro hero and the walkthrough. */
+  avatar: string
   /** The single-outcome statement — "Objective" / "Goal". */
   objective: string
   objectiveLower: string
@@ -84,6 +86,7 @@ const OKR_ALLY: BrandVocab = {
   path: '/okr-ally',
   logo: '/okr-ally/report-logo.jpg',
   headerLogo: '/okr-ally/okr-ally-logo-v2.png',
+  avatar: '/okr-ally/okr-ally-avatar-v2.png',
   objective: 'Objective',
   objectiveLower: 'objective',
   kr: 'Key Result',
@@ -104,6 +107,7 @@ const GOAL_ALLY: BrandVocab = {
   path: '/goal-ally',
   logo: '/goal-ally/report-logo.jpg',
   headerLogo: '/goal-ally/goal-ally-logo-v2.png',
+  avatar: '/goal-ally/goal-ally-avatar-v2.png',
   objective: 'Goal',
   objectiveLower: 'goal',
   kr: 'Sub-goal',
